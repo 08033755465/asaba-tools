@@ -1571,6 +1571,207 @@ function renderReportSummaryBoxes(k,kp){
 function setPostFilter(v){ SETTINGS.postFilter=v; renderPost(); }
 function setPostGroup(v){ SETTINGS.postGroup=v; renderPost(); }
 function postGroupOf(p){ const st=DATA.stores.find(x=>x.code===p.store); return st?st.group:""; }
+
+/* ===== スケジュールプロンプト作成 ===== */
+const PROMPT_KEY='meo_promptbuilder_v1';
+window._PS={};
+(function(){ try{ window._PS=JSON.parse(localStorage.getItem(PROMPT_KEY)||'{}'); }catch(e){} })();
+function updatePS(k,v){ window._PS[k]=v; try{localStorage.setItem(PROMPT_KEY,JSON.stringify(window._PS));}catch(e){} }
+function getPS(k,def){ const v=window._PS[k]; return (v!=null&&v!==undefined)?v:def; }
+
+function psUpdateDays(){
+  updatePS('days',[...document.querySelectorAll('.ps-day-cb:checked')].map(c=>c.value));
+  renderPost();
+}
+function psUpdateLinked(){
+  updatePS('linked',[...document.querySelectorAll('.ps-link-cb:checked')].map(c=>c.value));
+}
+function psSetGroup(g){ updatePS('group',g); renderPost(); }
+function psSetTimeMode(v){ updatePS('timeMode',v); renderPost(); }
+function psSetAiLevel(v){ updatePS('aiLevel',v); }
+
+function buildPromptCard(){
+  const DAYS=['月','火','水','木','金','土','日'];
+  const selGroup=getPS('group','整骨院・整体院');
+  const selDays=getPS('days',[]);
+  const timeMode=getPS('timeMode','fixed');
+  const genPrompt=getPS('generatedPrompt','');
+
+  const groupBtns=['整骨院・整体院','Peace','全体'].map(g=>
+    `<button class="btn${selGroup===g?'':' ghost'} sm" onclick="psSetGroup('${g}')">${g}</button>`).join('');
+
+  const dayCbs=DAYS.map(d=>
+    `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px">
+      <input type="checkbox" class="ps-day-cb" value="${d}" ${selDays.includes(d)?'checked':''} onchange="psUpdateDays()"> ${d}
+    </label>`).join('');
+
+  const dayTimeRows=selDays.length?selDays.map(d=>
+    `<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+      <span style="width:20px;font-weight:600;font-size:13px">${d}</span>
+      <input class="inp" type="time" style="width:100px" value="${getPS('time_'+d,'10:00')}" onchange="updatePS('time_${d}',this.value)">
+    </div>`).join('')
+    :'<span class="sub" style="font-size:12px">上で曜日を選択すると時間が設定できます</span>';
+
+  const linkedRows=DATA.schedule.length?DATA.schedule.slice().sort((a,b)=>a.date<b.date?-1:1).slice(0,30).map(p=>{
+    const st=DATA.stores.find(x=>x.code===p.store);
+    const checked=(getPS('linked',[])||[]).includes(p.id);
+    return `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer">
+      <input type="checkbox" class="ps-link-cb" value="${esc(p.id)}" ${checked?'checked':''} onchange="psUpdateLinked()">
+      <span style="font-size:12px">${esc(p.date)} ${esc(st?shortName(st.name):p.store)}：${esc(p.theme||'（テーマ未設定）')}</span>
+    </label>`;
+  }).join(''):'<span class="sub" style="font-size:12px">投稿予定がまだありません。先に「＋ 投稿予定を追加」で登録してください。</span>';
+
+  return `<div class="card">
+    <h2>✨ スケジュールプロンプト作成</h2>
+    <p class="sub">AIにGBP投稿スケジュールを作ってもらうための依頼文を組み立てます。項目を埋めて「プロンプトを生成」→コピーしてAIに貼り付けてください。AIが返したCSVを「📥 投稿CSVを取り込む」で取り込めます。</p>
+
+    <label class="fl">対象グループ</label>
+    <div class="row" style="gap:6px;margin-bottom:10px">${groupBtns}</div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+      <div style="flex:1;min-width:130px"><label class="fl">期間（開始月）</label>
+        <input class="inp" type="month" style="width:100%" value="${getPS('startM','')}" onchange="updatePS('startM',this.value)"></div>
+      <div style="flex:1;min-width:130px"><label class="fl">期間（終了月）</label>
+        <input class="inp" type="month" style="width:100%" value="${getPS('endM','')}" onchange="updatePS('endM',this.value)"></div>
+    </div>
+
+    <label class="fl mt">投稿頻度（週◯回）と曜日</label>
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <select class="inp" style="width:72px" onchange="updatePS('count',this.value)">
+        ${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${getPS('count',2)==n?'selected':''}>${n}回</option>`).join('')}
+      </select>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${dayCbs}</div>
+    </div>
+
+    <label class="fl">投稿時間の設定方法</label>
+    <div class="row" style="gap:16px;margin-bottom:6px">
+      <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="psTimeMode" value="fixed" ${timeMode==='fixed'?'checked':''} onchange="psSetTimeMode('fixed')"> 全曜日共通</label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="psTimeMode" value="perday" ${timeMode==='perday'?'checked':''} onchange="psSetTimeMode('perday')"> 曜日ごとに設定</label>
+    </div>
+    ${timeMode==='fixed'
+      ? `<input class="inp" type="time" style="width:120px" value="${getPS('timeFixed','10:00')}" onchange="updatePS('timeFixed',this.value)">`
+      : `<div>${dayTimeRows}</div>`}
+
+    <label class="fl mt">AIへの裁量範囲</label>
+    <div class="row" style="gap:6px;flex-wrap:wrap">
+      ${[['fixed','テーマは全部私が指定'],['guide','大枠指定・AIがアレンジ'],['free','テーマ発想もAIにまかせる']].map(([v,l])=>
+        `<button class="btn${getPS('aiLevel','guide')===v?'':' ghost'} sm" onclick="updatePS('aiLevel','${v}');renderPost()">${l}</button>`).join('')}
+    </div>
+
+    <label class="fl mt">テーマの方向性・要望（自由テキスト）</label>
+    <textarea class="inp" style="min-height:80px;width:100%;margin-top:4px" placeholder="例）夏の熱中症対策、肩こり・腰痛の改善、産後ケア、ピラティスの体験談…季節感を意識して、医療効果の断言は避けること" onchange="updatePS('theme',this.value)">${esc(getPS('theme',''))}</textarea>
+
+    <label class="fl mt">SEO訴求ワード（カンマ区切りで複数）</label>
+    <input class="inp" style="width:100%;margin-top:4px" placeholder="例）整骨院 柏の葉,腰痛 マッサージ,産後骨盤矯正,マシンピラティス 南流山" value="${esc(getPS('keywords',''))}" onchange="updatePS('keywords',this.value)">
+
+    <label class="fl mt">タイトルのトーン・方向性</label>
+    <input class="inp" style="width:100%;margin-top:4px" placeholder="例）悩みに共感するタイトル、数字を使って具体的に、季節感を前面に" value="${esc(getPS('titleTone',''))}" onchange="updatePS('titleTone',this.value)">
+
+    <label class="fl mt">サムネイル画像のイメージ（簡易テキスト）</label>
+    <textarea class="inp" style="min-height:60px;width:100%;margin-top:4px" placeholder="例）明るく清潔感のある院内写真風。文字入れなし。季節の花や自然を背景に施術シーンを連想させる構図。正方形(1:1)。" onchange="updatePS('imageNote',this.value)">${esc(getPS('imageNote',''))}</textarea>
+
+    <label class="fl mt">紐付ける投稿予定（任意・一覧から選択）</label>
+    <div style="max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-top:4px">${linkedRows}</div>
+
+    <div class="row mt">
+      <button class="btn" onclick="generatePostPrompt()">✨ プロンプトを生成</button>
+      <button class="btn ghost" onclick="updatePS('theme','');updatePS('keywords','');updatePS('titleTone','');updatePS('imageNote','');updatePS('generatedPrompt','');updatePS('days',[]);renderPost()">リセット</button>
+    </div>
+
+    <div id="psPromptOut" style="${genPrompt?'':'display:none'}">
+      <label class="fl mt">生成されたプロンプト（編集してコピー）</label>
+      <textarea id="psPromptText" style="min-height:260px;width:100%;font-size:12px;font-family:monospace;margin-top:4px;line-height:1.6" onchange="updatePS('generatedPrompt',this.value)">${esc(genPrompt)}</textarea>
+      <div class="row mt">
+        <button class="btn" onclick="(function(){var t=el('psPromptText');t.focus();t.select();try{document.execCommand('copy');}catch(e){}toast('📋 コピーしました。AIに貼り付けてください。');})()">📋 コピーしてAIへ</button>
+        <button class="btn ghost" onclick="exportScheduleTemplate()">📋 CSV雛形も書き出す</button>
+      </div>
+      <p class="sub" style="font-size:11px">AIが返したCSVを「📥 投稿CSVを取り込む」で取り込むと投稿予定に追加されます。</p>
+    </div>
+  </div>`;
+}
+
+function generatePostPrompt(){
+  const g=getPS('group','整骨院・整体院');
+  const startM=getPS('startM','');
+  const endM=getPS('endM','');
+  const count=getPS('count',2);
+  const selDays=getPS('days',[]);
+  const timeMode=getPS('timeMode','fixed');
+  const timeFixed=getPS('timeFixed','10:00');
+  const aiLevel=getPS('aiLevel','guide');
+  const theme=getPS('theme','');
+  const keywords=getPS('keywords','');
+  const titleTone=getPS('titleTone','');
+  const imageNote=getPS('imageNote','');
+  const linked=getPS('linked',[]);
+
+  const daysInfo=selDays.length?selDays.join('・')+'曜日':'曜日未指定（適宜設定してください）';
+  let timeInfo='';
+  if(timeMode==='fixed'){
+    timeInfo=`全曜日共通 ${timeFixed}`;
+  } else {
+    timeInfo=selDays.length?selDays.map(d=>`${d}曜：${getPS('time_'+d,'10:00')}`).join('、'):'曜日を選択してください';
+  }
+  const aiMap={'fixed':'テーマは全て指定済み（AIは文章・画像プロンプトのみ作成）','guide':'大枠のテーマ方向性を指定するので各投稿のテーマはAIがアレンジ','free':'テーマ発想も含めてAIにまかせる'};
+  let linkedInfo='（なし）';
+  if(linked.length){
+    linkedInfo='\n'+linked.map(id=>{
+      const p=DATA.schedule.find(x=>x.id===id);
+      if(!p)return '  '+id;
+      const st=DATA.stores.find(x=>x.code===p.store);
+      return `  ${p.date} ${st?shortName(st.name):p.store}：${p.theme||'（テーマ未設定）'} [${id}]`;
+    }).join('\n');
+  }
+
+  const prompt=`あなたはMEO・Googleビジネスプロフィール（GBP）運用の専門家です。
+以下の条件で、GBP投稿の年間スケジュールを作成してください。
+
+■ 対象店舗グループ: ${g}
+■ 期間: ${startM||'（開始月を入力してください）'} 〜 ${endM||'（終了月を入力してください）'}
+■ 投稿頻度: 週${count}回（${daysInfo}）
+■ 投稿時間: ${timeInfo}
+■ テーマの方向性・要望:
+  ${theme||'（未入力）'}
+■ SEO訴求ワード（必ずテーマに分散して反映してください）:
+  ${keywords||'（未入力）'}
+■ タイトルのトーン・方向性:
+  ${titleTone||'（未入力）'}
+■ サムネイル画像のイメージ:
+  ${imageNote||'（未入力）'}
+■ AIへの裁量範囲: ${aiMap[aiLevel]||aiLevel}
+■ 紐付ける既存の投稿予定: ${linkedInfo}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【出力形式】
+以下のCSV形式で出力してください（ヘッダー行を含む・UTF-8・ダブルクォートくくり）。
+CSVデータのみを出力し、説明文は不要です。
+
+投稿予定日,予約時間,投稿方法,店舗グループ,投稿タイプ,テーマ,備考
+
+■ 各列の仕様
+・投稿予定日: YYYY-MM-DD
+・予約時間: HH:MM
+・投稿方法: 予約（固定）
+・店舗グループ: 整骨院・整体院 または Peace
+・投稿タイプ: 最新情報 / イベント / クーポン から選択
+・テーマ: 30〜60字程度の具体的なテーマ文（投稿文を書く際のお題になります）
+・備考: サムネイルのイメージや補足メモ（画像ファイル名の候補なども可）
+
+■ 作成の注意点
+・季節感・イベント（お盆、年末年始、祝日等）を考慮する
+・同じようなテーマの繰り返しにならないよう多様性を持たせる
+・訴求ワードを分散させてバランスよく入れる
+・医療的効果の断言はしない（「〜が改善する」ではなく「〜のケアに」「〜を感じた方に」等）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  updatePS('generatedPrompt', prompt);
+  renderPost();
+  setTimeout(()=>{
+    const out=el('psPromptOut');
+    if(out){ out.style.display=''; out.scrollIntoView({behavior:'smooth',block:'start'}); }
+  },80);
+  toast('✨ プロンプトを生成しました。コピーしてAIに貼り付けてください。');
+}
 function renderPost(){
   const POST_STATUSES=["投稿済","作成中","未投稿"];
   const POST_GROUPS=["整骨院","整体院","Peace"];
@@ -1608,6 +1809,7 @@ function renderPost(){
         <div class="st"><b>⑨ サムネ</b><span class="badge">画像プロンプト</span></div>
       </div>
     </div>
+    ${buildPromptCard()}
     <div class="card">
       <div class="selrow" style="margin-bottom:10px">
         <h2 style="margin:0">投稿予定一覧</h2>
