@@ -1208,13 +1208,14 @@ function renderDash(){
 
   let rankGroupsHtml="";
   if(scope==='group'){
-    rankGroupsHtml=RANK_GROUPS.map(g=>{
-      const rows=sortRows(DATA.stores.filter(x=>x.group===g).map(x=>({
-        code:x.code, label:shortName(x.name), kw:SETTINGS.groupKW[g],
+    // 整骨院＋整体院はまとめて表示、Peaceは独立
+    const DISP_GROUPS=[["整骨院・整体院",["整骨院","整体院"],"#2f6df0"],["Peace",["Peace"],"#a24bd0"]];
+    rankGroupsHtml=DISP_GROUPS.map(([label,members,gc])=>{
+      const rows=sortRows(DATA.stores.filter(x=>members.includes(x.group)).map(x=>({
+        code:x.code, label:shortName(x.name), kw:SETTINGS.groupKW[x.group],
         val:mv(getM(x.code,k),rk), series:trendSeries(x.code,rk,trend.months) })));
       if(!rows.length) return '';
-      const gc=THEME_COLORS[g]||"#888";
-      return `<div class="rankgrp"><div class="grphd" style="color:${gc}"><i style="background:${gc}"></i>${esc(g)}（${rows.length}店）</div>${tableWrap(rows)}</div>`;
+      return `<div class="rankgrp"><div class="grphd" style="color:${gc}"><i style="background:${gc}"></i>${esc(label)}（${rows.length}店）</div>${tableWrap(rows)}</div>`;
     }).join("");
   }else{ // all＝全店舗
     const rows=sortRows(DATA.stores.map(x=>({
@@ -1906,10 +1907,19 @@ function linkBlock(title, code, links, scope, key){
 }
 function renderLinks(){
   const wrap=el('page-links'); if(!wrap)return;
-  const groupBlocks=RANK_GROUPS.map(g=>linkBlock(g,'',linksFor('group',g),'group',g)).join('');
-  const storeBlocks=RANK_GROUPS.map(g=>{
-    const stores=DATA.stores.filter(s=>s.group===g);
-    return `<div style="margin-top:6px"><div class="pill" style="margin:6px 0">${esc(g)}</div>`
+  // グループ別リンク: 整骨院＋整体院をまとめて1ブロック、Peaceは独立
+  const LINK_DISP_GROUPS=[{label:"整骨院・整体院",members:["整骨院","整体院"]},{label:"Peace",members:["Peace"]}];
+  const groupBlocks=LINK_DISP_GROUPS.map(dg=>{
+    const chips=dg.members.flatMap(g=>linksFor('group',g)).map(linkChip).join('');
+    const addBtns=dg.members.map(g=>`<button class="btn ghost sm" onclick="linkAdd('group','${esc(g)}','その他')">＋追加（${esc(g)}）</button>`).join('');
+    return `<div style="border-top:1px solid var(--line);padding:8px 0">
+      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${esc(dg.label)}</div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center">${chips||'<span class="sub">未登録</span>'}${addBtns}</div>
+    </div>`;
+  }).join('');
+  const storeBlocks=LINK_DISP_GROUPS.map(dg=>{
+    const stores=DATA.stores.filter(s=>dg.members.includes(s.group));
+    return `<div style="margin-top:6px"><div class="pill" style="margin:6px 0">${esc(dg.label)}</div>`
       + stores.map(s=>linkBlock(s.name,s.code,linksFor('store',s.code),'store',s.code)).join('') + `</div>`;
   }).join('');
   wrap.innerHTML=`
