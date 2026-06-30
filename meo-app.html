@@ -651,22 +651,125 @@ function makePostId(code,date,type){
   do{ id=`${code}-${d}-${tp}${String(n).padStart(2,'0')}`; n++; }while(DATA.schedule.some(p=>p.id===id));
   return id;
 }
-/* ＋投稿予定を追加（端末に保存・あとでCSVでNotion⑦へ） */
-function addScheduleEntry(){
-  const storeOpts=DATA.stores.map(s=>`${s.code}：${s.name}`).join('\n');
-  const code=prompt('店舗コードを入力してください。\n\n'+storeOpts, DATA.stores[0].code);
-  if(code===null) return;
-  const st=DATA.stores.find(x=>x.code===String(code).trim());
-  if(!st){ alert('その店舗コードは見つかりませんでした。'); return; }
-  const date=prompt('投稿予定日（例 2026-07-10）', `${SETTINGS.period.year}-${String(SETTINGS.period.month).padStart(2,'0')}-01`);
-  if(date===null) return;
-  const type=prompt('投稿タイプ（最新情報／イベント／クーポン）','最新情報'); if(type===null) return;
-  const theme=prompt('テーマ・メモ（任意）',''); if(theme===null) return;
-  const entry={ id:makePostId(st.code, date, (type||'最新情報').trim()), store:st.code,
-    type:(type||'最新情報').trim(), date:(date||'').trim(), theme:(theme||'').trim(),
-    status:'未投稿', img:'📝', title:'', body:'' };
-  DATA.schedule.push(entry); saveSchedule(); renderPost(); renderDash();
-  toast('＋ 投稿予定を追加しました（'+entry.id+'）。');
+/* ＋投稿予定を追加 → チェックボックスUIで複数店舗に一括追加 */
+function addScheduleEntry(){ openAddPostModal(); }
+
+/* 投稿タイプ選択ボタン */
+function setNewPostType(v){
+  window._npType=v;
+  document.querySelectorAll('.npt-btn').forEach(b=>{
+    const isOn=b.dataset.v===v;
+    b.className='btn npt-btn'+(isOn?'':' ghost');
+  });
+}
+/* 予約/即時トグル */
+function setNewPostMode(v){
+  const r=el('npTimeRow'); if(r) r.style.display=(v==='予約'?'':'none');
+}
+/* グループ一括チェック */
+function toggleStoreGroup(grp){
+  const MAP={'整骨院・整体院':['整骨院','整体院'],'Peace':['Peace'],'全':['整骨院','整体院','Peace']};
+  const members=MAP[grp]||[];
+  const boxes=[...document.querySelectorAll('.store-cb')];
+  const target=boxes.filter(b=>members.includes(b.dataset.group));
+  const allChecked=target.every(b=>b.checked);
+  target.forEach(b=>b.checked=!allChecked);
+}
+function clearAllStores(){ document.querySelectorAll('.store-cb').forEach(b=>b.checked=false); }
+
+/* 追加モーダルを開く */
+function openAddPostModal(){
+  window._npType='最新情報';
+  const themes=[...new Set(DATA.schedule.map(p=>p.theme).filter(Boolean))];
+  const todayStr=`${TODAY.y}-${String(TODAY.m).padStart(2,'0')}-${String(TODAY.d||1).padStart(2,'0')}`;
+  const scheduledDates=[...new Set(DATA.schedule.map(p=>p.date).filter(d=>d&&d>=todayStr))].sort().slice(0,10);
+
+  const GROUPS=['整骨院','整体院','Peace'];
+  const storeRows=GROUPS.map(g=>{
+    const stores=DATA.stores.filter(s=>s.group===g);
+    return `<div class="fl" style="font-size:11px;color:var(--sub);margin:8px 0 2px">${esc(g)}</div>`
+      +stores.map(s=>`<label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer">
+        <input type="checkbox" class="store-cb" value="${esc(s.code)}" data-group="${esc(g)}">
+        <span style="font-size:13px">${esc(shortName(s.name))} <code style="font-size:10px">${esc(s.code)}</code></span>
+      </label>`).join('');
+  }).join('');
+
+  const upcomingHtml=scheduledDates.length
+    ? scheduledDates.map(d=>`<span class="pill" style="font-size:11px">${d}</span>`).join('')
+    : '<span class="sub" style="font-size:12px">まだなし</span>';
+  const themeDatalist=themes.length?`<datalist id="npThemeList">${themes.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>`:'';
+
+  openSheet(`
+    <h3>＋ 投稿予定を追加</h3>
+
+    <label class="fl">店舗を選ぶ</label>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:6px">
+      <button class="btn ghost sm" onclick="toggleStoreGroup('整骨院・整体院')">整骨院・整体院</button>
+      <button class="btn ghost sm" onclick="toggleStoreGroup('Peace')">Peace</button>
+      <button class="btn ghost sm" onclick="toggleStoreGroup('全')">全選択</button>
+      <button class="btn ghost sm" onclick="clearAllStores()">全解除</button>
+    </div>
+    <div style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-height:180px;overflow-y:auto">
+      ${storeRows}
+    </div>
+
+    <label class="fl mt">投稿タイプ</label>
+    <div class="row" style="gap:6px">
+      <button class="btn npt-btn" data-v="最新情報" onclick="setNewPostType('最新情報')">最新情報</button>
+      <button class="btn ghost npt-btn" data-v="イベント" onclick="setNewPostType('イベント')">イベント</button>
+      <button class="btn ghost npt-btn" data-v="クーポン" onclick="setNewPostType('クーポン')">クーポン</button>
+    </div>
+
+    <label class="fl mt">投稿方法</label>
+    <div class="row" style="gap:16px;margin-bottom:6px">
+      <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="npMode" value="予約" checked onchange="setNewPostMode(this.value)"> 予約投稿</label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="npMode" value="即時" onchange="setNewPostMode(this.value)"> 即時投稿</label>
+    </div>
+    <div id="npTimeRow" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="newPostDate" class="inp" type="date" value="${todayStr}" style="flex:1;min-width:130px">
+      <input id="newPostTime" class="inp" type="time" value="10:00" style="width:100px">
+    </div>
+    <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+      <span class="sub" style="font-size:11px">既存の予定日：</span>${upcomingHtml}
+    </div>
+
+    ${themeDatalist}
+    <label class="fl mt">テーマ（任意）</label>
+    <input id="newPostTheme" class="inp" style="width:100%" list="npThemeList" placeholder="例）梅雨の腰痛ケア">
+
+    <label class="fl mt">画像ファイル名（拡張子まで・画像なし投稿は空でもOK）</label>
+    <input id="newPostImgFile" class="inp" style="width:100%" placeholder="例）asaba-kshiw-20260710.jpg">
+
+    <div class="row mt" style="border-top:1px solid var(--line);padding-top:12px">
+      <button class="btn" onclick="submitAddPost()">✅ まとめて追加する</button>
+      <button class="btn ghost" onclick="closeSheet()">キャンセル</button>
+    </div>
+  `);
+  // 初期状態でボタンをONに
+  setTimeout(()=>setNewPostType('最新情報'),0);
+}
+
+/* モーダルの追加ボタンを押したとき */
+function submitAddPost(){
+  const checked=[...document.querySelectorAll('.store-cb:checked')].map(c=>c.value);
+  if(!checked.length){ toast('店舗を1つ以上選んでください。'); return; }
+  const modeEl=document.querySelector('[name=npMode]:checked');
+  const mode=modeEl?modeEl.value:'予約';
+  const date=(el('newPostDate')?el('newPostDate').value:'').trim();
+  const time=(el('newPostTime')?el('newPostTime').value:'').trim();
+  const type=window._npType||'最新情報';
+  const theme=(el('newPostTheme')?el('newPostTheme').value:'').trim();
+  const imgFile=(el('newPostImgFile')?el('newPostImgFile').value:'').trim();
+  if(mode==='予約' && !date){ toast('予約投稿の場合、日付を入力してください。'); return; }
+  let added=0;
+  checked.forEach(code=>{
+    const entry={ id:makePostId(code,date,type), store:code, type, date,
+      time:(mode==='予約'?time:''), postMode:mode,
+      theme, imgFile, status:'未投稿', img:'📝', title:'', body:'' };
+    DATA.schedule.push(entry); added++;
+  });
+  saveSchedule(); closeSheet(); renderPost(); renderDash();
+  toast(`✅ ${added}店舗分の投稿予定を追加しました。`);
 }
 /* 投稿づくりの「下書き保存」：タイトル・本文を端末に保存 */
 function saveDraft(id){
@@ -686,7 +789,8 @@ function importScheduleCSV(){
       const at=(...names)=>{ for(const n of names){ const i=head.indexOf(n); if(i>=0) return i; } return -1; };
       const ci={ id:at('投稿予定ID'), store:at('店舗','店舗名'), date:at('投稿予定日','投稿予定','予定日'),
         type:at('投稿タイプ','投稿タイプ'), status:at('ステータス','状態'), theme:at('備考','テーマ'),
-        title:at('投稿タイトル','タイトル'), body:at('投稿内容','本文') };
+        title:at('投稿タイトル','タイトル'), body:at('投稿内容','本文'),
+        imgFile:at('画像ファイル名','ファイル名'), time:at('予約時間','投稿時間'), postMode:at('投稿方法') };
       const g=(row,i)=> i>=0 ? String(row[i]||'').trim() : '';
       let ok=0, ng=0;
       for(let r=1;r<rows.length;r++){
@@ -699,7 +803,10 @@ function importScheduleCSV(){
         const ex=DATA.schedule.find(p=>p.id===id);
         const obj={ id, store:code, type, date, theme:g(row,ci.theme),
           status:g(row,ci.status)||'未投稿', img:(ex&&ex.img)||'📝',
-          title:g(row,ci.title), body:g(row,ci.body) };
+          title:g(row,ci.title), body:g(row,ci.body),
+          imgFile:g(row,ci.imgFile)||(ex&&ex.imgFile)||'',
+          time:g(row,ci.time)||(ex&&ex.time)||'',
+          postMode:g(row,ci.postMode)||(ex&&ex.postMode)||'予約' };
         if(ex) Object.assign(ex,obj); else DATA.schedule.push(obj);
         ok++;
       }
@@ -710,13 +817,25 @@ function importScheduleCSV(){
 }
 /* 投稿管理をCSVで書き出し（Notion⑦⑧へ貼り付け用） */
 function exportScheduleCSV(){
-  const head=['投稿予定ID','店舗','投稿予定日','投稿タイプ','ステータス','備考','投稿タイトル','投稿内容'];
+  const head=['投稿予定ID','店舗','投稿予定日','予約時間','投稿方法','投稿タイプ','ステータス','備考','画像ファイル名','投稿タイトル','投稿内容'];
   const rows=[head].concat(DATA.schedule.map(p=>{
     const st=DATA.stores.find(x=>x.code===p.store);
-    return [p.id, st?st.name:p.store, p.date||'', p.type||'', p.status||'', p.theme||'', p.title||'', p.body||''];
+    return [p.id, st?st.name:p.store, p.date||'', p.time||'', p.postMode||'予約', p.type||'', p.status||'', p.theme||'', p.imgFile||'', p.title||'', p.body||''];
   }));
-  downloadText('投稿管理_書き出し.csv', toCSV(rows));
+  const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+  downloadText(`投稿管理_${ymd}.csv`, toCSV(rows));
   toast('⬇️ 投稿管理をCSVで書き出しました（'+DATA.schedule.length+'件）。');
+}
+/* 年間スケジュール用CSV雛形を書き出し（AIに渡して記入してもらう用） */
+function exportScheduleTemplate(){
+  const head=['投稿予定日','予約時間','投稿方法','店舗グループ','投稿タイプ','テーマ','備考'];
+  const examples=[
+    ['2026-08-01','10:00','予約','整骨院・整体院','最新情報','夏の熱中症対策と整骨院','例：こういうテーマを入れてください'],
+    ['2026-08-15','10:00','予約','Peace','最新情報','夏のボディメイク',''],
+  ];
+  const rows=[head,...examples];
+  downloadText('年間スケジュール雛形.csv', toCSV(rows));
+  toast('⬇️ 年間スケジュール雛形CSVを書き出しました。AIに渡してテーマを埋めてもらってください。');
 }
 
 /* ===== サムネ画像管理（⑨）の端末保存とNotion連携CSV ===== */
@@ -1468,10 +1587,12 @@ function renderPost(){
   const rows=shown.map(p=>{
     const st=DATA.stores.find(x=>x.code===p.store);
     const stColor=p.status==='投稿済'?'ok':(p.status==='作成中'?'warn':'');
+    const imgThumb=p.imgFile?`<div style="font-size:11px;color:var(--sub);margin-top:2px">🖼️ ${esc(p.imgFile)}</div>`:'';
+    const timeInfo=p.postMode==='即時'?'<span class="pill warn" style="font-size:10px">即時</span>':(p.time?` ${esc(p.time)}`:'');
     return `<tr>
-      <td>${esc(st?st.name:p.store)}</td>
-      <td>${esc(p.date)}</td>
-      <td>${esc(p.theme)}<div class="sub" style="font-size:11px">${esc(p.type)}・<code>${esc(p.id)}</code></div></td>
+      <td>${esc(st?shortName(st.name):p.store)}</td>
+      <td style="white-space:nowrap">${esc(p.date)}${timeInfo?`<br><span style="font-size:11px">${timeInfo}</span>`:''}</td>
+      <td>${esc(p.theme)}<div class="sub" style="font-size:11px">${esc(p.type)}・<code>${esc(p.id)}</code></div>${imgThumb}</td>
       <td><span class="pill ${stColor}">${esc(p.status)}</span></td>
       <td><button class="btn ghost sm" onclick="openPostEditor('${esc(p.id)}')">編集</button></td>
     </tr>`;
@@ -1499,15 +1620,16 @@ function renderPost(){
         </div>
       </div>
       <div class="tablewrap">
-        <table><thead><tr><th>店舗名</th><th>予定日</th><th>テーマ</th><th>状態</th><th></th></tr></thead>
+        <table><thead><tr><th>店舗名</th><th>予定日・時間</th><th>テーマ・画像</th><th>状態</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table>
       </div>
       <div class="row mt">
         <button class="btn" onclick="addScheduleEntry()">＋ 投稿予定を追加</button>
         <button class="btn ghost" onclick="importScheduleCSV()">📥 投稿CSVを取り込む</button>
-        <button class="btn ghost" onclick="exportScheduleCSV()">⬇️ 投稿をCSVで書き出す</button>
+        <button class="btn ghost" onclick="exportScheduleCSV()">⬇️ 投稿CSVを書き出す</button>
+        <button class="btn ghost" onclick="exportScheduleTemplate()">📋 年間スケジュール雛形</button>
       </div>
-      <p class="sub" style="font-size:11px">取り込んだ投稿はこの端末に保存されます。Notion⑦スケジュール／⑧投稿文DBとは、上のCSVでやり取りします。</p>
+      <p class="sub" style="font-size:11px">取り込んだ投稿はこの端末に保存されます。Notion⑦スケジュール／⑧投稿文DBとは、上のCSVでやり取りします。「年間スケジュール雛形」をAIに渡してテーマを埋めてもらい、取り込むとスケジュール管理できます。</p>
     </div>
     <div class="card">
       <h2>📦 一括テンプレ（GMOへ送る準備）</h2>
@@ -1595,6 +1717,9 @@ function composerOpen(id){
       <button class="btn ghost" onclick="openImageUpload()">⬆️ GMO画像アップへ ↗</button>
     </div>
 
+    <label class="fl mt">画像ファイル名（拡張子まで・画像なし投稿は空でもOK）</label>
+    <input id="postImgFile" class="inp" style="width:100%" value="${esc(p.imgFile||'')}" placeholder="例）asaba-kshiw-20260710.jpg" onchange="saveImgFile('${esc(p.id)}',this.value)">
+
     <label class="fl mt">この投稿にひも付く画像（投稿予定IDで自動マッチ）</label>
     <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center">
       ${(function(){
@@ -1602,7 +1727,8 @@ function composerOpen(id){
         if(!imgs.length) return '<span class="sub">まだありません。画像タブで <code>'+esc(p.id)+'-image01</code> のように作ると自動でつながります。</span>';
         return imgs.map(g=>{
           const c=g.status==='確定'?'ok':(g.status==='生成済'?'warn':'');
-          return '<span class="pill '+c+'" style="cursor:pointer" onclick="previewImage(\''+esc(g.id)+'\')" title="'+esc(g.id)+'">🖼️ '+esc(g.status)+'</span>';
+          const thumb=g.drive?`<img src="${esc(g.drive)}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;vertical-align:middle" onerror="this.style.display='none'">`:'🖼️';
+          return '<span class="pill '+c+'" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px" onclick="previewImage(\''+esc(g.id)+'\')" title="'+esc(g.id)+'">'+thumb+' '+esc(g.status)+'</span>';
         }).join('')+'<button class="btn ghost sm" onclick="switchTab(\'gallery\')">画像タブへ ↗</button>';
       })()}
     </div>
@@ -1626,6 +1752,10 @@ function openAI(which){
   if(!u){ alert('AIのリンクが未設定です。「設定」画面であなた用のAIリンクを登録してください（他の人には見えません）。'); return; }
   window.open(u,'_blank');
 }
+function saveImgFile(id,v){
+  const p=DATA.schedule.find(x=>x.id===id); if(!p)return;
+  p.imgFile=v.trim(); saveSchedule();
+}
 /* ===== 一括投稿テンプレ（バッチ） =====
    composerから「送る」と、GMO48列に対応した行をブラウザに貯めます（localStorage）。
    貯めた分はNotion⑥DBと同じ並びのCSVで書き出し、meo-export.htmlに渡せます。 */
@@ -1642,6 +1772,8 @@ function sendToBatch(id){
   if(!body){
     if(!confirm('本文がまだ空です。このまま一括テンプレに送りますか？\n（あとでNotion⑥DB側で入れ直すこともできます）')) return;
   }
+  const imgFile=el('postImgFile')?el('postImgFile').value.trim():p.imgFile||'';
+  const isImmediate=(p.postMode==='即時');
   const row={
     '投稿予定ID': p.id,
     '店舗': st?st.name:p.store,
@@ -1650,14 +1782,14 @@ function sendToBatch(id){
     '店舗ID': st&&st.gmoId?st.gmoId:'',
     '店舗名': st?st.name:p.store,
     '投稿タイプ': p.type||'最新情報',
-    '下書き保存': '○',          // ○＝下書きで取込（公開されない・安全）
-    '即時投稿': '',
-    '予約投稿日': '',
-    '予約投稿時間': '',
+    '下書き保存': '○',
+    '即時投稿': isImmediate?'○':'',
+    '予約投稿日': !isImmediate?(p.date||''):'',
+    '予約投稿時間': !isImmediate?(p.time||''):'',
     'タイトル(GoogleとSNSは任意入力、Yahoo!は必須）': title||p.title||'',
     '投稿内容': body||p.body||'',
     '投稿内容２': '',
-    '画像': '',
+    '画像': imgFile,
     'ボタンの追加': '予約',
     'ボタンURL': ''
   };
