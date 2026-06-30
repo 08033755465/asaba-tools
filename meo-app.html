@@ -1,0 +1,2060 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEO運用ツール（あさばグループ）</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+    --line:#e5e7eb; --accent:#2f6df0; --accent-d:#1f4fc4;
+    --ok:#138a52; --okbg:#e7f6ee; --warn:#b9821b; --warnbg:#fdf4e3;
+    --err:#c23b3b; --errbg:#fbeaea; --chip:#eef1f5;
+  }
+  body.dark{
+    --bg:#161a22; --card:#1f2530; --ink:#e8eaf0; --sub:#9aa3b2;
+    --line:#333c4a; --accent:#5b8cf5; --accent-d:#7aa4ff;
+    --ok:#3fbe83; --okbg:#1c3a2c; --warn:#e0a849; --warnbg:#3a2f1a;
+    --err:#e06a6a; --errbg:#3a2222; --chip:#2a313d;
+  }
+  body.dark .cal .cell{background:#222a36}
+  body.dark .cal .cell.muted{background:#1b212b}
+  body.dark .hbtrack{background:#2a313d}
+  body.dark .kpi{background:#222a36}
+  body.dark .kpi.main{background:linear-gradient(135deg,#243150,#2c2340);border-color:#3a4a6e}
+  body.dark .sumbox{background:#222a36}
+  body.dark .thumb{background:#222a36}
+  body.dark .thumb .ph{background:#1b212b}
+  body.dark table th{background:#222a36}
+  body.dark .login-card{background:rgba(31,37,48,.94)}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px}
+
+  /* ===== 地図風背景（共通） ===== */
+  .mapbg{position:absolute;inset:0;overflow:hidden;
+    background:
+      linear-gradient(135deg,#dfeaf6 0%,#e9f1ea 55%,#eef0f6 100%);}
+  .mapbg::before{content:"";position:absolute;inset:-20%;
+    background-image:
+      linear-gradient(rgba(120,150,190,.16) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(120,150,190,.16) 1px,transparent 1px);
+    background-size:38px 38px;}
+  .mapbg::after{content:"";position:absolute;inset:0;
+    background:
+      radial-gradient(closest-side,rgba(120,190,140,.30),transparent) 18% 26%/180px 130px no-repeat,
+      radial-gradient(closest-side,rgba(120,190,140,.25),transparent) 78% 64%/220px 150px no-repeat,
+      linear-gradient(72deg,transparent 46%,rgba(150,180,220,.45) 47%,rgba(150,180,220,.45) 50%,transparent 51%),
+      linear-gradient(-20deg,transparent 62%,rgba(150,180,220,.40) 63%,rgba(150,180,220,.40) 65%,transparent 66%);
+    background-repeat:no-repeat;}
+
+  /* ===== ログイン ===== */
+  .login-wrap{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden}
+  .login-pin{position:absolute;font-size:22px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.25));animation:bob 3s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  .login-card{position:relative;z-index:2;background:rgba(255,255,255,.92);backdrop-filter:blur(3px);
+    border:1px solid var(--line);border-radius:18px;padding:28px 22px;width:100%;max-width:380px;text-align:center;
+    box-shadow:0 12px 40px rgba(40,60,100,.18)}
+  .login-card h1{font-size:20px;margin:6px 0 4px}
+  .login-card p.sub{color:var(--sub);font-size:13px;margin:0 0 20px}
+  .field{text-align:left;margin-bottom:14px}
+  .field label{display:block;font-size:13px;font-weight:700;margin-bottom:5px}
+  .field input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:15px}
+  .demo-note{background:var(--warnbg);color:var(--warn);font-size:12px;border-radius:10px;padding:9px 11px;margin-bottom:16px}
+
+  /* ===== アプリ枠 ===== */
+  .app{display:none}
+  header{position:sticky;top:0;z-index:30;background:var(--card);border-bottom:1px solid var(--line);
+    padding:11px 16px;display:flex;align-items:center;justify-content:space-between}
+  header .ttl{font-size:15px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .acct{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);display:inline-block}
+  main{max-width:880px;margin:0 auto;padding:16px 14px 90px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  p.sub{color:var(--sub);font-size:13px;margin:6px 0}
+  .btn{display:inline-block;background:var(--accent);color:#fff;border:none;border-radius:10px;
+    padding:11px 16px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none}
+  .btn:active{background:var(--accent-d)}
+  .btn.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  .btn.sm{padding:7px 12px;font-size:13px}
+  .btn.mini{padding:5px 10px;font-size:13px;border-radius:8px}
+  .btn[disabled]{background:#aab2c0;cursor:not-allowed}
+  .btn.ghost[disabled]{background:#fff;color:#aab2c0;border-color:#cfd5de}
+  body.dark .btn.ghost{background:var(--card)}
+  body.dark .btn.ghost[disabled]{background:var(--card);color:#5b6473;border-color:#3a424f}
+  .thumb .ph{cursor:pointer}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row.between{justify-content:space-between;align-items:center}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:var(--chip)}
+  .pill.ok{background:var(--okbg);color:var(--ok)} .pill.warn{background:var(--warnbg);color:var(--warn)}
+  .pill.up{background:var(--okbg);color:var(--ok)} .pill.down{background:var(--errbg);color:var(--err)}
+  .pill.flat{background:var(--chip);color:var(--sub)}
+  select,input.inp{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:14px;background:#fff}
+  label.fl{font-size:12px;color:var(--sub);font-weight:700;display:block;margin-bottom:3px}
+
+  /* ===== ダッシュ：地図モック ===== */
+  .map-mock{position:relative;height:230px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .map-mock .mapbg{position:absolute;inset:0}
+  .map-pin{position:absolute;transform:translate(-50%,-100%);cursor:pointer;text-align:center;z-index:2}
+  .map-pin .dotpin{width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+    border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,.3);margin:0 auto}
+  .map-pin .lab{margin-top:3px;font-size:10px;font-weight:700;background:rgba(255,255,255,.9);
+    border-radius:5px;padding:1px 4px;white-space:nowrap;display:none}
+  .map-pin.sel{z-index:5}
+  .map-pin.sel .dotpin{width:24px;height:24px;outline:3px solid rgba(47,109,240,.35);outline-offset:1px}
+  .map-pin.sel .lab{display:inline-block}
+  .map-cap{position:absolute;left:8px;bottom:8px;right:8px;z-index:3;font-size:10px;color:#445;
+    background:rgba(255,255,255,.82);border-radius:8px;padding:5px 8px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--sub)}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .legend i{width:11px;height:11px;border-radius:50%;display:inline-block}
+
+  /* 期間バー */
+  .period{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+  .period .grp{display:flex;flex-direction:column}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .kpi{background:#fafbfc;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .kpi.main{background:linear-gradient(135deg,#eef4ff,#f7f0fe);border-color:#cdd9f5}
+  .kpi .label{font-size:12px;color:var(--sub)}
+  .kpi .num{font-size:22px;font-weight:800;margin-top:2px}
+  .kpi .deltas{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+  .kpi .deltas .t{font-size:10px;color:var(--sub);align-self:center}
+  .memo{margin-top:12px;background:var(--okbg);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:9px;padding:10px 12px}
+  .memo-hd{font-size:12px;font-weight:700;color:var(--ok);margin-bottom:3px}
+  .memo-body{margin:0;font-size:13px}
+  .memo-body.empty{color:var(--sub)}
+  /* table */
+  .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;white-space:nowrap}
+  th{background:#f3f5f8;position:sticky;top:0;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  /* メイングラフ（SVG） */
+  .chartwrap{width:100%;overflow:hidden}
+  .chartwrap svg{width:100%;height:auto;display:block}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:6px 11px;font-size:13px;cursor:pointer;color:var(--sub)}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:700}
+  /* 投稿づくりステップ */
+  .flow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .flow .st{flex:1;min-width:110px;border:1px solid var(--line);border-radius:10px;padding:9px;background:#fafbfc;font-size:12px}
+  .flow .st b{display:block;font-size:13px}
+  .flow .st .badge{font-size:11px;color:var(--sub)}
+  textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;font-family:inherit;resize:vertical}
+  .cnt{font-size:12px;color:var(--sub);text-align:right}
+  .cnt.bad{color:var(--err)} .cnt.good{color:var(--ok)}
+  /* ギャラリー */
+  .gal{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .thumb{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+  .thumb .ph{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;font-size:30px;
+    background:linear-gradient(135deg,#eef3ff,#f7eefc)}
+  .thumb .meta{padding:7px 8px;font-size:11px}
+  .thumb .meta .id{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .thumb label.ck{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--sub);padding:0 8px 7px}
+  /* 設定 */
+  .setrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .setrow:last-child{border-bottom:none}
+  .setrow .k{font-size:14px;font-weight:700}.setrow .d{font-size:12px;color:var(--sub)}
+  .swatch{display:inline-block;width:20px;height:20px;border-radius:6px;border:1px solid var(--line);vertical-align:middle}
+
+  /* ===== タブバー ===== */
+  .tabbar{position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--line);
+    display:flex;max-width:880px;margin:0 auto}
+  .tabbar button{flex:1;border:none;background:none;padding:9px 4px 11px;font-size:11px;color:var(--sub);cursor:pointer}
+  .tabbar button .ic{display:block;font-size:19px;line-height:1.2}
+  .tabbar button.on{color:var(--accent);font-weight:700}
+
+  /* ===== スライドアップ・ナビパネル ===== */
+  .navPanel{position:fixed;left:0;right:0;top:0;bottom:0;z-index:50;background:var(--bg);
+    transform:translateY(100%);transition:transform .28s cubic-bezier(.3,.7,.3,1);
+    display:flex;flex-direction:column;max-width:880px;margin:0 auto;box-shadow:0 -8px 30px rgba(0,0,0,.15)}
+  .navPanel.open{transform:translateY(0)}
+  .grab{background:var(--card);border-bottom:1px solid var(--line);padding:6px 12px 8px;touch-action:none}
+  .grab-bar{width:42px;height:5px;border-radius:99px;background:#cfd5de;margin:2px auto 8px}
+  .grab-tabs{display:flex;gap:6px;justify-content:center}
+  .grab-tabs button{flex:1;max-width:160px;border:1px solid var(--line);background:#fff;border-radius:9px;
+    padding:8px 6px;font-size:13px;color:var(--sub);cursor:pointer;font-weight:700}
+  .grab-tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .grab-close{display:block;width:100%;text-align:center;background:none;border:none;color:var(--sub);
+    font-size:12px;padding:7px 0 2px;cursor:pointer}
+  .track-vp{flex:1;overflow:hidden}
+  .track{display:flex;width:400%;height:100%;transition:transform .25s ease}
+  .subpage{width:25%;height:100%;overflow-y:auto;overflow-x:hidden;padding:14px 14px 24px}
+
+  .page-pad{padding-bottom:4px}
+  .center{text-align:center}.mt{margin-top:12px}.mb{margin-bottom:10px}
+  /* 店舗ナビ（プルダウン＋上下/左右ボタン） */
+  .navbtns{display:inline-flex;gap:5px}
+  .stepper{display:flex;flex-direction:column;gap:3px}
+  .stepper button{border:1px solid var(--line);background:#fff;border-radius:7px;width:30px;height:21px;
+    font-size:11px;line-height:1;cursor:pointer;color:var(--accent)}
+  .calwrap{display:flex;align-items:center;gap:6px}
+  .calwrap input[type=month]{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:14px;background:#fff}
+  /* ランキング：グループ別 */
+  .rankgrp{margin-top:10px}
+  .grphd{display:flex;align-items:center;gap:6px;font-weight:800;font-size:13px;margin:0 0 4px}
+  .grphd i{width:10px;height:10px;border-radius:3px;display:inline-block}
+  /* ランキング：見出しに▲▼コントロール */
+  th.hdctrl{white-space:nowrap}
+  .hdctrl .hdlbl{font-size:12px}
+  .hdstep{display:inline-flex;gap:3px;margin-top:3px;justify-content:center}
+  .hdstep button{border:1px solid var(--line);background:#fff;border-radius:6px;width:24px;height:18px;
+    font-size:10px;line-height:1;cursor:pointer;color:var(--accent);padding:0}
+  /* 推移セル（スパークライン＋ピル） */
+  .trendcell{display:flex;align-items:center;gap:5px;color:var(--sub)}
+  .trendcell.up{color:var(--ok)} .trendcell.down{color:var(--err)} .trendcell.flat{color:var(--sub)}
+  .trendcell svg{flex:none}
+  /* コンパクトな店舗・期間えらび */
+  .compactsel{padding:10px 12px}
+  .selrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+  .selgrp{display:flex;align-items:center;gap:6px}
+  .compactsel select,.compactsel input[type=month]{border:1px solid var(--line);border-radius:9px;padding:7px 9px;font-size:14px;background:#fff}
+  .compactsel .stepper button{height:17px}
+  /* 天気別／曜日別の横棒 */
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:560px){.twocol{grid-template-columns:1fr}}
+  .halfcard{border:1px solid var(--line);border-radius:11px;padding:10px}
+  .subhd{font-weight:800;font-size:13px;margin-bottom:6px}
+  .hbar{display:flex;align-items:center;gap:7px;margin:5px 0}
+  .hblab{width:30px;font-size:12px;font-weight:700;flex:none}
+  .hbtrack{flex:1;height:14px;background:#eef1f5;border-radius:7px;overflow:hidden}
+  .hbfill{height:100%;border-radius:7px;min-width:2px;transition:width .2s}
+  .hbval{width:34px;text-align:right;font-size:12px;font-weight:700;flex:none}
+  .sub.mini{font-size:11px;margin-top:6px}
+  /* 3D風ピン棒グラフ */
+  .pinbar{position:relative;width:11px;border-radius:3px 3px 1px 1px;margin:0 auto 1px;
+    background:var(--c,#2f6df0);
+    box-shadow:2px 0 0 rgba(0,0,0,.20) inset, -2px 1px 3px rgba(0,0,0,.18);}
+  .pinbar::before{content:"";position:absolute;left:-1px;right:-1px;top:-3px;height:5px;border-radius:50%;
+    background:var(--cap,#5b8af5);}
+  .map-pin.sel .pinbar{width:13px;outline:2px solid rgba(47,109,240,.30);outline-offset:1px}
+  /* 定期投稿状況カード */
+  .poststatus{display:flex;gap:12px}
+  .poststatus .pimg{width:84px;height:84px;border-radius:10px;flex:none;display:flex;align-items:center;
+    justify-content:center;font-size:32px;background:linear-gradient(135deg,#eef3ff,#f7eefc);border:1px solid var(--line);overflow:hidden}
+  .poststatus .pimg img{width:100%;height:100%;object-fit:cover}
+  .poststatus .pbody{flex:1;min-width:0}
+  /* 最新／次の投稿 2カラム */
+  .postgrid{display:grid;grid-template-columns:1fr;gap:12px}
+  .postcol{border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:#fafbfc}
+  .postcol-hd{font-size:12px;font-weight:700;color:var(--sub);margin-bottom:7px}
+  /* グラフ：指標切替セグメント＋ツールチップ */
+  .metricseg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 10px}
+  .metricseg button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;color:var(--sub)}
+  .metricseg button.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+  .chartwrap .hit{cursor:pointer}
+  .charttip{position:fixed;z-index:200;background:#1f2430;color:#fff;font-size:12px;font-weight:600;
+    padding:6px 10px;border-radius:8px;pointer-events:none;display:none;box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap}
+  /* 全店舗レポート 一覧テーブル */
+  .alltbl{width:100%;border-collapse:collapse;font-size:13px}
+  .alltbl th,.alltbl td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  .alltbl th:first-child,.alltbl td:first-child{text-align:left}
+  .alltbl thead th{background:#3a4253;color:#fff;font-size:11px;font-weight:700;position:sticky;top:0}
+  .alltbl thead th .sub{display:block;font-size:9px;color:#c7cdd9;font-weight:400}
+  .alltbl tbody tr:hover{background:#f5f8ff}
+  .gdot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
+  /* マップ：ポップ表示用（縦長・店名＋数値はっきり） */
+  .map-mock.tall{height:62vh;min-height:380px}
+  .map-mock.tall .map-pin .lab{display:inline-block}
+  .map-mock.tall .map-pin .dotpin{width:20px;height:20px}
+  .mapseg{display:flex;gap:6px;flex-wrap:wrap}
+  .mapseg button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;color:var(--sub)}
+  .mapseg button.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+  .map-pin .lab b{display:block;font-size:11px;color:var(--ink)}
+  .bodyclip{font-size:13px;color:#333;max-height:3.3em;overflow:hidden;cursor:pointer;
+    border-left:3px solid var(--line);padding-left:8px;margin-top:5px}
+  .bodyclip .more{color:var(--accent);font-weight:700;font-size:12px}
+  /* 活動カレンダー */
+  .calhead{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+  .toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--sub)}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:8px}
+  .cal .dow{text-align:center;font-size:11px;color:var(--sub);font-weight:700;padding:2px 0}
+  .cal .cell{min-height:56px;border:1px solid var(--line);border-radius:8px;padding:3px 4px;background:#fff;overflow:hidden}
+  .cal .cell.muted{background:#fafbfc;border-style:dashed}
+  .cal .cell.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .cal .dnum{font-weight:700;font-size:11px}
+  .cal .ev{display:block;margin-top:2px;font-size:9px;border-radius:4px;padding:1px 3px;line-height:1.35;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal .ev.post{background:var(--okbg);color:var(--ok)}
+  .cal .ev.plan{background:#eaf0ff;color:var(--accent)}
+  .cal .ev.rep{background:var(--warnbg);color:var(--warn)}
+  .callegend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--sub)}
+  .callegend span{display:inline-flex;align-items:center;gap:4px}
+  .callegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+  /* ダッシュのレイアウト枠（スマホ＝1列） */
+  .dashgrid{display:grid;grid-template-columns:1fr;gap:14px}
+  .dashgrid>.card{margin-bottom:0}
+  /* レポートまとめ */
+  .sumgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .sumbox{border:1px solid var(--line);border-radius:10px;padding:11px;background:#fafbfc}
+  .sumbox .t{font-size:12px;color:var(--sub)} .sumbox .v{font-size:18px;font-weight:800;margin-top:1px}
+  .sumbox .s{font-size:11px;color:var(--sub)}
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:80}
+  .overlay.open{display:flex}
+  .sheet{background:#fff;width:100%;max-width:880px;margin:0 auto;border-radius:16px 16px 0 0;padding:18px 18px 26px;max-height:84vh;overflow:auto}
+  .sheet h3{margin:0 0 12px;font-size:16px}
+  .sheet .close{margin-top:14px;width:100%;text-align:center;padding:12px;background:var(--bg);border-radius:10px;border:none;font-size:15px}
+  code{background:#eef1f5;padding:1px 5px;border-radius:5px;font-size:12px}
+
+  /* ===== PC（広い画面）＝2列レイアウト。スマホは1列のまま ===== */
+  @media(min-width:880px){
+    main{max-width:1180px;padding:18px 20px 96px}
+    .tabbar,.navPanel{max-width:1180px}
+    .dashgrid{grid-template-columns:1fr 1fr;align-items:start}
+    .dashgrid>.span2{grid-column:1 / -1}
+    .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+    .sumgrid{grid-template-columns:repeat(4,1fr)}
+    .gal{grid-template-columns:repeat(4,1fr)}
+    .map-mock{height:300px}
+  }
+  @media(min-width:1100px){
+    .sumgrid{grid-template-columns:repeat(7,1fr)}
+  }
+  /* トースト */
+  .toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%) translateY(12px);
+    z-index:120;background:#1f2430;color:#fff;padding:10px 16px;border-radius:22px;font-size:13px;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:88%;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* トップへ戻る */
+  .toTop{position:fixed;right:14px;bottom:74px;z-index:110;width:42px;height:42px;border-radius:50%;
+    border:1px solid var(--line);background:var(--card);color:var(--accent);font-size:19px;line-height:1;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);cursor:pointer;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toTop.show{opacity:1;pointer-events:auto}
+  @media(min-width:880px){ .toast{bottom:24px} .toTop{bottom:22px;right:22px} }
+  /* 印刷（レポートまとめのPDF保存用） */
+  @media print{
+    .tabbar,.navPanel,.toTop,.toast,header,.noprint{display:none!important}
+    body{background:#fff}
+    main{max-width:none;padding:0}
+    .card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== ログイン画面（地図風背景） ===================== -->
+<div class="login-wrap" id="loginWrap">
+  <div class="mapbg"></div>
+  <!-- 散らした店舗ピン（雰囲気） -->
+  <div class="login-pin" style="left:14%;top:22%;color:#2f6df0">📍</div>
+  <div class="login-pin" style="left:30%;top:64%;color:#138a52;animation-delay:.4s">📍</div>
+  <div class="login-pin" style="left:68%;top:30%;color:#a24bd0;animation-delay:.8s">📍</div>
+  <div class="login-pin" style="left:82%;top:70%;color:#2f6df0;animation-delay:1.2s">📍</div>
+  <div class="login-pin" style="left:52%;top:14%;color:#138a52;animation-delay:1.6s">📍</div>
+  <div class="login-card">
+    <div style="font-size:34px">📍</div>
+    <h1>MEO運用ツール</h1>
+    <p class="sub">あさばグループ様</p>
+    <div class="field">
+      <label>メールアドレス</label>
+      <input type="email" id="loginEmail" placeholder="you@example.com" value="">
+    </div>
+    <div class="field">
+      <label>パスワード</label>
+      <input type="password" id="loginPass" placeholder="••••••••" value="">
+    </div>
+    <button class="btn" style="width:100%;padding:13px" onclick="doLogin()">ログイン</button>
+    <p class="sub" style="margin-top:14px">招待制ログインは、後で外部の認証サービス（Firebase）でつなぎます。</p>
+  </div>
+</div>
+
+<!-- ===================== アプリ本体 ===================== -->
+<div class="app" id="app">
+  <header>
+    <div class="ttl">📍 MEO運用ツール</div>
+    <div class="acct">
+      <span class="dot"></span>
+      <span id="acctName">あさばグループ</span>
+      <button class="btn ghost sm" id="themeBtn" onclick="toggleTheme()" title="表示モードを切り替え">🌙</button>
+      <button class="btn ghost sm" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+
+  <!-- メイン画面＝ダッシュボード（常に下に表示） -->
+  <main>
+    <div id="page-dash"></div>
+  </main>
+
+  <!-- スライドアップ・ナビパネル（投稿/画像/設定） -->
+  <div class="navPanel" id="navPanel">
+    <div class="grab" id="grabHandle">
+      <div class="grab-bar"></div>
+      <div class="grab-tabs">
+        <button data-sub="0" class="on" onclick="goSub(0)">✍️ 投稿づくり</button>
+        <button data-sub="1" onclick="goSub(1)">🖼️ 画像</button>
+        <button data-sub="2" onclick="goSub(2)">🔗 リンク集</button>
+        <button data-sub="3" onclick="goSub(3)">⚙️ 設定</button>
+      </div>
+      <button class="grab-close" onclick="closePanel()">▾ 下にスワイプでダッシュボードに戻る</button>
+    </div>
+    <div class="track-vp" id="trackVp">
+      <div class="track" id="subTrack">
+        <section class="subpage" id="page-post"></section>
+        <section class="subpage" id="page-gallery"></section>
+        <section class="subpage" id="page-links"></section>
+        <section class="subpage" id="page-settings"></section>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabbar">
+    <button class="on" data-tab="dash" onclick="switchTab('dash')"><span class="ic">📊</span>ダッシュ</button>
+    <button data-tab="post" onclick="switchTab('post')"><span class="ic">✍️</span>投稿</button>
+    <button data-tab="gallery" onclick="switchTab('gallery')"><span class="ic">🖼️</span>画像</button>
+    <button data-tab="links" onclick="switchTab('links')"><span class="ic">🔗</span>リンク</button>
+    <button data-tab="settings" onclick="switchTab('settings')"><span class="ic">⚙️</span>設定</button>
+  </nav>
+</div>
+
+<!-- modal -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" id="sheetBody"></div>
+</div>
+
+<!-- トースト（一時的なお知らせ） -->
+<div class="toast" id="toast" aria-live="polite"></div>
+
+<!-- トップへ戻る -->
+<button class="toTop" id="toTop" onclick="scrollTopSmooth()" aria-label="トップへ戻る" title="トップへ戻る">↑</button>
+
+<script>
+/* =========================================================
+   MEO運用ツール（あさばグループ様）v1.0 本番運用版
+   ・月次レポートCSVの取込で数値を表示（②月次レポートDB列に対応）
+   ・投稿/画像は端末（localStorage）に保存し、CSVでNotion⑦⑧⑨と連携
+   ・GMO一括投稿は48列CSV→GMO書き出しツール（meo-export.html）で.xlsx化
+   ・ログイン認証（招待制）は次フェーズで接続
+   ========================================================= */
+
+/* ===== 店舗マスタ（mx/myは店舗マップの表示座標） ===== */
+const DATA = {
+  account:"あさばグループ",
+  stores:[
+    {code:"ASK-EDO", name:"あさば整骨院 江戸川台",   group:"整骨院", mx:22, my:30},
+    {code:"ASK-SMT", name:"あさば整骨院 新松戸",     group:"整骨院", mx:34, my:52},
+    {code:"ASK-NGR", name:"あさば整骨院 南流山",     group:"整骨院", mx:42, my:44, gmoId:"117413"},
+    {code:"ASK-KSW", name:"あさば整骨院 柏の葉",     group:"整骨院", mx:50, my:26},
+    {code:"ASK-YSO", name:"あさば整骨院 八潮",       group:"整骨院", mx:24, my:70},
+    {code:"AST-MSC", name:"あさば整体院 三郷中央",   group:"整体院", mx:30, my:62},
+    {code:"AST-MNW", name:"あさば整体院 三ノ輪",     group:"整体院", mx:18, my:82},
+    {code:"AST-MRY", name:"あさば整体院 守谷",       group:"整体院", mx:64, my:16},
+    {code:"AST-ABK", name:"あさば整体院 我孫子",     group:"整体院", mx:62, my:38},
+    {code:"PCE-KSW", name:"マシンピラティスPeace 柏の葉", group:"Peace", mx:54, my:30},
+    {code:"PCE-NGR", name:"マシンピラティスPeace 南流山", group:"Peace", mx:46, my:48},
+    {code:"PCE-YSO", name:"マシンピラティスPeace 八潮",   group:"Peace", mx:28, my:74},
+    {code:"PCE-MSC", name:"マシンピラティスPeace 三郷中央",group:"Peace", mx:34, my:66},
+    {code:"PCE-ABK", name:"マシンピラティスPeace 我孫子", group:"Peace", mx:66, my:42},
+    {code:"PCE-MRY", name:"マシンピラティスPeace 守谷",   group:"Peace", mx:70, my:20},
+    {code:"PCE-SMT", name:"マシンピラティスPeace 新松戸", group:"Peace", mx:38, my:56},
+  ],
+  monthly:{}, // ②月次レポートから取込（"店舗コード" -> { "YYYY-MM": {...} }）
+  schedule:[], // ⑦定期投稿スケジュール＋⑧投稿文（端末保存／CSVでNotionと連携）
+  gallery:[],  // ⑨サムネ画像管理（端末保存／CSVでNotionと連携）
+};
+
+/* ===== 指標の定義 ===== */
+const METRICS={
+  rank:{label:"KW平均順位", unit:"位", better:"low", icon:"📍"},
+  views:{label:"表示回数", unit:"回", better:"high", icon:"👀"},
+  web:{label:"ウェブクリック", unit:"回", better:"high", icon:"🌐"},
+  tel:{label:"電話タップ", unit:"回", better:"high", icon:"📞"},
+  route:{label:"ルート検索", unit:"回", better:"high", icon:"🚗"},
+  reviews:{label:"口コミ件数", unit:"件", better:"high", icon:"💬"},
+  rating:{label:"平均評価", unit:"", better:"high", icon:"⭐", decimal:true},
+};
+/* 目標CTAに選べる指標（順位は除く） */
+const CTA_KEYS=["tel","web","route","views"];
+/* 指標カードに並べる順（目標CTAを先頭に動的並べ替え） */
+const KPI_KEYS=["views","web","tel","route","reviews","rating","rank"];
+/* グラフで切替できる指標 */
+const CHART_KEYS=["views","web","tel","route","reviews","rating"];
+/* ランキングで切替できる指標 */
+const RANK_KEYS=["rank","views","web","tel","route","reviews","rating"];
+/* 店舗グループ（整骨院／整体院／Peace） */
+const RANK_GROUPS=["整骨院","整体院","Peace"];
+
+/* ===== グローバル設定（本番では管理者が変更／Notionに保存） ===== */
+const SETTINGS={
+  period:{year:2026, month:6},   // 表示中の対象月
+  targetCTA:"tel",               // 指標カードの主役＝目標CTA
+  chartMetric:"views",           // メイングラフに表示する指標
+  chartType:"bar",               // bar | line | area
+  rankMetric:"rank",             // ランキングの並べ替え指標
+  rankScope:"group",             // ランキングの範囲（group=グループ別 / all=全体 / tier=グループ階層）
+  rankTrend:"mom",               // ランキングの推移列（前月比/3ヶ月/6ヶ月/12ヶ月）
+  postFilter:"all",              // 投稿予定一覧の状態しぼり込み（all/投稿済/作成中/未投稿）
+  postGroup:"all",               // 投稿予定一覧のグループしぼり込み（all/整骨院/整体院/Peace）
+  galFilter:"all",               // 画像ギャラリーの状態しぼり込み（all/未生成/生成済/確定）
+  groupKW:{ "整骨院":"整体", "整体院":"整体", "Peace":"マシンピラティス" },
+};
+const THEME_COLORS={ "整骨院":"#2f6df0", "整体院":"#138a52", "Peace":"#a24bd0" };
+/* ランキングの推移列の選択肢 */
+const TREND_OPTS=[
+  {key:"mom", label:"前月比",     months:1},
+  {key:"m3",  label:"3ヶ月推移",  months:3},
+  {key:"m6",  label:"6ヶ月推移",  months:6},
+  {key:"m12", label:"12ヶ月推移", months:12},
+];
+/* ユーザー個別設定（本番では各自のアカウントに保存・他の人には非公開） */
+const USER={ aiTextUrl:"", aiImageUrl:"" };
+
+/* ===== 月キー生成（2024-01 〜 2026-06） ===== */
+function keyOf(y,m){return y+"-"+String(m).padStart(2,"0");}
+function prevKey(k){let[y,m]=k.split("-").map(Number);m--;if(m<1){m=12;y--;}return keyOf(y,m);}
+function yoyKey(k){let[y,m]=k.split("-").map(Number);return keyOf(y-1,m);}
+function trailing12(y,m){const out=[];let yy=y,mm=m;for(let i=0;i<12;i++){out.unshift(keyOf(yy,mm));mm--;if(mm<1){mm=12;yy--;}}return out;}
+
+/* ===== 月次レポートデータ（②月次レポートDBから取込・端末に保存） =====
+   GMOにAPIが無いため自動取得はできません。月次レポート（CSV）を取り込んで
+   localStorage に保存し、ダッシュボードに反映します。
+   CSV列：店舗／対象月／表示回数／ウェブクリック／電話タップ／ルート検索／
+          平均KW順位／口コミ件数／平均評価／所感・コメント                */
+const REPORTS_KEY='meo_reports_v1';
+function loadReports(){
+  DATA.monthly={};
+  try{
+    const raw=localStorage.getItem(REPORTS_KEY); if(!raw) return;
+    const obj=JSON.parse(raw);
+    if(obj && typeof obj==='object') DATA.monthly=obj;
+  }catch(e){}
+}
+function saveReports(){
+  try{ localStorage.setItem(REPORTS_KEY, JSON.stringify(DATA.monthly)); }catch(e){}
+}
+function hasReportData(){
+  return Object.keys(DATA.monthly).some(c=>Object.keys(DATA.monthly[c]||{}).length);
+}
+loadReports();
+
+/* ===== CSV共通：パース／生成／ダウンロード ===== */
+function parseCSV(text){
+  const rows=[]; let i=0, field='', row=[], inQ=false;
+  text=String(text).replace(/^\uFEFF/,'').replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+  while(i<text.length){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i+=2;continue;} inQ=false;i++;continue; }
+      field+=c;i++;continue;
+    }
+    if(c==='"'){ inQ=true;i++;continue; }
+    if(c===','){ row.push(field);field='';i++;continue; }
+    if(c==='\n'){ row.push(field);rows.push(row);row=[];field='';i++;continue; }
+    field+=c;i++;
+  }
+  if(field.length||row.length){ row.push(field);rows.push(row); }
+  return rows.filter(r=>r.some(x=>String(x).trim()!==''));
+}
+function toCSV(rows){
+  return rows.map(r=>r.map(v=>{
+    const s=v==null?'':String(v);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(',')).join('\r\n');
+}
+function downloadText(filename, text, mime){
+  const blob=new Blob(["\uFEFF"+text],{type:(mime||'text/csv')+';charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+/* 隠しファイル入力でCSVを選ばせる汎用ヘルパー */
+function pickCSV(onText){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.csv,text/csv';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
+    const rd=new FileReader(); rd.onload=()=>onText(String(rd.result)); rd.readAsText(f,'utf-8'); };
+  inp.click();
+}
+/* 店舗名/コード→店舗コード */
+function resolveStoreCode(v){
+  if(!v) return null;
+  const t=String(v).trim(); if(!t) return null;
+  let s=DATA.stores.find(x=>x.code===t); if(s) return s.code;
+  s=DATA.stores.find(x=>x.name===t); if(s) return s.code;
+  const z=x=>String(x).replace(/[ 　]/g,'');
+  s=DATA.stores.find(x=>z(x.name).includes(z(t)) || z(t).includes(z(x.name)));
+  return s?s.code:null;
+}
+/* 対象月→YYYY-MM */
+function normMonth(v){
+  if(!v) return null;
+  const m=String(v).trim().match(/(\d{4})\D+(\d{1,2})/);
+  return m ? m[1]+"-"+String(Number(m[2])).padStart(2,"0") : null;
+}
+/* ===== 月次レポートCSVの取込 ===== */
+function importReportsCSV(){
+  pickCSV(text=>{
+    try{
+      const rows=parseCSV(text);
+      if(rows.length<2){ toast('データ行が見つかりませんでした。'); return; }
+      const head=rows[0].map(h=>String(h).trim());
+      const at=name=>head.findIndex(h=>h===name);
+      const ci={
+        store: at('店舗')>=0?at('店舗'):at('店舗名'),
+        month: at('対象月'), views: at('表示回数'), web: at('ウェブクリック'),
+        tel: at('電話タップ'), route: at('ルート検索'), rank: at('平均KW順位'),
+        reviews: at('口コミ件数'), rating: at('平均評価'), comment: at('所感・コメント')
+      };
+      const num=v=>{ if(v==null||String(v).trim()==='')return null; const n=parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return isNaN(n)?null:n; };
+      const cell=(row,i)=> i>=0 ? row[i] : undefined;
+      let ok=0, ng=0;
+      for(let r=1;r<rows.length;r++){
+        const row=rows[r];
+        const code=resolveStoreCode(cell(row,ci.store));
+        const key=normMonth(cell(row,ci.month));
+        if(!code||!key){ ng++; continue; }
+        if(!DATA.monthly[code]) DATA.monthly[code]={};
+        DATA.monthly[code][key]={
+          views:num(cell(row,ci.views)), web:num(cell(row,ci.web)), tel:num(cell(row,ci.tel)),
+          route:num(cell(row,ci.route)), rank:num(cell(row,ci.rank)), reviews:num(cell(row,ci.reviews)),
+          rating:(()=>{ const n=num(cell(row,ci.rating)); return n==null?null:n.toFixed(1); })(),
+          comment:(ci.comment>=0?String(cell(row,ci.comment)||'').trim():'')
+        };
+        ok++;
+      }
+      saveReports(); renderAll();
+      toast(`✅ ${ok}件のレポートを取り込みました${ng?`（${ng}件はスキップ）`:''}。`);
+    }catch(e){ toast('CSVの読み込みに失敗しました。形式をご確認ください。'); }
+  });
+}
+/* 取込フォーマット見本のCSVを書き出し（②月次レポートDBの列に対応） */
+function exportReportTemplate(){
+  const head=['店舗','対象月','表示回数','ウェブクリック','電話タップ','ルート検索','平均KW順位','口コミ件数','平均評価','所感・コメント'];
+  const cur=`${SETTINGS.period.year}-${String(SETTINGS.period.month).padStart(2,'0')}`;
+  const rows=[head].concat(DATA.stores.map(s=>[s.name,cur,'','','','','','','','']));
+  downloadText('月次レポート取込フォーマット.csv', toCSV(rows));
+  toast('📄 取込フォーマットを書き出しました。');
+}
+/* 取り込んだレポートを全消去 */
+function clearReports(){
+  if(!confirm('取り込んだ月次レポートをすべて消去します。よろしいですか？')) return;
+  DATA.monthly={}; saveReports(); renderAll();
+  toast('🗑️ レポートデータを消去しました。');
+}
+
+/* ===== 投稿スケジュール＋投稿文（⑦＋⑧）の端末保存とNotion連携CSV ===== */
+const SCHEDULE_KEY='meo_schedule_v1';
+function loadSchedule(){
+  try{ const r=localStorage.getItem(SCHEDULE_KEY); DATA.schedule = r?JSON.parse(r):[]; }catch(e){ DATA.schedule=[]; }
+  if(!Array.isArray(DATA.schedule)) DATA.schedule=[];
+}
+function saveSchedule(){ try{ localStorage.setItem(SCHEDULE_KEY, JSON.stringify(DATA.schedule)); }catch(e){} }
+loadSchedule();
+/* 投稿予定IDを採番（店舗コード-YYYYMMDD-種別連番） */
+function makePostId(code,date,type){
+  const d=String(date||'').replace(/\D/g,'').slice(0,8) || String(new Date().toISOString().slice(0,10)).replace(/\D/g,'');
+  const tp = type==='イベント'?'IV':(type==='クーポン'?'CP':'NT');
+  let n=1; let id;
+  do{ id=`${code}-${d}-${tp}${String(n).padStart(2,'0')}`; n++; }while(DATA.schedule.some(p=>p.id===id));
+  return id;
+}
+/* ＋投稿予定を追加（端末に保存・あとでCSVでNotion⑦へ） */
+function addScheduleEntry(){
+  const storeOpts=DATA.stores.map(s=>`${s.code}：${s.name}`).join('\n');
+  const code=prompt('店舗コードを入力してください。\n\n'+storeOpts, DATA.stores[0].code);
+  if(code===null) return;
+  const st=DATA.stores.find(x=>x.code===String(code).trim());
+  if(!st){ alert('その店舗コードは見つかりませんでした。'); return; }
+  const date=prompt('投稿予定日（例 2026-07-10）', `${SETTINGS.period.year}-${String(SETTINGS.period.month).padStart(2,'0')}-01`);
+  if(date===null) return;
+  const type=prompt('投稿タイプ（最新情報／イベント／クーポン）','最新情報'); if(type===null) return;
+  const theme=prompt('テーマ・メモ（任意）',''); if(theme===null) return;
+  const entry={ id:makePostId(st.code, date, (type||'最新情報').trim()), store:st.code,
+    type:(type||'最新情報').trim(), date:(date||'').trim(), theme:(theme||'').trim(),
+    status:'未投稿', img:'📝', title:'', body:'' };
+  DATA.schedule.push(entry); saveSchedule(); renderPost(); renderDash();
+  toast('＋ 投稿予定を追加しました（'+entry.id+'）。');
+}
+/* 投稿づくりの「下書き保存」：タイトル・本文を端末に保存 */
+function saveDraft(id){
+  const p=DATA.schedule.find(x=>x.id===id); if(!p){ alert('対象の投稿が見つかりません。'); return; }
+  p.title=el('postTitle')?el('postTitle').value:p.title;
+  p.body =el('postBody') ?el('postBody').value :p.body;
+  if(p.body && p.status==='未投稿') p.status='作成中';
+  saveSchedule(); renderPost(); renderDash();
+  toast('💾 下書きを保存しました。');
+}
+/* 投稿管理CSVを取込（⑦＋⑧。投稿予定IDで突合・無ければ追加） */
+function importScheduleCSV(){
+  pickCSV(text=>{
+    try{
+      const rows=parseCSV(text); if(rows.length<2){ toast('データ行が見つかりませんでした。'); return; }
+      const head=rows[0].map(h=>String(h).trim());
+      const at=(...names)=>{ for(const n of names){ const i=head.indexOf(n); if(i>=0) return i; } return -1; };
+      const ci={ id:at('投稿予定ID'), store:at('店舗','店舗名'), date:at('投稿予定日','投稿予定','予定日'),
+        type:at('投稿タイプ','投稿タイプ'), status:at('ステータス','状態'), theme:at('備考','テーマ'),
+        title:at('投稿タイトル','タイトル'), body:at('投稿内容','本文') };
+      const g=(row,i)=> i>=0 ? String(row[i]||'').trim() : '';
+      let ok=0, ng=0;
+      for(let r=1;r<rows.length;r++){
+        const row=rows[r];
+        const code=resolveStoreCode(g(row,ci.store));
+        if(!code){ ng++; continue; }
+        let id=g(row,ci.id);
+        const date=g(row,ci.date), type=g(row,ci.type)||'最新情報';
+        if(!id) id=makePostId(code,date,type);
+        const ex=DATA.schedule.find(p=>p.id===id);
+        const obj={ id, store:code, type, date, theme:g(row,ci.theme),
+          status:g(row,ci.status)||'未投稿', img:(ex&&ex.img)||'📝',
+          title:g(row,ci.title), body:g(row,ci.body) };
+        if(ex) Object.assign(ex,obj); else DATA.schedule.push(obj);
+        ok++;
+      }
+      saveSchedule(); renderAll();
+      toast(`✅ 投稿 ${ok}件を取り込みました${ng?`（${ng}件はスキップ）`:''}。`);
+    }catch(e){ toast('CSVの読み込みに失敗しました。'); }
+  });
+}
+/* 投稿管理をCSVで書き出し（Notion⑦⑧へ貼り付け用） */
+function exportScheduleCSV(){
+  const head=['投稿予定ID','店舗','投稿予定日','投稿タイプ','ステータス','備考','投稿タイトル','投稿内容'];
+  const rows=[head].concat(DATA.schedule.map(p=>{
+    const st=DATA.stores.find(x=>x.code===p.store);
+    return [p.id, st?st.name:p.store, p.date||'', p.type||'', p.status||'', p.theme||'', p.title||'', p.body||''];
+  }));
+  downloadText('投稿管理_書き出し.csv', toCSV(rows));
+  toast('⬇️ 投稿管理をCSVで書き出しました（'+DATA.schedule.length+'件）。');
+}
+
+/* ===== サムネ画像管理（⑨）の端末保存とNotion連携CSV ===== */
+const GALLERY_KEY='meo_gallery_v1';
+function loadGallery(){
+  try{ const r=localStorage.getItem(GALLERY_KEY); DATA.gallery = r?JSON.parse(r):[]; }catch(e){ DATA.gallery=[]; }
+  if(!Array.isArray(DATA.gallery)) DATA.gallery=[];
+}
+function saveGallery(){ try{ localStorage.setItem(GALLERY_KEY, JSON.stringify(DATA.gallery)); }catch(e){} }
+loadGallery();
+/* ＋画像情報を登録（実ファイルはDrive／GMOへ。ここでは管理情報を保存） */
+function addGalleryEntry(){
+  const pid=prompt('ひも付ける投稿予定ID（例 ASK-NGR-20260701-NT02）','');
+  if(pid===null) return;
+  const base=String(pid).trim(); if(!base){ alert('投稿予定IDを入力してください。'); return; }
+  const code=resolveStoreCode(base.replace(/-\d{8}-.*$/,'')) || (DATA.schedule.find(p=>p.id===base)||{}).store || '';
+  let n=1, gid; do{ gid=`${base}-image${String(n).padStart(2,'0')}`; n++; }while(DATA.gallery.some(g=>g.id===gid));
+  const ai=prompt('生成AI（ChatGPT／Gemini／その他）','ChatGPT'); if(ai===null) return;
+  const drive=prompt('Drive保存先URL（任意）',''); if(drive===null) return;
+  DATA.gallery.push({ id:gid, store:code, ai:(ai||'ChatGPT').trim(), status:'未生成', drive:(drive||'').trim() });
+  saveGallery(); renderGallery();
+  toast('＋ 画像情報を登録しました（'+gid+'）。');
+}
+function importGalleryCSV(){
+  pickCSV(text=>{
+    try{
+      const rows=parseCSV(text); if(rows.length<2){ toast('データ行が見つかりませんでした。'); return; }
+      const head=rows[0].map(h=>String(h).trim());
+      const at=(...names)=>{ for(const n of names){ const i=head.indexOf(n); if(i>=0) return i; } return -1; };
+      const ci={ id:at('画像ID'), ai:at('生成AI'), status:at('ステータス','状態'), drive:at('Drive保存先','Drive保存先URL') };
+      const g=(row,i)=> i>=0 ? String(row[i]||'').trim() : '';
+      let ok=0, ng=0;
+      for(let r=1;r<rows.length;r++){
+        const row=rows[r]; const id=g(row,ci.id); if(!id){ ng++; continue; }
+        const code=resolveStoreCode(id.replace(/-image\d+$/i,'').replace(/-\d{8}-.*$/,'')) || '';
+        const ex=DATA.gallery.find(x=>x.id===id);
+        const obj={ id, store:code, ai:g(row,ci.ai)||'その他', status:g(row,ci.status)||'未生成', drive:g(row,ci.drive) };
+        if(ex) Object.assign(ex,obj); else DATA.gallery.push(obj);
+        ok++;
+      }
+      saveGallery(); renderGallery();
+      toast(`✅ 画像 ${ok}件を取り込みました${ng?`（${ng}件はスキップ）`:''}。`);
+    }catch(e){ toast('CSVの読み込みに失敗しました。'); }
+  });
+}
+function exportGalleryCSV(){
+  const head=['画像ID','店舗','生成AI','ステータス','Drive保存先'];
+  const rows=[head].concat(DATA.gallery.map(g=>{
+    const st=DATA.stores.find(x=>x.code===g.store);
+    return [g.id, st?st.name:g.store, g.ai||'', g.status||'', g.drive||''];
+  }));
+  downloadText('サムネ画像管理_書き出し.csv', toCSV(rows));
+  toast('⬇️ 画像管理をCSVで書き出しました（'+DATA.gallery.length+'件）。');
+}
+
+/* ===== ユーティリティ ===== */
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function el(id){return document.getElementById(id);}
+let _toastTimer=null;
+function toast(msg){
+  const t=el('toast'); if(!t)return;
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>t.classList.remove('show'),1800);
+}
+function scrollTopSmooth(){ window.scrollTo({top:0,behavior:'smooth'}); }
+window.addEventListener('scroll',()=>{
+  const b=el('toTop'); if(!b)return;
+  b.classList.toggle('show', window.scrollY>320);
+});
+/* ===== 表示モード（ライト/ダーク）＋ 設定の保存 ===== */
+const PREFS_KEY='meoAppPrefs_v1';
+function applyTheme(mode){
+  document.body.classList.toggle('dark', mode==='dark');
+  const btn=el('themeBtn'); if(btn) btn.textContent = mode==='dark' ? '☀️' : '🌙';
+}
+function toggleTheme(){
+  const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+  applyTheme(next); savePrefs();
+  toast(next==='dark' ? '🌙 ダークモードにしました' : '☀️ ライトモードにしました');
+}
+function savePrefs(){
+  try{
+    const data={
+      theme: document.body.classList.contains('dark') ? 'dark' : 'light',
+      aiTextUrl: USER.aiTextUrl||'', aiImageUrl: USER.aiImageUrl||''
+    };
+    localStorage.setItem(PREFS_KEY, JSON.stringify(data));
+  }catch(e){}
+}
+function loadPrefs(){
+  try{
+    const raw=localStorage.getItem(PREFS_KEY); if(!raw)return;
+    const d=JSON.parse(raw);
+    if(d.theme) applyTheme(d.theme);
+    if(typeof d.aiTextUrl==='string') USER.aiTextUrl=d.aiTextUrl;
+    if(typeof d.aiImageUrl==='string') USER.aiImageUrl=d.aiImageUrl;
+  }catch(e){}
+}
+loadPrefs();
+function getM(code,key){return (DATA.monthly[code]||{})[key]||null;}
+/* 指標の生値を数値で取り出す（rating は "4.7" の文字列で保存されているため数値化／空は null） */
+function mv(m,key){ if(!m)return null; const v=m[key]; if(v==null||v==='')return null; const n=Number(v); return isNaN(n)?null:n; }
+/* 指標値を表示文字列に整形（rank=○位／rating=小数1桁／他=桁区切り＋単位） */
+function fmtMetric(key,val){
+  if(val==null) return '—';
+  const M=METRICS[key];
+  if(key==='rank') return val+'位';
+  if(M.decimal) return Number(val).toFixed(1);
+  return Number(val).toLocaleString()+M.unit;
+}
+function curKey(){return keyOf(SETTINGS.period.year,SETTINGS.period.month);}
+let CURRENT_STORE = DATA.stores[2].code; // 初期＝南流山
+
+/* 差分ピル（cur vs cmp、指標の良い向きを考慮） */
+function deltaPill(metricKey, cur, cmp, tag){
+  cur=cur==null||cur===''?null:Number(cur); cmp=cmp==null||cmp===''?null:Number(cmp);
+  if(cmp==null||cur==null||isNaN(cur)||isNaN(cmp)) return `<span class="t">${tag}</span><span class="pill flat">—</span>`;
+  const M=METRICS[metricKey], better=M.better;
+  let imp = better==="low" ? (cmp-cur) : (cur-cmp);   // プラス＝改善
+  const av = M.decimal ? Math.abs(imp).toFixed(1) : Math.abs(imp).toLocaleString();
+  let cls = imp>0?"up":(imp<0?"down":"flat");
+  let arrow = imp>0?"▲":(imp<0?"▼":"±");
+  return `<span class="t">${tag}</span><span class="pill ${cls}">${arrow}${av}${M.unit}</span>`;
+}
+
+/* ===== ログイン（認証は次フェーズで接続） ===== */
+function doLogin(){ el('loginWrap').style.display='none'; el('app').style.display='block'; renderAll(); }
+function logout(){ closePanel(); el('app').style.display='none'; el('loginWrap').style.display='flex'; }
+
+/* ===== ナビ：スライドアップ・パネル＋左右スワイプ ===== */
+let SUB=0; // 0=投稿 1=画像 2=リンク集 3=設定
+const SUB_TABS=['post','gallery','links','settings'];
+function setTabbar(active){
+  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.tab===active));
+}
+function switchTab(tab){
+  if(tab==='dash'){ closePanel(); return; }
+  const idx={post:0,gallery:1,links:2,settings:3}[tab];
+  openPanel(idx);
+}
+function openPanel(idx){ goSub(idx); el('navPanel').classList.add('open'); }
+function closePanel(){ el('navPanel').classList.remove('open'); setTabbar('dash'); }
+function goSub(i){
+  SUB=Math.max(0,Math.min(SUB_TABS.length-1,i));
+  el('subTrack').style.transform=`translateX(-${SUB*25}%)`;
+  document.querySelectorAll('.grab-tabs button').forEach(b=>b.classList.toggle('on', Number(b.dataset.sub)===SUB));
+  setTabbar(SUB_TABS[SUB]);
+}
+
+/* タッチ操作：横スワイプでサブ切替、グリップを下スワイプで閉じる */
+(function bindGestures(){
+  const track=()=>el('subTrack');
+  const vp=()=>el('trackVp');
+  let sx=0,sy=0,dragging=false,horiz=null;
+  vp.call&&0;
+  document.addEventListener('DOMContentLoaded',()=>{});
+  function tStart(e){const t=e.touches[0];sx=t.clientX;sy=t.clientY;dragging=true;horiz=null;}
+  function tMove(e){
+    if(!dragging)return;const t=e.touches[0];const dx=t.clientX-sx,dy=t.clientY-sy;
+    if(horiz===null){ if(Math.abs(dx)>10||Math.abs(dy)>10) horiz=Math.abs(dx)>Math.abs(dy); }
+    if(horiz){ e.preventDefault();
+      track().style.transition='none';
+      track().style.transform=`translateX(calc(-${SUB*25}% + ${dx*0.5}px))`;
+    }
+  }
+  function tEnd(e){
+    if(!dragging)return;dragging=false;
+    const ch=e.changedTouches[0];const dx=ch.clientX-sx,dy=ch.clientY-sy;
+    track().style.transition='';
+    if(horiz){
+      if(Math.abs(dx)>55){ goSub(SUB + (dx<0?1:-1)); } else { goSub(SUB); }
+    }
+  }
+  // グリップ部：下スワイプで閉じる
+  function gStart(e){const t=e.touches[0];sx=t.clientX;sy=t.clientY;dragging=true;}
+  function gMove(e){ if(!dragging)return; const t=e.touches[0]; const dy=t.clientY-sy;
+    if(dy>0){ e.preventDefault(); el('navPanel').style.transform=`translateY(${dy}px)`; } }
+  function gEnd(e){ if(!dragging)return;dragging=false; const dy=e.changedTouches[0].clientY-sy;
+    el('navPanel').style.transform=''; if(dy>90) closePanel(); }
+  window.addEventListener('load',()=>{
+    const v=el('trackVp'), g=el('grabHandle');
+    v.addEventListener('touchstart',tStart,{passive:true});
+    v.addEventListener('touchmove',tMove,{passive:false});
+    v.addEventListener('touchend',tEnd);
+    g.addEventListener('touchstart',gStart,{passive:true});
+    g.addEventListener('touchmove',gMove,{passive:false});
+    g.addEventListener('touchend',gEnd);
+  });
+})();
+
+/* ===== modal ===== */
+function openSheet(html){el('sheetBody').innerHTML=html+'<button class="close" onclick="closeSheet()">閉じる</button>';el('overlay').classList.add('open');}
+function closeSheet(){el('overlay').classList.remove('open');}
+/* ESCキーでモーダル／ナビパネルを閉じる */
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+  if(el('overlay')&&el('overlay').classList.contains('open')){ closeSheet(); return; }
+  if(el('navPanel')&&el('navPanel').classList.contains('open')){ closePanel(); }
+});
+
+/* ===== 全描画 ===== */
+function renderAll(){ renderDash(); renderPost(); renderGallery(); renderLinks(); renderSettings(); }
+
+/* ====================================================================
+   ① ダッシュボード（メイン画面）
+   ==================================================================== */
+const _now=new Date();
+const TODAY={y:_now.getFullYear(), m:_now.getMonth()+1, d:_now.getDate()};   // 今日（実日付）
+let SHOW_REPORT_CAL=true;                  // 活動カレンダーにレポート予定を表示
+function selectStore(code){ CURRENT_STORE=code; renderDash(); }
+function cycleStore(dir){
+  let i=DATA.stores.findIndex(x=>x.code===CURRENT_STORE);
+  i=(i+dir+DATA.stores.length)%DATA.stores.length;
+  CURRENT_STORE=DATA.stores[i].code; renderDash();
+}
+function setMonthInput(val){           // "YYYY-MM"（カレンダー入力）
+  if(!val)return; let[y,m]=val.split('-').map(Number);
+  if(y>2026||(y===2026&&m>6)){y=2026;m=6;}           // 今月(2026-06)を上限に
+  if(y<2025||(y===2025&&m<1)){y=2025;m=1;}
+  SETTINGS.period={year:y,month:m}; renderDash();
+}
+function resetMonth(){ SETTINGS.period={year:TODAY.y,month:TODAY.m}; renderDash(); }
+function toggleReportCal(v){ SHOW_REPORT_CAL=v; renderDash(); }
+function cycleRank(dir){
+  let i=RANK_KEYS.indexOf(SETTINGS.rankMetric);
+  i=(i+dir+RANK_KEYS.length)%RANK_KEYS.length;
+  SETTINGS.rankMetric=RANK_KEYS[i]; renderDash();
+}
+function setRankMetric(v){ SETTINGS.rankMetric=v; renderDash(); }
+function cycleRankTrend(dir){
+  let i=TREND_OPTS.findIndex(t=>t.key===SETTINGS.rankTrend);
+  i=(i+dir+TREND_OPTS.length)%TREND_OPTS.length;
+  SETTINGS.rankTrend=TREND_OPTS[i].key; renderDash();
+}
+function setRankScope(v){ SETTINGS.rankScope=v; renderDash(); }
+/* グループ単位の集計（rankは平均・それ以外は合計） */
+function groupAgg(group,metric,key){
+  let sum=0,n=0;
+  DATA.stores.filter(x=>x.group===group).forEach(x=>{const mm=getM(x.code,key);if(mm){sum+=mm[metric];n++;}});
+  if(!n)return null;
+  return metric==='rank' ? Math.round(sum/n*10)/10 : sum;
+}
+function groupSeries(group,metric,months){
+  const keys=[]; let kk=curKey();
+  for(let i=0;i<=months;i++){ keys.unshift(kk); kk=prevKey(kk); }
+  return keys.map(key=>groupAgg(group,metric,key));
+}
+function setAIUrl(which,v){ USER[which]=v; savePrefs(); toast('🔗 AIリンクを保存しました'); }
+/* 指定指標の直近(months+1)か月の値の並び（推移） */
+function trendSeries(code,metric,months){
+  const keys=[]; let kk=curKey();
+  for(let i=0;i<=months;i++){ keys.unshift(kk); kk=prevKey(kk); }
+  return keys.map(key=>mv(getM(code,key),metric));
+}
+/* 小さな推移スパークライン＋増減ピル */
+function miniSpark(vals,better,unit){
+  const nn=vals.filter(x=>x!=null);
+  if(nn.length<2) return '<span class="sub">—</span>';
+  const first=vals.find(x=>x!=null), last=[...vals].reverse().find(x=>x!=null);
+  const imp=better==="low"?(first-last):(last-first);
+  const cls=imp>0?'up':(imp<0?'down':'flat');
+  const mn=Math.min(...nn), mx=Math.max(...nn), W=58,H=18;
+  const pts=vals.map((v,i)=>{ if(v==null)return null; let t=(v-mn)/((mx-mn)||1); if(better==="low")t=1-t;
+    return (i*W/(vals.length-1)).toFixed(1)+","+((1-t)*(H-3)+1.5).toFixed(1); }).filter(Boolean).join(" ");
+  return `<div class="trendcell ${cls}"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg><span class="pill ${cls}">${imp>0?'▲':(imp<0?'▼':'±')}${Math.abs(imp)}${unit}</span></div>`;
+}
+function setChartType(v){ SETTINGS.chartType=v; renderDash(); renderSettings(); }
+function setChartMetric(v){ SETTINGS.chartMetric=v; renderDash(); }
+function setTargetCTADash(v){ SETTINGS.targetCTA=v; renderDash(); renderSettings(); }
+
+/* ===== 店舗マップ（ボタンでポップアップ表示・縦長＝スマホで見やすい） ===== */
+function buildMapPins(metricKey){
+  const k=curKey();
+  const vals=DATA.stores.map(x=>mv(getM(x.code,k),metricKey)).filter(v=>v!=null);
+  const vmin=vals.length?Math.min(...vals):0, vmax=vals.length?Math.max(...vals):1;
+  const barH=v=> (v==null)?6:((vmax===vmin)?26:Math.round(12+(v-vmin)/(vmax-vmin)*44));
+  return DATA.stores.map(x=>{
+    const c=THEME_COLORS[x.group]||"#888";
+    const sel=x.code===CURRENT_STORE?" sel":"";
+    const v=mv(getM(x.code,k),metricKey);
+    return `<div class="map-pin${sel}" style="left:${x.mx}%;top:${x.my}%" onclick="pickStoreFromMap('${x.code}')" title="${esc(x.name)}">
+      <div class="pinbar" style="height:${barH(v)}px;--c:${c};--cap:${lighten(c,0.4)}"></div>
+      <div class="dotpin" style="background:${c}"></div>
+      <div class="lab">${esc(shortName(x.name))}<b>${v==null?'—':fmtMetric(metricKey,v)}</b></div></div>`;
+  }).join("");
+}
+function openMapModal(){
+  const mkey=SETTINGS.chartMetric;
+  const pins=buildMapPins(mkey);
+  const segs=CHART_KEYS.map(x=>`<button class="${x===mkey?'on':''}" onclick="remapModal('${x}')">${METRICS[x].icon}${METRICS[x].label}</button>`).join("");
+  openSheet(`<h3>🗺️ 店舗マップ（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h3>
+    <div class="mapseg" id="mapSeg">${segs}</div>
+    <p class="sub" style="margin:8px 0">棒の高さ＝<b id="mapMetricLbl">${METRICS[mkey].label}</b>。ピンをタップするとその店舗のダッシュボードに切り替わります。</p>
+    <div class="map-mock tall" id="mapMockBox"><div class="mapbg"></div>${pins}</div>
+    <div class="legend">
+      <span><i style="background:#2f6df0"></i>整骨院</span>
+      <span><i style="background:#138a52"></i>整体院</span>
+      <span><i style="background:#a24bd0"></i>Peace</span>
+    </div>
+    <p class="sub" style="margin-top:8px">将来はズームで<b>競合店</b>表示／実Googleマップ接続を予定。</p>`);
+}
+function remapModal(metricKey){
+  SETTINGS.chartMetric=metricKey;
+  const box=el('mapMockBox'); if(box) box.innerHTML=`<div class="mapbg"></div>${buildMapPins(metricKey)}`;
+  const lbl=el('mapMetricLbl'); if(lbl) lbl.textContent=METRICS[metricKey].label;
+  document.querySelectorAll('#mapSeg button').forEach(b=>b.classList.toggle('on', b.textContent.includes(METRICS[metricKey].label)));
+}
+function pickStoreFromMap(code){ CURRENT_STORE=code; closeSheet(); renderDash(); }
+
+/* 色を明るく（3Dピン棒の上面用） */
+function lighten(hex,amt){const n=parseInt(hex.slice(1),16);let r=n>>16,g=(n>>8)&255,b=n&255;
+  r=Math.round(r+(255-r)*amt);g=Math.round(g+(255-g)*amt);b=Math.round(b+(255-b)*amt);
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
+/* ピンの短い表示名（場所名のみ） */
+function shortName(name){const p=name.split(/[ 　]/);return p[p.length-1]||name;}
+/* 店舗の最新投稿（スケジュールから） */
+function latestPostForStore(code){
+  const list=DATA.schedule.filter(p=>p.store===code).sort((a,b)=>a.date<b.date?1:-1);
+  return list[0]||null;
+}
+function openBodyDetail(id){
+  const p=DATA.schedule.find(x=>x.id===id); if(!p)return;
+  const st=DATA.stores.find(x=>x.code===p.store);
+  openSheet(`<h3>${esc(p.title||p.theme)}</h3>
+    <p class="sub">${esc(st?st.name:p.store)}／${esc(p.type)}・${esc(p.date)}　<span class="pill">${esc(p.status)}</span></p>
+    <p style="white-space:pre-wrap;font-size:14px;line-height:1.8">${esc(p.body||'本文はまだ作成されていません。')}</p>
+    <div class="row mt">
+      <button class="btn" onclick="closeSheet();openPostEditor('${esc(p.id)}')">この投稿を編集する</button>
+      <button class="btn ghost" onclick="openGBP('${esc(p.store)}')">GBP投稿ページへ</button>
+    </div>`);
+}
+function openGBP(code){
+  const st=DATA.stores.find(x=>x.code===code);
+  const l=linkFirst('store',code,'GBP');
+  if(l&&l.url){ window.open(l.url,'_blank'); return; }
+  toast('「'+(st?st.name:code)+'」のGBP投稿ページURLが未登録です。🔗リンク集で登録してください。');
+}
+/* 店舗のGMOツールを開く（リンク集の店舗別 GMO を使用） */
+function openStoreGMO(code){
+  const st=DATA.stores.find(x=>x.code===code);
+  const l=linkFirst('store',code,'GMO');
+  if(l&&l.url){ window.open(l.url,'_blank'); return; }
+  const g=linkFirst('global','','GMO'); // 店舗別が無ければ全体のGMO一覧へ
+  if(g&&g.url){ toast('店舗別GMOが未登録のため、GMO一覧を開きます。'); window.open(g.url,'_blank'); return; }
+  toast('「'+(st?st.name:code)+'」のGMOツールURLが未登録です。🔗リンク集で登録してください。');
+}
+/* グループのGMOツールを開く */
+function openGroupGMO(group){
+  const l=linkFirst('group',group,'GMO');
+  if(l&&l.url){ window.open(l.url,'_blank'); return; }
+  const g=linkFirst('global','','GMO');
+  if(g&&g.url){ toast(group+'のGMOが未登録のため、GMO一覧を開きます。'); window.open(g.url,'_blank'); return; }
+  toast(group+'のGMOツールURLが未登録です。🔗リンク集で登録してください。');
+}
+/* GMOの画像アップロード画面を開く（全体共通リンク） */
+function openImageUpload(){
+  const l=linkFirst('global','','画像');
+  if(l&&l.url){ window.open(l.url,'_blank'); return; }
+  toast('GMO画像アップロードのURLが未登録です。🔗リンク集で登録してください。');
+}
+
+/* SVG折れ線/棒/面グラフ（各点にホバー/タップで数値ツールチップ） */
+function buildChart(vals, labels, type, color, better, metricKey){
+  const W=340,H=150,padL=10,padR=10,padT=12,padB=24;
+  const iw=W-padL-padR, ih=H-padT-padB, n=vals.length;
+  const nums=vals.filter(v=>v!=null);
+  let mn=nums.length?Math.min(...nums):0, mx=nums.length?Math.max(...nums):1;
+  if(mn===mx){mn-=1;mx+=1;}
+  const pad=(mx-mn)*0.12; mn-=pad; mx+=pad;
+  const X=i=> padL + (n<=1?iw/2 : i*iw/(n-1));
+  const Y=v=>{ let t=(v-mn)/(mx-mn); if(better==="low") t=1-t; return padT+(1-t)*ih; };
+  const base=padT+ih;
+  let body="";
+  let grid="";
+  for(let g=0;g<=3;g++){const gy=padT+ih*g/3;grid+=`<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="#eef1f5"/>`;}
+  if(type==="bar"){
+    const bw=Math.min(20, iw/n*0.6);
+    body=vals.map((v,i)=>{ if(v==null)return ''; const x=X(i)-bw/2,y=Y(v);return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${(base-y).toFixed(1)}" rx="3" fill="${color}"/>`;}).join("");
+  } else {
+    const pts=vals.map((v,i)=>v==null?null:`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean).join(" ");
+    if(type==="area"){
+      body+=`<polygon points="${padL},${base} ${pts} ${W-padR},${base}" fill="${color}" fill-opacity="0.16"/>`;
+    }
+    body+=`<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    body+=vals.map((v,i)=>v==null?'':`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="#fff" stroke="${color}" stroke-width="2"/>`).join("");
+  }
+  // 透明の当たり判定列（ホバー/タップで値ツールチップ）＋アクティブ点ハイライト
+  const colw = n>1 ? iw/(n-1) : iw;
+  const hits=vals.map((v,i)=>{
+    const txt = (v==null? labels[i]+'：データなし' : labels[i]+'：'+fmtMetric(metricKey,v));
+    const cx=X(i), top = v==null? base : Y(v);
+    return `<g class="hit" onmousemove="chartTip(event,'${esc(txt)}')" onmouseleave="chartTipHide()" ontouchstart="chartTip(event,'${esc(txt)}')">
+      <rect x="${(cx-colw/2).toFixed(1)}" y="${padT}" width="${colw.toFixed(1)}" height="${ih}" fill="transparent"/>
+      ${v==null?'':`<circle cx="${cx.toFixed(1)}" cy="${top.toFixed(1)}" r="6" fill="${color}" fill-opacity="0.18"/>`}
+    </g>`;
+  }).join("");
+  const xl=labels.map((l,i)=> (i%2===0||i===n-1)?`<text x="${X(i).toFixed(1)}" y="${H-7}" font-size="9" fill="#6b7280" text-anchor="middle">${l}</text>`:"").join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${grid}${body}${xl}${hits}</svg>`;
+}
+/* グラフ用ツールチップ（PCホバー・スマホタップ共通） */
+function chartTip(ev, text){
+  let tip=el('chartTip');
+  if(!tip){ tip=document.createElement('div'); tip.id='chartTip'; tip.className='charttip'; document.body.appendChild(tip); }
+  tip.textContent=text; tip.style.display='block';
+  const p = ev.touches&&ev.touches[0] ? ev.touches[0] : ev;
+  const x=p.clientX, y=p.clientY;
+  tip.style.left=Math.min(window.innerWidth-tip.offsetWidth-8, Math.max(8, x - tip.offsetWidth/2))+'px';
+  tip.style.top=Math.max(8, y - tip.offsetHeight - 14)+'px';
+  clearTimeout(chartTip._t); chartTip._t=setTimeout(chartTipHide, 2600); // スマホ：少し経つと消す
+  if(ev.cancelable && ev.type==='touchstart') ev.preventDefault();
+}
+function chartTipHide(){ const tip=el('chartTip'); if(tip) tip.style.display='none'; }
+
+function renderDash(){
+  const s=DATA.stores.find(x=>x.code===CURRENT_STORE);
+  const k=curKey(), kp=prevKey(k), ky=yoyKey(k);
+  const m=getM(s.code,k), mp=getM(s.code,kp), my=getM(s.code,ky);
+  const color=THEME_COLORS[s.group]||"#2f6df0";
+  const cta=SETTINGS.targetCTA;
+  const isThisMonth=(SETTINGS.period.year===TODAY.y&&SETTINGS.period.month===TODAY.m);
+  const monthVal=`${SETTINGS.period.year}-${String(SETTINGS.period.month).padStart(2,'0')}`;
+
+  /* ===== 指標カード（目標CTA主役・口コミ/評価も表示） ===== */
+  function kpiCard(metricKey, mainFlag){
+    const M=METRICS[metricKey];
+    const cur=mv(m,metricKey);
+    return `<div class="kpi ${mainFlag?'main':''}">
+      <div class="label">${M.icon} ${M.label}${mainFlag?' 🎯':''}</div>
+      <div class="num">${fmtMetric(metricKey,cur)}</div>
+      <div class="deltas">
+        ${deltaPill(metricKey,cur,mv(mp,metricKey),'前月')}
+        ${deltaPill(metricKey,cur,mv(my,metricKey),'昨年')}
+      </div>
+    </div>`;
+  }
+  const kpiOrder=[cta,...KPI_KEYS.filter(x=>x!==cta)];
+  const kpiHtml = kpiOrder.map((x,i)=>kpiCard(x,i===0)).join("");
+  const storeOpts=RANK_GROUPS.map(g=>{
+    const opts=DATA.stores.filter(x=>x.group===g)
+      .map(x=>`<option value="${x.code}" ${x.code===CURRENT_STORE?'selected':''}>${esc(x.name)}</option>`).join("");
+    return `<optgroup label="${esc(g)}">${opts}</optgroup>`;
+  }).join("");
+  const ctaOptsDash=CTA_KEYS.map(x=>`<option value="${x}" ${x===cta?'selected':''}>${METRICS[x].label}</option>`).join("");
+
+  /* ===== メイングラフ（指標切替＋ホバー/タップで数値） ===== */
+  const cm=SETTINGS.chartMetric;
+  const keys12=trailing12(SETTINGS.period.year,SETTINGS.period.month);
+  const gv=keys12.map(kk=>mv(getM(s.code,kk),cm));
+  const gl=keys12.map(kk=>{const mo=Number(kk.split("-")[1]);return mo+"月";});
+  const chart=buildChart(gv,gl,SETTINGS.chartType,color,METRICS[cm].better,cm);
+  const typeBtn=(t,lbl)=>`<button class="${SETTINGS.chartType===t?'on':''}" onclick="setChartType('${t}')">${lbl}</button>`;
+  const metricBtn=(x)=>`<button class="${cm===x?'on':''}" onclick="setChartMetric('${x}')">${METRICS[x].icon}${METRICS[x].label}</button>`;
+  const chartMetricSeg=CHART_KEYS.map(metricBtn).join("");
+
+  /* ===== 最新投稿＋次の作成テーマ・状況（画像付き） ===== */
+  const postCard=buildPostStatusCard(s);
+
+  /* ===== 今月の活動カレンダー ===== */
+  const cal=buildActivityCalendar(s);
+
+  /* ===== アカウント内 全店舗レポート（一覧テーブル＋サマリー） ===== */
+  const summary=renderReportSummaryBoxes(k,kp);
+  const allStoreTable=buildAllStoreTable(k,kp);
+
+  /* ===== 店舗ランキング（店舗別／全店舗・見出しの▲▼で指標と推移を切替） ===== */
+  const rk=SETTINGS.rankMetric;
+  const better=METRICS[rk].better, unit=METRICS[rk].unit;
+  const trend=TREND_OPTS.find(t=>t.key===SETTINGS.rankTrend)||TREND_OPTS[0];
+  let scope=SETTINGS.rankScope||"group"; if(scope==='tier'){scope='group'; SETTINGS.rankScope='group';}
+  const metricHd=`<th class="hdctrl"><div class="hdlbl">${METRICS[rk].label}</div>
+      <div class="hdstep"><button onclick="event.stopPropagation();cycleRank(-1)" title="指標を変える">▲</button><button onclick="event.stopPropagation();cycleRank(1)" title="指標を変える">▼</button></div></th>`;
+  const trendHd=`<th class="hdctrl"><div class="hdlbl">${trend.label}</div>
+      <div class="hdstep"><button onclick="event.stopPropagation();cycleRankTrend(-1)" title="推移を変える">▲</button><button onclick="event.stopPropagation();cycleRankTrend(1)" title="推移を変える">▼</button></div></th>`;
+  const kwHd = rk==='rank' ? '<th>基準KW</th>' : '';
+  const rankHead=`<tr><th>順</th><th>店舗</th>${kwHd}${metricHd}${trendHd}</tr>`;
+  function rankRowsHtml(rows){
+    return rows.map((o,i)=>{
+      const valTxt=fmtMetric(rk,o.val);
+      const tcell=miniSpark(o.series,better,unit);
+      const kwCell = rk==='rank' ? `<td><code>${esc(o.kw||'—')}</code></td>` : '';
+      const isSel=o.code===CURRENT_STORE;
+      const medal=i===0?'🥇':(i===1?'🥈':(i===2?'🥉':(i+1)));
+      return `<tr onclick="selectStore('${o.code}')" style="cursor:pointer${isSel?';background:#f0f5ff':''}"><td>${medal}</td><td>${esc(o.label)}</td>${kwCell}<td><b>${valTxt}</b></td><td>${tcell}</td></tr>`;
+    }).join("");
+  }
+  const tableWrap=rows=>`<div class="tablewrap"><table><thead>${rankHead}</thead><tbody>${rankRowsHtml(rows)}</tbody></table></div>`;
+  const sortRows=rows=>rows.sort((a,b)=>{ if(a.val==null)return 1; if(b.val==null)return -1; return better==="low"?(a.val-b.val):(b.val-a.val); });
+
+  let rankGroupsHtml="";
+  if(scope==='group'){
+    rankGroupsHtml=RANK_GROUPS.map(g=>{
+      const rows=sortRows(DATA.stores.filter(x=>x.group===g).map(x=>({
+        code:x.code, label:shortName(x.name), kw:SETTINGS.groupKW[g],
+        val:mv(getM(x.code,k),rk), series:trendSeries(x.code,rk,trend.months) })));
+      if(!rows.length) return '';
+      const gc=THEME_COLORS[g]||"#888";
+      return `<div class="rankgrp"><div class="grphd" style="color:${gc}"><i style="background:${gc}"></i>${esc(g)}（${rows.length}店）</div>${tableWrap(rows)}</div>`;
+    }).join("");
+  }else{ // all＝全店舗
+    const rows=sortRows(DATA.stores.map(x=>({
+      code:x.code, label:shortName(x.name), kw:SETTINGS.groupKW[x.group],
+      val:mv(getM(x.code,k),rk), series:trendSeries(x.code,rk,trend.months) })));
+    rankGroupsHtml=`<div class="rankgrp"><div class="grphd"><i style="background:#475569"></i>運用アカウント全体（全${rows.length}店）</div>${tableWrap(rows)}</div>`;
+  }
+  const scopeBtn=(v,lbl)=>`<button class="${scope===v?'on':''}" onclick="setRankScope('${v}')">${lbl}</button>`;
+
+  const noData = !hasReportData();
+  const dataBanner = noData ? `
+    <div class="card span2" style="border:1px dashed var(--line);background:var(--warnbg)">
+      <h2 style="margin:0 0 6px">📥 月次レポートを取り込んでください</h2>
+      <p class="sub">GMOには自動取得APIが無いため、毎月の<b>月次レポート（CSV）</b>を取り込んで数値を表示します。下の「取込フォーマットを書き出す」で空の表を作り、レポートの数値を入れて読み込ませてください。</p>
+      <div class="row mt">
+        <button class="btn" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
+        <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す</button>
+      </div>
+    </div>` : '';
+  el('page-dash').innerHTML=`
+   <div class="dashgrid">
+    ${dataBanner}
+    <!-- ① 店舗・期間えらび ＋ 🗺️マップボタン -->
+    <div class="card compactsel span2">
+      <div class="selrow">
+        <div class="selgrp">
+          <label class="fl" style="margin:0 6px 0 0">店舗</label>
+          <select onchange="selectStore(this.value)" style="min-width:150px">${storeOpts}</select>
+          <div class="stepper">
+            <button onclick="cycleStore(-1)" title="前の店舗">▲</button>
+            <button onclick="cycleStore(1)" title="次の店舗">▼</button>
+          </div>
+          <span class="pill" style="background:${color}1a;color:${color}">${esc(s.group)}</span>
+          <button class="btn ghost sm" onclick="openMapModal()" title="店舗マップを開く">🗺️ マップ</button>
+          <button class="btn ghost sm" onclick="openStoreGMO('${esc(s.code)}')" title="この店舗のGMOツール">🔧 GMO</button>
+          <button class="btn ghost sm" onclick="openGBP('${esc(s.code)}')" title="この店舗のGBP投稿ページ">🔗 GBP</button>
+        </div>
+        <div class="selgrp">
+          <label class="fl" style="margin:0 6px 0 0">年月</label>
+          <input type="month" min="2025-01" max="${TODAY.y}-${String(TODAY.m).padStart(2,'0')}" value="${monthVal}" onchange="setMonthInput(this.value)">
+          <button class="btn ghost sm" onclick="resetMonth()" ${isThisMonth?'disabled':''}>↩ 今月</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 指標 -->
+    <div class="card span2">
+      <div class="row between mb">
+        <h2 style="margin:0">📌 ${esc(shortName(s.name))}の主要指標（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h2>
+        <div class="row" style="gap:5px;align-items:center">
+          <label class="fl" style="margin:0">🎯目標CTA</label>
+          <select onchange="setTargetCTADash(this.value)">${ctaOptsDash}</select>
+        </div>
+      </div>
+      <p class="sub">各カードに<b>前月</b>・<b>昨年</b>との比較を表示。🎯が目標CTA（先頭に固定）です。</p>
+      <div class="kpis">${kpiHtml}</div>
+      <div class="memo">
+        <div class="memo-hd">📝 今月の所感・コメント</div>
+        ${(m&&m.comment)
+          ? `<p class="memo-body">${esc(m.comment)}</p>`
+          : `<p class="memo-body empty">この月のコメントはまだありません。月次レポートCSVの「所感・コメント」を取り込むと、ここに表示されます。</p>`}
+      </div>
+    </div>
+
+    <!-- ③ グラフ -->
+    <div class="card span2">
+      <div class="row between mb" style="flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">📈 ${METRICS[cm].label}の推移（直近12か月）</h2>
+        <div class="seg">${typeBtn('bar','棒')}${typeBtn('line','折れ線')}${typeBtn('area','面')}</div>
+      </div>
+      <div class="metricseg">${chartMetricSeg}</div>
+      <div class="chartwrap">${chart}</div>
+      <p class="sub mt">グラフは<b>マウスを乗せる／タップ</b>でその月の数値が出ます。上のボタンで指標を切り替えられます。</p>
+    </div>
+
+    <!-- ④ アカウント内 全店舗レポート -->
+    <div class="card span2">
+      <div class="row between mb">
+        <h2 style="margin:0">🏢 アカウント内 全店舗レポート（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h2>
+        <button class="btn ghost sm noprint" onclick="window.print()">🖨️ 印刷／PDF保存</button>
+      </div>
+      <div class="sumgrid">${summary}</div>
+      ${allStoreTable}
+    </div>
+
+    <!-- ⑤ ランキング（店舗別／全店舗） -->
+    <div class="card span2">
+      <div class="row between mb" style="flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">🏆 店舗ランキング</h2>
+        <div class="seg">${scopeBtn('group','店舗別')}${scopeBtn('all','全店舗')}</div>
+      </div>
+      <p class="sub">指標と推移は<b>表の見出しの ▲▼</b> で切り替えられます。${rk==='rank'?'順位はグループ設定KWでの検索順位です。':''}行タップでその店舗に切り替わります。</p>
+      ${rankGroupsHtml}
+    </div>
+
+    <!-- ⑥ カレンダー -->
+    <div class="card span2">
+      <div class="calhead">
+        <h2 style="margin:0">🗓️ 活動カレンダー（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h2>
+        <label class="toggle"><input type="checkbox" ${SHOW_REPORT_CAL?'checked':''} onchange="toggleReportCal(this.checked)"> レポート予定を表示</label>
+      </div>
+      <p class="sub">投稿済 ${cal.postCount}件／投稿予定 ${cal.planCount}件　・　次回レポート抽出予定：<b>${cal.nextReport}</b></p>
+      <div class="cal">${cal.html}</div>
+      <div class="callegend">
+        <span><i style="background:#cdeede"></i>投稿済</span>
+        <span><i style="background:#dbe6ff"></i>投稿予定</span>
+        <span><i style="background:#f6e4c0"></i>レポート抽出（タスク）</span>
+      </div>
+    </div>
+
+    <!-- ⑦ 最新作成の投稿＋次の作成テーマ・状況（画像付き） -->
+    <div class="card span2">
+      <h2 style="margin:0 0 4px">📰 ${esc(shortName(s.name))}の投稿（最新／次の予定）</h2>
+      ${postCard}
+    </div>
+   </div>`;
+}
+
+/* ===== 最新投稿＋次の作成テーマ・状況カード ===== */
+function buildPostStatusCard(s){
+  const list=DATA.schedule.filter(p=>p.store===s.code);
+  const latest=[...list].sort((a,b)=>a.date<b.date?1:-1)[0]||null;
+  // 次の作成テーマ＝今日以降で未投稿のうち最も近い予定
+  const todayStr=`${TODAY.y}-${String(TODAY.m).padStart(2,'0')}-${String(TODAY.d).padStart(2,'0')}`;
+  const upcoming=list.filter(p=>p.status!=='投稿済').sort((a,b)=>a.date<b.date?-1:1);
+  const next=upcoming.find(p=>p.date>=todayStr)||upcoming[0]||null;
+  function block(p,kind){
+    if(!p) return `<div class="postcol"><div class="postcol-hd">${kind}</div><p class="sub">${kind==='最新の投稿'?'この店舗の投稿はまだありません。':'次に作る予定の投稿はありません。'}</p>
+      <button class="btn sm" onclick="switchTab('post')">＋ 投稿を作る</button></div>`;
+    const stColor=p.status==='投稿済'?'ok':(p.status==='作成中'?'warn':'');
+    return `<div class="postcol"><div class="postcol-hd">${kind}</div>
+      <div class="poststatus">
+        <div class="pimg">${p.img?`<img src="${esc(p.img)}" alt="">`:'🖼️'}</div>
+        <div class="pbody">
+          <div class="row between"><b style="font-size:14px">${esc(p.title||p.theme||'（テーマ未設定）')}</b><span class="pill ${stColor}">${esc(p.status||'未投稿')}</span></div>
+          <div class="sub" style="margin:2px 0">${esc(p.type||'')}・${esc(p.date||'')}</div>
+          <div class="bodyclip" onclick="openBodyDetail('${esc(p.id)}')">${esc(p.body||'本文未作成')}<br><span class="more">…タップで全文を見る</span></div>
+          <div class="row mt">
+            <button class="btn sm" onclick="openPostEditor('${esc(p.id)}')">✍️ 編集</button>
+            <button class="btn ghost sm" onclick="openGBP('${esc(s.code)}')">🔗 GBP</button>
+          </div>
+        </div></div></div>`;
+  }
+  return `<div class="postgrid">${block(latest,'最新の投稿')}${block(next,'次の作成テーマ・状況')}</div>`;
+}
+
+/* ===== アカウント内 全店舗レポート 一覧テーブル ===== */
+function buildAllStoreTable(k,kp){
+  if(!hasReportData()) return '';
+  const reaction=m=> (mv(m,'web')||0)+(mv(m,'tel')||0)+(mv(m,'route')||0);
+  const rows=DATA.stores.map(x=>{
+    const m=getM(x.code,k), mp=getM(x.code,kp);
+    const views=mv(m,'views');
+    return {x, m, mp, views, sortv: views==null?-1:views};
+  }).sort((a,b)=>b.sortv-a.sortv);
+  const body=rows.map(o=>{
+    const {x,m,mp}=o;
+    const gc=THEME_COLORS[x.group]||"#888";
+    const isSel=x.code===CURRENT_STORE;
+    const views=mv(m,'views'), rv=mv(m,'reviews'), rt=mv(m,'rating');
+    const react=m?reaction(m):null;
+    const dv=(views!=null&&mv(mp,'views')!=null)?views-mv(mp,'views'):null;
+    const dPill=dv==null?'':`<span class="pill ${dv>0?'up':(dv<0?'down':'flat')}" style="margin-left:5px">${dv>0?'▲':(dv<0?'▼':'±')}${Math.abs(dv).toLocaleString()}</span>`;
+    const star=rt==null?'—':`⭐${Number(rt).toFixed(1)}`;
+    return `<tr onclick="selectStore('${x.code}')" style="cursor:pointer${isSel?';background:#f0f5ff':''}">
+      <td><i class="gdot" style="background:${gc}"></i>${esc(shortName(x.name))}</td>
+      <td><b>${views==null?'—':views.toLocaleString()}</b>${dPill}</td>
+      <td>${react==null?'—':react.toLocaleString()+'回'}</td>
+      <td>${rv==null?'—':rv.toLocaleString()+'件'}</td>
+      <td>${star}</td></tr>`;
+  }).join("");
+  return `<div class="tablewrap mt"><table class="alltbl"><thead>
+      <tr><th>店舗（表示回数の多い順）</th><th>表示回数<span class="sub">（前月比）</span></th><th>反応数<span class="sub">電話+ルート+web</span></th><th>口コミ</th><th>評価</th></tr>
+    </thead><tbody>${body}</tbody></table></div>
+    <p class="sub mt">行タップでその店舗のダッシュボードに切り替わります。反応数＝電話タップ＋ルート検索＋ウェブクリックの合計。</p>`;
+}
+
+/* ===== 活動カレンダー生成 ===== */
+function buildActivityCalendar(s){
+  const y=SETTINGS.period.year, mo=SETTINGS.period.month;
+  const startDow=new Date(y,mo-1,1).getDay();
+  const days=new Date(y,mo,0).getDate();
+  const dows=['日','月','火','水','木','金','土'];
+  let html=dows.map(d=>`<div class="dow">${d}</div>`).join('');
+  for(let i=0;i<startDow;i++) html+=`<div class="cell muted"></div>`;
+  let postCount=0, planCount=0;
+  for(let d=1;d<=days;d++){
+    const dow=new Date(y,mo-1,d).getDay();
+    const isPostDay=(dow===1||dow===5); // ⑤定期投稿：月・金
+    const past=(y<TODAY.y)||(y===TODAY.y&&mo<TODAY.m)||(y===TODAY.y&&mo===TODAY.m&&d<=TODAY.d);
+    const isToday=(y===TODAY.y&&mo===TODAY.m&&d===TODAY.d);
+    let ev='';
+    if(isPostDay){
+      if(past){postCount++;ev+=`<span class="ev post">✓投稿</span>`;}
+      else {planCount++;ev+=`<span class="ev plan">投稿予定</span>`;}
+    }
+    if(SHOW_REPORT_CAL && d===1) ev+=`<span class="ev rep">📊前月分抽出</span>`;
+    if(SHOW_REPORT_CAL && d===28) ev+=`<span class="ev rep">📋レポート作成</span>`;
+    html+=`<div class="cell${isToday?' today':''}"><span class="dnum">${d}</span>${ev}</div>`;
+  }
+  // 次回レポート抽出予定＝翌月1日
+  let ny=y, nm=mo+1; if(nm>12){nm=1;ny++;}
+  return {html, postCount, planCount, nextReport:`${ny}年${nm}月1日`};
+}
+
+/* ===== レポートまとめ サマリーボックス ===== */
+function renderReportSummaryBoxes(k,kp){
+  let sumViews=0,sumCTA=0,sumReviews=0,ratingSum=0,ratingN=0,improved=0,worsened=0,nStore=0;
+  const cta=SETTINGS.targetCTA; let bestStore=null,bestGain=-Infinity;
+  DATA.stores.forEach(x=>{const m=getM(x.code,k),mp=getM(x.code,kp);if(!m)return; nStore++;
+    sumViews+=(mv(m,'views')||0); sumCTA+=(mv(m,cta)||0); sumReviews+=(mv(m,'reviews')||0);
+    const rt=mv(m,'rating'); if(rt!=null){ratingSum+=rt; ratingN++;}
+    const cv=mv(m,'views'), pv=mv(mp,'views');
+    if(cv!=null&&pv!=null){ if(cv>pv)improved++; else if(cv<pv)worsened++; }
+    const cc=mv(m,cta), pc=mv(mp,cta);
+    if(cc!=null&&pc!=null){ const gain=cc-pc; if(gain>bestGain){bestGain=gain;bestStore=x;} }
+  });
+  const avgRating=ratingN?(ratingSum/ratingN).toFixed(2):'—';
+  const box=(t,v,s)=>`<div class="sumbox"><div class="t">${t}</div><div class="v">${v}</div><div class="s">${s||''}</div></div>`;
+  return [
+    box('全店 合計表示回数', sumViews.toLocaleString()+'回', `稼働 ${nStore}店`),
+    box('全店 合計'+METRICS[cta].label, sumCTA.toLocaleString()+'回', '目標CTAの合計'),
+    box('口コミ 合計', sumReviews.toLocaleString()+'件', '累計'),
+    box('全店 平均評価', '⭐'+avgRating, '高いほど良い'),
+    box('表示が伸びた店舗', improved+'店', '前月より表示UP'),
+    box('要注意（減少）', worsened+'店', '前月より表示DOWN'),
+    box('今月いちばん伸びた店舗', bestStore?esc(shortName(bestStore.name)):'—', bestStore?('＋'+bestGain.toLocaleString()+' '+METRICS[cta].label):''),
+  ].join("");
+}
+
+/* ====================================================================
+   ② 投稿づくり
+   ==================================================================== */
+function setPostFilter(v){ SETTINGS.postFilter=v; renderPost(); }
+function setPostGroup(v){ SETTINGS.postGroup=v; renderPost(); }
+function postGroupOf(p){ const st=DATA.stores.find(x=>x.code===p.store); return st?st.group:""; }
+function renderPost(){
+  const POST_STATUSES=["投稿済","作成中","未投稿"];
+  const POST_GROUPS=["整骨院","整体院","Peace"];
+  const pf=SETTINGS.postFilter||"all";
+  const pg=SETTINGS.postGroup||"all";
+  const all=DATA.schedule.slice().sort((a,b)=>a.date<b.date?-1:1);
+  const shown=all.filter(p=> (pf==="all"||p.status===pf) && (pg==="all"||postGroupOf(p)===pg) );
+  const counts={}; POST_STATUSES.forEach(s=>counts[s]=all.filter(p=>p.status===s).length);
+  const gcounts={}; POST_GROUPS.forEach(g=>gcounts[g]=all.filter(p=>postGroupOf(p)===g).length);
+  const filterOpts=[`<option value="all" ${pf==="all"?"selected":""}>すべて（${all.length}件）</option>`]
+    .concat(POST_STATUSES.map(s=>`<option value="${s}" ${pf===s?"selected":""}>${s}（${counts[s]}件）</option>`)).join("");
+  const groupOpts=[`<option value="all" ${pg==="all"?"selected":""}>全グループ</option>`]
+    .concat(POST_GROUPS.map(g=>`<option value="${g}" ${pg===g?"selected":""}>${g}（${gcounts[g]}件）</option>`)).join("");
+  const rows=shown.map(p=>{
+    const st=DATA.stores.find(x=>x.code===p.store);
+    const stColor=p.status==='投稿済'?'ok':(p.status==='作成中'?'warn':'');
+    return `<tr>
+      <td>${esc(st?st.name:p.store)}</td>
+      <td>${esc(p.date)}</td>
+      <td>${esc(p.theme)}<div class="sub" style="font-size:11px">${esc(p.type)}・<code>${esc(p.id)}</code></div></td>
+      <td><span class="pill ${stColor}">${esc(p.status)}</span></td>
+      <td><button class="btn ghost sm" onclick="openPostEditor('${esc(p.id)}')">編集</button></td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="5" class="sub" style="text-align:center;padding:18px">この状態の投稿予定はありません。</td></tr>`;
+  el('page-post').innerHTML=`
+    <div class="card">
+      <h2>✍️ 投稿づくり</h2>
+      <p class="sub">投稿の流れ：⑤定期投稿の決まり → ⑦スケジュール → ⑧文章（Claude） → ⑨サムネ（ChatGPT） → GMOへ書き出し</p>
+      <div class="flow">
+        <div class="st"><b>⑤ 定期投稿</b><span class="badge">頻度・曜日の決まり</span></div>
+        <div class="st"><b>⑦ スケジュール</b><span class="badge">いつ・何を出す</span></div>
+        <div class="st"><b>⑧ 文章</b><span class="badge">Claudeが下書き</span></div>
+        <div class="st"><b>⑨ サムネ</b><span class="badge">画像プロンプト</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="selrow" style="margin-bottom:10px">
+        <h2 style="margin:0">投稿予定一覧</h2>
+        <div class="selgrp" style="flex-wrap:wrap;gap:8px">
+          <div class="selgrp"><label class="fl">グループ</label>
+            <select onchange="setPostGroup(this.value)">${groupOpts}</select>
+            ${SETTINGS.postGroup&&SETTINGS.postGroup!=='all'?`<button class="btn ghost sm" onclick="openGroupGMO('${esc(SETTINGS.postGroup)}')" title="このグループのGMOツール">🔧 GMO</button>`:''}</div>
+          <div class="selgrp"><label class="fl">状態</label>
+            <select onchange="setPostFilter(this.value)">${filterOpts}</select></div>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table><thead><tr><th>店舗名</th><th>予定日</th><th>テーマ</th><th>状態</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+      <div class="row mt">
+        <button class="btn" onclick="addScheduleEntry()">＋ 投稿予定を追加</button>
+        <button class="btn ghost" onclick="importScheduleCSV()">📥 投稿CSVを取り込む</button>
+        <button class="btn ghost" onclick="exportScheduleCSV()">⬇️ 投稿をCSVで書き出す</button>
+      </div>
+      <p class="sub" style="font-size:11px">取り込んだ投稿はこの端末に保存されます。Notion⑦スケジュール／⑧投稿文DBとは、上のCSVでやり取りします。</p>
+    </div>
+    <div class="card">
+      <h2>📦 一括テンプレ（GMOへ送る準備）</h2>
+      <p class="sub">投稿づくりで「📦 一括テンプレに送る」を押した投稿が、ここにたまります。たまった分をCSVで書き出し → <b>GMO書き出しツール</b>で正式な48列のExcelに変換 → GMOにアップ、の流れです。<br>※<b>下書き保存○</b>で取り込むので、アップしてもすぐ公開はされません（公開はGMO上で人が確定）。</p>
+      <div id="batchTray"></div>
+      <div class="row mt">
+        <button class="btn" onclick="batchExportCSV()">⬇️ たまった分をCSVで書き出す</button>
+        <a class="btn ghost" href="meo-export.html">GMO書き出しツールを開く ↗</a>
+        <button class="btn ghost" onclick="batchClear()">🗑️ 一括テンプレを空にする</button>
+      </div>
+    </div>`;
+  renderBatchTray();
+}
+function renderBatchTray(){
+  const wrap=el('batchTray'); if(!wrap)return;
+  const arr=batchLoad();
+  if(!arr.length){ wrap.innerHTML=`<p class="sub" style="text-align:center;padding:14px">まだ何も入っていません。投稿づくりの画面で「📦 一括テンプレに送る」を押してください。</p>`; return; }
+  const rows=arr.map((r,i)=>{
+    const noId=!r['店舗ID'];
+    return `<tr>
+      <td>${esc(r['店舗名'])}${noId?' <span class="pill warn" style="font-size:10px">店舗ID未登録</span>':''}</td>
+      <td>${esc(r['投稿タイプ'])}</td>
+      <td>${esc((r['タイトル(GoogleとSNSは任意入力、Yahoo!は必須）']||'').slice(0,18))||'<span class="sub">（無題）</span>'}</td>
+      <td><code style="font-size:10px">${esc(r['投稿予定ID'])}</code></td>
+      <td><button class="btn ghost sm" onclick="batchRemove(${i})">削除</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML=`<div class="tablewrap"><table>
+    <thead><tr><th>店舗</th><th>種類</th><th>タイトル</th><th>ID</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <p class="sub" style="margin-top:6px">現在 <b>${arr.length}</b> 件・すべて<b>下書き保存○</b>で書き出します。</p>`;
+}
+function batchRemove(i){
+  const arr=batchLoad(); arr.splice(i,1); batchSave(arr); renderBatchTray(); toast('1件削除しました（残り'+arr.length+'件）。');
+}
+function buildTextPrompt(p){
+  const st=DATA.stores.find(x=>x.code===p.store);
+  return `あなたは「${st?st.name:p.store}」のGoogleビジネスプロフィール投稿の担当です。\n`
+    +`▼テーマ：${p.theme}\n▼投稿の種類：${p.type}\n▼文字数：250〜350字\n`
+    +`▼ルール：\n・専門用語はかみくだいて説明する\n・効果の保証や誇大な表現はしない\n・親しみやすい敬語\n・最後にお電話／Web予約への自然な導線を入れる\n\n`
+    +`上記をふまえて、投稿本文を1案つくってください。`;
+}
+function buildImagePrompt(p){
+  const st=DATA.stores.find(x=>x.code===p.store);
+  return `${st?st.name:p.store}のGBP投稿用サムネイル画像。テーマ「${p.theme}」。`
+    +`明るく清潔感のある写真風、文字入れなし、正方形(1:1)、院内・施術・季節感のいずれかを連想させる構図。`;
+}
+function openPostEditor(id){ composerOpen(id); }
+function composerOpen(id){
+  const p=DATA.schedule.find(x=>x.id===id)||DATA.schedule[0];
+  if(!p){ toast('先に「＋ 投稿予定を追加」で投稿を作成してください。'); return; }
+  const st=DATA.stores.find(x=>x.code===p.store);
+  const themeOpts=DATA.schedule.map(s=>{
+    const sn=(DATA.stores.find(z=>z.code===s.store)||{}).name||s.store;
+    return `<option value="${esc(s.id)}" ${s.id===p.id?'selected':''}>${esc(s.date)}｜${esc(sn)}：${esc(s.theme)}</option>`;
+  }).join("");
+  openSheet(`
+    <h3>投稿づくり <span class="pill">AIはアプリの外で使います</span></h3>
+    <p class="sub"><code>${esc(p.id)}</code>／${esc(st?st.name:p.store)}</p>
+
+    <label class="fl mt">③ スケジュールからテーマを選ぶ（過去投稿の作り直しもOK）</label>
+    <select class="inp" style="width:100%" onchange="composerOpen(this.value)">${themeOpts}</select>
+
+    <label class="fl mt">① 投稿文の作成プロンプト（押すと指示文ができます・編集可）</label>
+    <textarea id="cTextPrompt" style="min-height:120px">${esc(buildTextPrompt(p))}</textarea>
+    <div class="row mt">
+      <button class="btn" onclick="el('cTextPrompt').value=buildTextPrompt(DATA.schedule.find(x=>x.id==='${esc(p.id)}'))">↻ 指示文を作り直す</button>
+      <button class="btn ghost" onclick="copyText('cTextPrompt')">📋 コピー</button>
+      <button class="btn ghost" onclick="openAI('aiTextUrl')">② AIを開く ↗</button>
+    </div>
+
+    <label class="fl mt">投稿タイトル（任意・GMOのタイトル欄に入ります）</label>
+    <input id="postTitle" class="inp" style="width:100%" value="${esc(p.title||'')}" placeholder="例）梅雨の腰痛、寝る前30秒のセルフケアから">
+
+    <label class="fl mt">投稿本文（AIの結果をここに貼り付け）</label>
+    <textarea id="postBody" oninput="updCount()">${esc(p.body||'')}</textarea>
+    <div class="cnt" id="postCount"></div>
+    <button class="btn ghost sm" onclick="saveDraft('${esc(p.id)}')">💾 下書き保存</button>
+
+    <label class="fl mt">④ 画像の作成プロンプト（編集可）</label>
+    <textarea id="cImgPrompt" style="min-height:80px">${esc(buildImagePrompt(p))}</textarea>
+    <div class="row mt">
+      <button class="btn ghost" onclick="copyText('cImgPrompt')">📋 コピー</button>
+      <button class="btn ghost" onclick="openAI('aiImageUrl')">画像AIを開く ↗</button>
+      <button class="btn ghost" onclick="openImageUpload()">⬆️ GMO画像アップへ ↗</button>
+    </div>
+
+    <label class="fl mt">この投稿にひも付く画像（投稿予定IDで自動マッチ）</label>
+    <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center">
+      ${(function(){
+        const imgs=galleryForPost(p.id);
+        if(!imgs.length) return '<span class="sub">まだありません。画像タブで <code>'+esc(p.id)+'-image01</code> のように作ると自動でつながります。</span>';
+        return imgs.map(g=>{
+          const c=g.status==='確定'?'ok':(g.status==='生成済'?'warn':'');
+          return '<span class="pill '+c+'" style="cursor:pointer" onclick="previewImage(\''+esc(g.id)+'\')" title="'+esc(g.id)+'">🖼️ '+esc(g.status)+'</span>';
+        }).join('')+'<button class="btn ghost sm" onclick="switchTab(\'gallery\')">画像タブへ ↗</button>';
+      })()}
+    </div>
+
+    <div class="row mt" style="border-top:1px solid var(--line);padding-top:12px">
+      <button class="btn" onclick="sendToBatch('${esc(p.id)}')">📦 一括投稿テンプレに送る</button>
+      <button class="btn ghost" onclick="openGBP('${esc(p.store)}')">🔗 GBPを開く</button>
+    </div>
+    <p class="sub" style="font-size:11px">※AIのリンクは「設定」で各自登録します（他の人には見えません）。AIのAPIとはつなぎません。</p>
+  `);
+  setTimeout(updCount,0);
+}
+function copyText(idEl){
+  const t=el(idEl); if(!t)return;
+  t.focus(); t.select();
+  try{document.execCommand('copy');}catch(e){}
+  toast('📋 コピーしました。開いたAIに貼り付けてください。');
+}
+function openAI(which){
+  const u=USER[which];
+  if(!u){ alert('AIのリンクが未設定です。「設定」画面であなた用のAIリンクを登録してください（他の人には見えません）。'); return; }
+  window.open(u,'_blank');
+}
+/* ===== 一括投稿テンプレ（バッチ） =====
+   composerから「送る」と、GMO48列に対応した行をブラウザに貯めます（localStorage）。
+   貯めた分はNotion⑥DBと同じ並びのCSVで書き出し、meo-export.htmlに渡せます。 */
+const BATCH_KEY='meo_batch_v1';
+function batchLoad(){ try{return JSON.parse(localStorage.getItem(BATCH_KEY)||'[]');}catch(e){return [];} }
+function batchSave(arr){ localStorage.setItem(BATCH_KEY, JSON.stringify(arr)); }
+function batchCount(){ return batchLoad().length; }
+function sendToBatch(id){
+  const p=DATA.schedule.find(x=>x.id===id);
+  if(!p){ alert('対象の投稿が見つかりません。'); return; }
+  const st=DATA.stores.find(x=>x.code===p.store);
+  const title=el('postTitle')?el('postTitle').value.trim():'';
+  const body=el('postBody')?el('postBody').value.trim():'';
+  if(!body){
+    if(!confirm('本文がまだ空です。このまま一括テンプレに送りますか？\n（あとでNotion⑥DB側で入れ直すこともできます）')) return;
+  }
+  const row={
+    '投稿予定ID': p.id,
+    '店舗': st?st.name:p.store,
+    '投稿ステータス': '下書き',
+    '備考': p.theme||'',
+    '店舗ID': st&&st.gmoId?st.gmoId:'',
+    '店舗名': st?st.name:p.store,
+    '投稿タイプ': p.type||'最新情報',
+    '下書き保存': '○',          // ○＝下書きで取込（公開されない・安全）
+    '即時投稿': '',
+    '予約投稿日': '',
+    '予約投稿時間': '',
+    'タイトル(GoogleとSNSは任意入力、Yahoo!は必須）': title||p.title||'',
+    '投稿内容': body||p.body||'',
+    '投稿内容２': '',
+    '画像': '',
+    'ボタンの追加': '予約',
+    'ボタンURL': ''
+  };
+  const arr=batchLoad();
+  const i=arr.findIndex(r=>r['投稿予定ID']===p.id);
+  if(i>=0){ arr[i]=row; } else { arr.push(row); }
+  batchSave(arr);
+  const warnId = (!row['店舗ID'])?'\n\n⚠️ この店舗のGMO店舗IDが未登録です。Notion③店舗要項DBで登録すると、GMOで弾かれにくくなります。':'';
+  toast('📦 一括テンプレに追加しました（現在 '+arr.length+' 件）'+(warnId?' ※要確認':''));
+  if(warnId) setTimeout(()=>alert('一括テンプレに追加しました（'+arr.length+'件）。'+warnId),50);
+}
+function batchClear(){
+  if(!batchCount()){ toast('一括テンプレは空です。'); return; }
+  if(confirm('貯めた一括テンプレ（'+batchCount()+'件）を空にしますか？')){ batchSave([]); toast('一括テンプレを空にしました。'); renderSchedule&&renderSchedule(); }
+}
+function batchExportCSV(){
+  const arr=batchLoad();
+  if(!arr.length){ alert('一括テンプレが空です。先にcomposerから「📦 一括テンプレに送る」してください。'); return; }
+  const cols=['投稿予定ID','店舗','投稿ステータス','備考','店舗ID','店舗名','投稿タイプ','下書き保存','即時投稿','予約投稿日','予約投稿時間','タイトル(GoogleとSNSは任意入力、Yahoo!は必須）','投稿内容','投稿内容２','画像','ボタンの追加','ボタンURL'];
+  const q=v=>{ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  const lines=[cols.join(',')].concat(arr.map(r=>cols.map(c=>q(r[c])).join(',')));
+  const csv='\ufeff'+lines.join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+  a.href=url; a.download='一括投稿テンプレ_'+ymd+'.csv'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+  toast('⬇️ CSVを書き出しました（'+arr.length+'件）。次はGMO書き出しツールで読み込んでください。');
+}
+function updCount(){
+  const t=el('postBody'); if(!t)return;
+  const n=t.value.length; const c=el('postCount');
+  c.textContent=n+'字'+(n<250?'（あと'+(250-n)+'字で目安）':(n>350?'（'+(n-350)+'字オーバー）':'（目安250〜350字 OK）'));
+  c.className='cnt '+(n>=250&&n<=350?'good':(n>350?'bad':''));
+}
+
+/* ====================================================================
+   ③ 画像ギャラリー
+   ==================================================================== */
+function setGalFilter(v){ SETTINGS.galFilter=v; renderGallery(); }
+/* 画像ID（例 ASK-NGR-20260701-NT01-image01）から、ひも付く投稿予定IDを取り出す */
+function postIdOfGallery(gid){ return String(gid).replace(/-image\d+$/i,''); }
+function postForGallery(gid){ return DATA.schedule.find(p=>p.id===postIdOfGallery(gid)); }
+/* 投稿予定にひも付く画像（複数可） */
+function galleryForPost(pid){ return DATA.gallery.filter(g=>postIdOfGallery(g.id)===pid); }
+function renderGallery(){
+  const GAL_STATUSES=["未生成","生成済","確定"];
+  const gf=SETTINGS.galFilter||"all";
+  const all=DATA.gallery.slice();
+  const shown=all.filter(g=> gf==="all" || g.status===gf);
+  const counts={}; GAL_STATUSES.forEach(s=>counts[s]=all.filter(g=>g.status===s).length);
+  const filterOpts=[`<option value="all" ${gf==="all"?"selected":""}>すべて（${all.length}枚）</option>`]
+    .concat(GAL_STATUSES.map(s=>`<option value="${s}" ${gf===s?"selected":""}>${s}（${counts[s]}枚）</option>`)).join("");
+  const cards=shown.map(g=>{
+    const st=DATA.stores.find(x=>x.code===g.store);
+    const stColor=g.status==='確定'?'ok':(g.status==='生成済'?'warn':'');
+    const lp=postForGallery(g.id);
+    const linkRow = lp
+      ? `<button class="btn ghost sm" style="margin-top:4px;width:100%" onclick="openPostEditor('${esc(lp.id)}')" title="ひも付く投稿を開く">✍️ ${esc((lp.title||lp.theme).slice(0,12))}</button>`
+      : `<div class="sub" style="font-size:10px;margin-top:4px">投稿予定：<code>${esc(postIdOfGallery(g.id))}</code>（未作成）</div>`;
+    return `<div class="thumb">
+      <div class="ph" onclick="previewImage('${esc(g.id)}')" title="拡大プレビュー">🖼️</div>
+      <div class="meta"><div class="id">${esc(g.id)}</div>
+        <div class="sub" style="margin:2px 0">${esc(st?st.code:g.store)}・${esc(g.ai)}</div>
+        <span class="pill ${stColor}">${esc(g.status)}</span>${linkRow}</div>
+      <label class="ck"><input type="checkbox" class="gck" data-id="${esc(g.id)}" onchange="updateGalCount()"> 選択</label>
+    </div>`;
+  }).join("");
+  const galBody=cards||`<p class="sub" style="text-align:center;padding:18px">この状態の画像はありません。</p>`;
+  el('page-gallery').innerHTML=`
+    <div class="card">
+      <h2>🖼️ 画像ギャラリー</h2>
+      <p class="sub">投稿用サムネの管理情報（画像ID・生成AI・状態・Drive保存先）をまとめます。画像ファイル本体はGoogle Drive／GMOで管理し、ここでは投稿予定IDでひも付けます。サムネをタップすると詳細が開きます。</p>
+      <div class="selrow mb">
+        <div class="selgrp"><label class="fl">状態でしぼる</label>
+          <select onchange="setGalFilter(this.value)">${filterOpts}</select></div>
+      </div>
+      <div class="row mb">
+        <button class="btn" onclick="addGalleryEntry()">＋ 画像情報を登録</button>
+        <button class="btn ghost" onclick="importGalleryCSV()">📥 画像CSVを取り込む</button>
+        <button class="btn ghost" onclick="exportGalleryCSV()">⬇️ 画像をCSVで書き出す</button>
+        <button class="btn ghost" onclick="openImageUpload()">⬆️ GMO画像アップへ ↗</button>
+      </div>
+      <div class="row mb">
+        <button class="btn ghost" onclick="toggleGalAll()">☑️ 全選択／解除</button>
+        <button class="btn ghost" id="zipBtn" onclick="exportSelectedGallery()">⬇️ 選択をCSVで書き出す</button>
+        <span class="pill" id="galCount">選択中：0枚</span>
+      </div>
+    </div>
+    <div class="card"><div class="gal">${galBody}</div></div>`;
+  updateGalCount();
+}
+function previewImage(id){
+  const g=DATA.gallery.find(x=>x.id===id); if(!g)return;
+  const st=DATA.stores.find(x=>x.code===g.store);
+  openSheet(`
+    <h3>画像情報</h3>
+    <div style="font-size:120px;text-align:center;line-height:1.1;margin:8px 0">🖼️</div>
+    <p class="sub"><code>${esc(g.id)}</code></p>
+    <p class="sub">店舗：${esc(st?st.name:g.store)}　／　生成AI：${esc(g.ai)}　／　状態：${esc(g.status)}</p>
+    ${g.drive?`<div class="row mt"><button class="btn" onclick="window.open('${esc(g.drive)}','_blank')">📂 Drive保存先を開く ↗</button></div>`:`<p class="sub">Drive保存先は未登録です。「＋ 画像情報を登録」または画像CSVの取込で設定できます。</p>`}`);
+}
+function updateGalCount(){
+  const n=document.querySelectorAll('.gck:checked').length;
+  const el2=document.getElementById('galCount');
+  if(el2) el2.textContent='選択中：'+n+'枚';
+  const zb=document.getElementById('zipBtn');
+  if(zb){ zb.disabled=(n===0); zb.textContent=n>0?('⬇️ 選択した'+n+'枚をCSVで書き出す'):'⬇️ 選択をCSVで書き出す'; }
+}
+function toggleGalAll(){
+  const boxes=[...document.querySelectorAll('.gck')];
+  const allOn=boxes.length>0 && boxes.every(b=>b.checked);
+  boxes.forEach(b=>{ b.checked=!allOn; });
+  updateGalCount();
+}
+function exportSelectedGallery(){
+  const ids=[...document.querySelectorAll('.gck:checked')].map(c=>c.dataset.id);
+  if(!ids.length){toast('書き出す画像を選んでください。');return;}
+  const head=['画像ID','店舗','生成AI','ステータス','Drive保存先'];
+  const rows=[head].concat(ids.map(id=>{
+    const g=DATA.gallery.find(x=>x.id===id)||{id};
+    const st=DATA.stores.find(x=>x.code===g.store);
+    return [g.id, st?st.name:(g.store||''), g.ai||'', g.status||'', g.drive||''];
+  }));
+  downloadText('選択画像_書き出し.csv', toCSV(rows));
+  toast('⬇️ 選択した'+ids.length+'枚をCSVで書き出しました。');
+}
+
+/* ====================================================================
+   🔗 リンク集（外部URL管理）
+   フラット構造：1リンク＝1行。NotionのDB（ラベル/URL/スコープ/対象/分類）に
+   そのまま移せます。URLが変わっても、ここを直すだけで全画面のボタンが追従します。
+   scope: global(全体) / group(グループ別) / store(店舗別)
+   key  : global→"" / group→グループ名 / store→店舗コード
+   cat  : GMO / GBP / 画像 / その他
+   ==================================================================== */
+const LINKS_KEY='meo_links_v2';
+let LINKS=[];
+function luid(){ return 'L'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+/* グループ共通GMO（整体整骨院＝14325／マシンピラティス＝14326） */
+const GROUP_GMO={
+  '整骨院':'https://app.meo-dash.com/groups/14325/dashboard',
+  '整体院':'https://app.meo-dash.com/groups/14325/dashboard',
+  'Peace' :'https://app.meo-dash.com/groups/14326/dashboard',
+};
+/* 店舗別：gmo=GMOツール編集画面 / gbp=GBP定期投稿画面 */
+const STORE_LINKS={
+  'ASK-EDO':{gmo:'https://app.meo-dash.com/gmbs/96903/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E6%B1%9F%E6%88%B8%E5%B7%9D%E5%8F%B0%E5%BA%97&stick=H4sIAAAAAAAA_wFOALH_CAYiJTB4NjAxODk5NjRmYTZjMDJkZjoweDRhZjdiNTNhNjNlNDE3MzeiBSLjgYLjgZXjgbDmlbTpqqjpmaIg5rGf5oi45bed5Y-w5bqXg-shTk4AAAA&hl=ja&authuser=3#mpd=~9303201307678823283/promote/updates'},
+  'ASK-SMT':{gmo:'https://app.meo-dash.com/gmbs/96904/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E6%96%B0%E6%9D%BE%E6%88%B8%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODliOGYxYjA4MDk4NToweDYyNTgyYzg4ZWM4NjViMjOiBR_jgYLjgZXjgbDmlbTpqqjpmaIg5paw5p2-5oi45bqXZh8lkksAAAA&hl=ja&authuser=3#mpd=~7271646181846699978/promote/updates'},
+  'ASK-NGR':{gmo:'https://app.meo-dash.com/branches/117413/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E5%8D%97%E6%B5%81%E5%B1%B1%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODliZTA2NGVkMDdjOToweDEzNzNmMjVhZmNhMjIyNzCiBR_jgYLjgZXjgbDmlbTpqqjpmaIg5Y2X5rWB5bGx5bqX78SN40sAAAA&hl=ja&authuser=3#mpd=~11848074848005183820/promote/updates'},
+  'ASK-KSW':{gmo:'https://app.meo-dash.com/gmbs/96822/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E6%9F%8F%E3%81%AE%E8%91%89%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODlkYTJhMDIzMTUxMzoweDlmYWRiMDk5OWMxMDQ3NjeiBR_jgYLjgZXjgbDmlbTpqqjpmaIg5p-P44Gu6JGJ5bqXtRnalksAAAA&hl=ja&authuser=3#mpd=~269076033844285934/promote/updates'},
+  'ASK-YSO':{gmo:'https://app.meo-dash.com/gmbs/96905/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E5%85%AB%E6%BD%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFIALf_CAYiJTB4NjAxODkxNDlhMGQ0NWVkNToweDU5MmIyMzA5MmVlYjkyZGaiBRzjgYLjgZXjgbDmlbTpqqjpmaIg5YWr5r2u5bqXGKMxLUgAAAA&hl=ja&authuser=3#mpd=~2533570065212041805/promote/updates'},
+  'AST-MSC':{gmo:'https://app.meo-dash.com/gmbs/96908/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E4%B8%89%E9%83%B7%E4%B8%AD%E5%A4%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFOALH_CAYiJTB4NjAxODliNjA3ZmFlNzhmZjoweGE5NWE5NDkzZWM1ZmM2MDSiBSLjgYLjgZXjgbDmlbTkvZPpmaIg5LiJ6YO35Lit5aSu5bqXfCHDdk4AAAA&hl=ja&authuser=3#mpd=~13531277050526437677/promote/updates'},
+  'AST-MNW':{gmo:'https://app.meo-dash.com/gmbs/96907/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E4%B8%89%E3%83%8E%E8%BC%AA%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODhmYTIyMWE4NDAwNToweDg1MzI3OGJhMWZkOWQ0ZTeiBR_jgYLjgZXjgbDmlbTkvZPpmaIg5LiJ44OO6Lyq5bqX9FVviksAAAA&hl=ja&authuser=3#mpd=~273039544295756561/promote/updates'},
+  'AST-MRY':{gmo:'https://app.meo-dash.com/gmbs/96909/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E5%AE%88%E8%B0%B7%E5%BA%97&stick=H4sIAAAAAAAA_wFHALj_CAYiJDB4NjAxODlmYzkwN2ViNjg0MzoweDkzMTE4MmVkZTU2NzVmNaIFHOOBguOBleOBsOaVtOS9k-mZoiDlrojosLflupeGONoiRwAAAA&hl=ja&authuser=3#mpd=~8210251970703958832/promote/updates'},
+  'AST-ABK':{gmo:'https://app.meo-dash.com/gmbs/96906/edit', gbp:'https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E6%88%91%E5%AD%AB%E5%AD%90%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODlkOTk0ZjRjODliZDoweDlkZDc4YzFiNTVmMDQyMDeiBR_jgYLjgZXjgbDmlbTkvZPpmaIg5oiR5a2r5a2Q5bqXgatpQksAAAA&hl=ja&authuser=3#mpd=~16904396832143391775/promote/updates'},
+  'PCE-KSW':{gmo:'https://app.meo-dash.com/gmbs/96964/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E6%9F%8F%E3%81%AE%E8%91%89&stick=H4sIAAAAAAAA_-NgU1I1qDAzMLSwTLE0MzNJTDIyNkqzMqhINjBKTjJKNje3SLVMAwouYlV_3DzvcdP2x82bHzdPedy88nFz2-OmxY-bdgakJianKjyb3_-4cd2LiZ0AYPKWwlMAAAA&hl=ja&authuser=3#mpd=~17574575285139669075/promote/updates'},
+  'PCE-NGR':{gmo:'https://app.meo-dash.com/gmbs/96965/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E5%8D%97%E6%B5%81%E5%B1%B1%E5%BA%97&stick=H4sIAAAAAAAA_wFWAKn_CAYiJTB4NjAxODliZGYxNmZiOGI0MzoweDk4NjQxMGVkZDdmZTNjOTOiBSrjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDljZfmtYHlsbHlupcr70KsVgAAAA&hl=ja&authuser=3#mpd=~7486440184043492746/promote/updates'},
+  'PCE-YSO':{gmo:'https://app.meo-dash.com/gmbs/96963/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E5%85%AB%E6%BD%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFTAKz_CAYiJTB4NjAxODkxNTViN2ZjNmY5MToweDZhNzY0YTI2MzA3YTQyZDiiBSfjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDlhavmva7lupdykOMXUwAAAA&hl=ja&authuser=3#mpd=~8330506207161410416/promote/updates'},
+  'PCE-MSC':{gmo:'https://app.meo-dash.com/gmbs/96968/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E4%B8%89%E9%83%B7%E4%B8%AD%E5%A4%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFZAKb_CAYiJTB4NjAxODliNGFhNDM4YTAxYjoweGZmM2RkNzg1ZmRiMWE4YjCiBS3jg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDkuInpg7fkuK3lpK7lupcQKF-2WQAAAA&hl=ja&authuser=3#mpd=~13239316991715832423/promote/updates'},
+  'PCE-ABK':{gmo:'https://app.meo-dash.com/gmbs/96969/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E6%88%91%E5%AD%AB%E5%AD%90%E5%BA%97&stick=H4sIAAAAAAAA_wFWAKn_CAYiJTB4NjAxODlkZDdjNzgxNWJlNzoweDQ3MTQyZDU5ZTdiZGM1OTCiBSrjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDmiJHlravlrZDlupfCWQ2QVgAAAA&hl=ja&authuser=3#mpd=~3956768292643683592/promote/updates'},
+  'PCE-MRY':{gmo:'https://app.meo-dash.com/gmbs/96967/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E5%AE%88%E8%B0%B7%E5%BA%97&stick=H4sIAAAAAAAA_wFTAKz_CAYiJTB4NjAxODlmMTE0NjBjZjJiOToweDM0OWZlN2IzOTE3ODkyNmWiBSfjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDlrojosLflupfyWDarUwAAAA&hl=ja&authuser=3#mpd=~17705515810348660797/promote/updates'},
+  'PCE-SMT':{gmo:'https://app.meo-dash.com/gmbs/96966/edit', gbp:'https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9+Peace+%E6%96%B0%E6%9D%BE%E6%88%B8%E5%BA%97&stick=H4sIAAAAAAAA_wFXAKj_CAYiJTB4NjAxODliM2NhZTIxNzdkZjoweGMzNTFiYTdlOTMyMGI4OWOiBSvjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrkgUGVhY2Ug5paw5p2-5oi45bqXdOxy-FcAAAA&hl=ja&authuser=3#mpd=~10493512015318642119/promote/updates'},
+};
+function linksDefault(){
+  const out=[
+    {id:luid(), label:'GMO一括投稿ツール（一覧）', url:'https://app.meo-dash.com/groups/14324/list_bookings', scope:'global', key:'', cat:'GMO'},
+    {id:luid(), label:'GMO 画像アップロード', url:'', scope:'global', key:'', cat:'画像'},
+  ];
+  Object.keys(GROUP_GMO).forEach(g=>{
+    out.push({id:luid(), label:g+' GMOツール（共通）', url:GROUP_GMO[g], scope:'group', key:g, cat:'GMO'});
+  });
+  DATA.stores.forEach(s=>{
+    const L=STORE_LINKS[s.code]||{};
+    out.push({id:luid(), label:'GMOツール', url:L.gmo||'', scope:'store', key:s.code, cat:'GMO'});
+    out.push({id:luid(), label:'GBP投稿ページ', url:L.gbp||'', scope:'store', key:s.code, cat:'GBP'});
+  });
+  return out;
+}
+function linksLoad(){
+  try{ const r=localStorage.getItem(LINKS_KEY); if(r){ LINKS=JSON.parse(r); return; } }catch(e){}
+  LINKS=linksDefault(); linksSave();
+}
+function linksSave(){ try{ localStorage.setItem(LINKS_KEY, JSON.stringify(LINKS)); }catch(e){} }
+function linksFor(scope,key){ return LINKS.filter(l=> l.scope===scope && (scope==='global'||l.key===key)); }
+function linkFirst(scope,key,cat){ return LINKS.find(l=> l.scope===scope && (scope==='global'||l.key===key) && (!cat||l.cat===cat)); }
+function openLink(url){
+  if(!url){ toast('このリンクはURL未登録です。「🔗リンク集」で設定してください。'); return; }
+  window.open(url,'_blank');
+}
+function openLinkById(id){ const l=LINKS.find(x=>x.id===id); openLink(l&&l.url); }
+function linkAdd(scope,key,cat){
+  const label=prompt('リンクの名前（例：GMOツール／GBP投稿ページ）',''); if(label===null)return;
+  const url=prompt('URL（あとで変更OK・空でも保存できます）','https://'); if(url===null)return;
+  LINKS.push({id:luid(),label:(label.trim()||'リンク'),url:(url||'').trim().replace(/^https:\/\/$/,''),scope,key:key||'',cat:cat||'その他'});
+  linksSave(); renderLinks(); toast('🔗 リンクを追加しました');
+}
+function linkEdit(id){
+  const l=LINKS.find(x=>x.id===id); if(!l)return;
+  const label=prompt('リンクの名前',l.label); if(label===null)return;
+  const url=prompt('URL',l.url||''); if(url===null)return;
+  l.label=(label.trim()||l.label); l.url=(url||'').trim();
+  linksSave(); renderLinks(); toast('🔗 保存しました');
+}
+function linkRemove(id){
+  const l=LINKS.find(x=>x.id===id); if(!l)return;
+  if(!confirm('「'+l.label+'」を削除しますか？'))return;
+  LINKS=LINKS.filter(x=>x.id!==id); linksSave(); renderLinks(); toast('削除しました');
+}
+function linksResetDefault(){
+  if(!confirm('リンク集を初期状態に戻しますか？（追加・編集した内容は消えます）'))return;
+  LINKS=linksDefault(); linksSave(); renderLinks(); toast('初期状態に戻しました');
+}
+function linksExportCSV(){
+  const cols=['ラベル','URL','スコープ','対象','分類'];
+  const scopeJ={global:'全体',group:'グループ別',store:'店舗別'};
+  const q=v=>{ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  const rows=LINKS.map(l=>{
+    const tgt = l.scope==='store' ? ((DATA.stores.find(s=>s.code===l.key)||{}).name||l.key)
+              : (l.scope==='group'? l.key : '');
+    return [l.label,l.url,scopeJ[l.scope]||l.scope,tgt,l.cat].map(q).join(',');
+  });
+  const csv='\ufeff'+[cols.join(',')].concat(rows).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+  a.href=url; a.download='リンク集_'+ymd+'.csv'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+  toast('⬇️ リンク集をCSVで書き出しました（Notionに貼り付け可）');
+}
+function linkChip(l){
+  const ok=!!l.url;
+  return `<span style="display:inline-flex;align-items:center;gap:2px;background:var(--chip);border-radius:8px;padding:2px 4px;margin:2px 4px 2px 0">
+    <button class="btn ghost sm" style="border:0;background:transparent" onclick="openLinkById('${l.id}')" title="${ok?esc(l.url):'URL未登録'}">${ok?'🔗':'⚠️'} ${esc(l.label)}</button>
+    <button class="btn ghost sm" style="border:0;background:transparent;padding:2px 4px" onclick="linkEdit('${l.id}')" title="編集">✏️</button>
+    <button class="btn ghost sm" style="border:0;background:transparent;padding:2px 4px" onclick="linkRemove('${l.id}')" title="削除">🗑️</button>
+  </span>`;
+}
+function linkBlock(title, code, links, scope, key){
+  const chips=links.length? links.map(linkChip).join('') : '<span class="sub">未登録</span>';
+  return `<div style="border-top:1px solid var(--line);padding:8px 0">
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">${esc(title)}${code?` <code style="font-size:10px">${esc(code)}</code>`:''}</div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center">${chips}
+      <button class="btn ghost sm" onclick="linkAdd('${scope}','${esc(key||'')}','その他')">＋追加</button></div>
+  </div>`;
+}
+function renderLinks(){
+  const wrap=el('page-links'); if(!wrap)return;
+  const groupBlocks=RANK_GROUPS.map(g=>linkBlock(g,'',linksFor('group',g),'group',g)).join('');
+  const storeBlocks=RANK_GROUPS.map(g=>{
+    const stores=DATA.stores.filter(s=>s.group===g);
+    return `<div style="margin-top:6px"><div class="pill" style="margin:6px 0">${esc(g)}</div>`
+      + stores.map(s=>linkBlock(s.name,s.code,linksFor('store',s.code),'store',s.code)).join('') + `</div>`;
+  }).join('');
+  wrap.innerHTML=`
+    <div class="card">
+      <h2>🔗 リンク集</h2>
+      <p class="sub">GMOツール・GBP投稿ページなど、よく飛ぶ外部URLをここでまとめて管理します。
+      <b>URLが変わったらここを直すだけ</b>で、店舗別ページや投稿づくりのボタンも全部新しいURLに切り替わります。
+      内容はこの端末に保存され、CSVに書き出せばNotionにも移せます。</p>
+      <div class="row">
+        <button class="btn ghost" onclick="linksExportCSV()">⬇️ CSVで書き出す（Notion用）</button>
+        <button class="btn ghost" onclick="linksResetDefault()">↺ 初期状態に戻す</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:15px">全体共通</h2>
+      <p class="sub" style="margin-top:0">どの店舗にも共通のリンク（GMO一覧・画像アップロードなど）</p>
+      ${linkBlock('全体で使うリンク','',linksFor('global',''),'global','')}
+    </div>
+    <div class="card">
+      <h2 style="font-size:15px">グループ別</h2>
+      <p class="sub" style="margin-top:0">整骨院・整体院・Peace ごとのGMOツールなど</p>
+      ${groupBlocks}
+    </div>
+    <div class="card">
+      <h2 style="font-size:15px">店舗別</h2>
+      <p class="sub" style="margin-top:0">各店舗のGMOツール・GBP投稿ページ。⚠️マークはURL未登録です。</p>
+      ${storeBlocks}
+    </div>`;
+}
+linksLoad();
+
+/* ====================================================================
+   ④ グローバル設定
+   ==================================================================== */
+function setTargetCTA(v){ SETTINGS.targetCTA=v; renderDash(); renderSettings(); }
+function setGroupKW(g,v){ SETTINGS.groupKW[g]=v; renderDash(); }
+function renderSettings(){
+  const ctaOpts=CTA_KEYS.map(x=>`<option value="${x}" ${x===SETTINGS.targetCTA?'selected':''}>${METRICS[x].label}</option>`).join("");
+  const chartOpts=[["bar","棒グラフ"],["line","折れ線グラフ"],["area","面グラフ"]]
+    .map(([v,l])=>`<option value="${v}" ${v===SETTINGS.chartType?'selected':''}>${l}</option>`).join("");
+  const kwRows=Object.keys(SETTINGS.groupKW).map(g=>`
+    <div class="setrow"><div><div class="k">${esc(g)}</div><div class="d">この基準KWでランキング順位を算出</div></div>
+      <input class="inp" style="max-width:160px" value="${esc(SETTINGS.groupKW[g])}" onchange="setGroupKW('${esc(g)}',this.value)"></div>`).join("");
+
+  const reportCount=Object.keys(DATA.monthly).reduce((a,c)=>a+Object.keys(DATA.monthly[c]||{}).length,0);
+  el('page-settings').innerHTML=`
+    <div class="card">
+      <h2>⚙️ グローバル設定</h2>
+      <p class="sub">ここでの選択が<b>ダッシュボードの表示に反映</b>されます。各データはこの端末に保存され、Notionとは下のCSVでやり取りします。</p>
+    </div>
+
+    <div class="card">
+      <h2>📥 月次レポート（②月次レポートDB）</h2>
+      <p class="sub">毎月のレポート（CSV）を取り込むと、ダッシュボードの数値・グラフ・ランキングに反映されます。現在の取込件数：<b>${reportCount}</b> 件。</p>
+      <div class="row">
+        <button class="btn" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
+        <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す</button>
+        <button class="btn ghost" onclick="clearReports()">🗑️ レポートを消去</button>
+      </div>
+      <p class="sub" style="font-size:11px">列：店舗／対象月／表示回数／ウェブクリック／電話タップ／ルート検索／平均KW順位／口コミ件数／平均評価／所感・コメント</p>
+    </div>
+
+    <div class="card">
+      <h2>🔁 投稿・画像データ（⑦⑧⑨）のNotion連携</h2>
+      <p class="sub">投稿予定・投稿文・画像情報をCSVで取り込み／書き出しします。NotionのDBからエクスポートしたCSVを取り込み、編集後に書き出してNotionへ戻せます。</p>
+      <div class="setrow"><div><div class="k">投稿（⑦スケジュール＋⑧投稿文）</div><div class="d">現在 ${DATA.schedule.length} 件</div></div>
+        <div class="row"><button class="btn ghost sm" onclick="importScheduleCSV()">📥 取込</button><button class="btn ghost sm" onclick="exportScheduleCSV()">⬇️ 書出</button></div></div>
+      <div class="setrow"><div><div class="k">画像（⑨サムネ画像管理）</div><div class="d">現在 ${DATA.gallery.length} 件</div></div>
+        <div class="row"><button class="btn ghost sm" onclick="importGalleryCSV()">📥 取込</button><button class="btn ghost sm" onclick="exportGalleryCSV()">⬇️ 書出</button></div></div>
+    </div>
+
+    <div class="card">
+      <h2>📈 ダッシュボード表示設定</h2>
+      <div class="setrow"><div><div class="k">目標CTA</div><div class="d">メイングラフ・KPI主役に表示する指標</div></div>
+        <select onchange="setTargetCTA(this.value)">${ctaOpts}</select></div>
+      <div class="setrow"><div><div class="k">グラフのデザイン</div><div class="d">棒／折れ線／面から選択</div></div>
+        <select onchange="setChartType(this.value)">${chartOpts}</select></div>
+    </div>
+
+    <div class="card">
+      <h2>🔑 グローバルKW（グループ別）</h2>
+      <p class="sub">店舗ランキングの「KW順位」を算出する基準キーワードです。将来は地図の競合比較にも使います。</p>
+      ${kwRows}
+    </div>
+
+    <div class="card">
+      <h2>🔗 あなた用のAIリンク（非公開）</h2>
+      <p class="sub">投稿づくりで開くAIのURLを各自で登録します。ここに入れたリンクは<b>他の人には共有されません</b>。AIのAPIとはつなぎません。</p>
+      <div class="setrow"><div><div class="k">文章AIのリンク</div><div class="d">例：ClaudeやChatGPTのURL</div></div>
+        <input class="inp" style="max-width:220px" placeholder="https://claude.ai/ ..." value="${esc(USER.aiTextUrl)}" onchange="setAIUrl('aiTextUrl',this.value)"></div>
+      <div class="setrow"><div><div class="k">画像AIのリンク</div><div class="d">例：画像生成AIのURL</div></div>
+        <input class="inp" style="max-width:220px" placeholder="https://chatgpt.com/ ..." value="${esc(USER.aiImageUrl)}" onchange="setAIUrl('aiImageUrl',this.value)"></div>
+    </div>
+
+    <div class="card">
+      <h2>ログイン・閲覧権限</h2>
+      <div class="setrow"><div><div class="k">招待制ログイン</div><div class="d">メール＋パスワード（外部の認証サービスでつなぎます）</div></div>
+        <button class="btn ghost sm" onclick="toast('招待制ログインは次フェーズで接続します。')">メンバー管理</button></div>
+      <div class="setrow"><div><div class="k">権限の単位</div><div class="d">アカウント別／店舗別に閲覧を制御</div></div><span class="pill">アカウント別</span></div>
+    </div>
+
+    <div class="card">
+      <h2>テーマカラー（グループ別）</h2>
+      ${Object.keys(THEME_COLORS).map(g=>`<div class="setrow"><div class="k">${esc(g)}</div>
+        <div><span class="swatch" style="background:${THEME_COLORS[g]}"></span> <code>${THEME_COLORS[g]}</code></div></div>`).join("")}
+    </div>
+
+    <div class="card">
+      <h2>画像の保存先</h2>
+      <p class="sub">画像ファイル本体はGoogle Drive／GMOで管理します。このツールでは画像IDと<b>Drive保存先URL</b>をひも付けて管理します（画像情報の登録・CSV取込で設定）。</p>
+      <div class="setrow"><div><div class="k">保存先フォルダ階層</div><div class="d">アカウント＞グループ＞店舗＞年月</div></div>
+        <span class="pill">Drive</span></div>
+    </div>
+
+    <div class="card">
+      <h2>表示・操作</h2>
+      <div class="setrow"><div><div class="k">表示モード</div><div class="d">ライト／ダーク（端末に保存されます）</div></div>
+        <button class="btn ghost sm" onclick="toggleTheme()">${document.body.classList.contains('dark')?'☀️ ライトに':'🌙 ダークに'}</button></div>
+      <div class="setrow"><div><div class="k">しぼり込みをリセット</div><div class="d">投稿・画像の状態／グループのしぼり込みを「すべて」に戻します</div></div>
+        <button class="btn ghost sm" onclick="resetFilters()">リセット</button></div>
+    </div>
+
+    <div class="card">
+      <h2>このツールについて</h2>
+      <div class="setrow"><div class="k">💬 改善・問い合わせ</div><button class="btn ghost sm" onclick="alert('改善のご要望・不具合は担当（ハルカ）までチャットでお知らせください。')">開く</button></div>
+      <div class="setrow"><div class="k">🆕 リリース情報</div><button class="btn ghost sm" onclick="showRelease()">開く</button></div>
+    </div>`;
+}
+function resetFilters(){
+  SETTINGS.postFilter="all"; SETTINGS.postGroup="all"; SETTINGS.galFilter="all";
+  renderPost(); renderGallery();
+  toast('🔄 しぼり込みをリセットしました');
+}
+function showRelease(){
+  openSheet(`<h3>リリース情報</h3>
+    <p class="sub"><b>v1.0 本番運用版（2026-06-29）</b><br>
+    ・ダミーデータを廃止し、<b>月次レポート（CSV）取込</b>で実数値を表示する方式に変更<br>
+    ・ダッシュボードのKPI・グラフ・ランキング・所感は②月次レポートDBの列に対応<br>
+    ・投稿（⑦スケジュール＋⑧投稿文）・画像（⑨サムネ管理）を端末に保存し、CSVでNotionと連携<br>
+    ・投稿予定の追加・下書き保存・画像情報の登録を、この端末で実行・保存できるように<br>
+    ・GMO一括投稿テンプレ（48列）への書き出し→GMO書き出しツールの流れは継続<br>
+    ・各店舗のGMO／GBPリンクを実URLで設定済み（🔗リンク集で編集可）<br>
+    ・実データの出どころが無い「天気×曜日分析」は廃止<br>
+    ・ログイン認証（招待制）は次フェーズで接続予定</p>`);
+}
+</script>
+</body>
+</html>

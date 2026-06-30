@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEO一括投稿 Excel書き出しツール</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+    --line:#e5e7eb; --accent:#2f6df0; --accent-d:#1f4fc4;
+    --ok:#138a52; --okbg:#e7f6ee; --warn:#b9821b; --warnbg:#fdf4e3;
+    --err:#c23b3b; --errbg:#fbeaea;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px}
+  header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);
+    padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+  header h1{font-size:16px;margin:0;font-weight:700}
+  .menu-btn{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--ink)}
+  main{max-width:720px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:15px;margin:0 0 8px}
+  .step{display:inline-block;background:var(--accent);color:#fff;border-radius:999px;
+    width:22px;height:22px;line-height:22px;text-align:center;font-size:12px;margin-right:8px;font-weight:700}
+  .step.info{background:#1f2430}
+  p.sub{color:var(--sub);font-size:13px;margin:6px 0}
+  .drop{display:block;border:2px dashed var(--line);border-radius:12px;padding:22px 14px;text-align:center;
+    background:#fafbfc;transition:.15s;cursor:pointer}
+  .drop.drag{border-color:var(--accent);background:#eef3ff}
+  .drop input{display:none}
+  .btn{display:inline-block;background:var(--accent);color:#fff;border:none;border-radius:10px;
+    padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer;text-decoration:none}
+  .btn:active{background:var(--accent-d)}
+  .btn[disabled]{background:#aab2c0;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  textarea{width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:10px;
+    font-size:13px;font-family:ui-monospace,monospace;resize:vertical}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700}
+  .pill.ok{background:var(--okbg);color:var(--ok)}
+  .pill.warn{background:var(--warnbg);color:var(--warn)}
+  .pill.err{background:var(--errbg);color:var(--err)}
+  .status{padding:10px 12px;border-radius:10px;font-size:13px;margin-top:10px;display:none}
+  .status.ok{background:var(--okbg);color:var(--ok);display:block}
+  .status.warn{background:var(--warnbg);color:var(--warn);display:block}
+  .status.err{background:var(--errbg);color:var(--err);display:block}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:5px 7px;text-align:left;white-space:nowrap}
+  th{background:#f3f5f8;position:sticky;top:0}
+  .tablewrap{overflow:auto;max-height:300px;border:1px solid var(--line);border-radius:10px}
+  .center{text-align:center}
+  .mt{margin-top:14px}
+  ul.tight{margin:6px 0;padding-left:20px}ul.tight li{margin:3px 0;font-size:13px}
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:50}
+  .overlay.open{display:flex}
+  .sheet{background:#fff;width:100%;border-radius:16px 16px 0 0;padding:18px 18px 28px;max-height:80vh;overflow:auto}
+  .sheet h3{margin:0 0 12px;font-size:16px}
+  .sheet a,.sheet button.link{display:block;padding:12px 4px;border-bottom:1px solid var(--line);
+    color:var(--ink);text-decoration:none;font-size:15px;background:none;border:none;width:100%;text-align:left}
+  .sheet .close{margin-top:14px;width:100%;text-align:center;padding:12px;background:var(--bg);border-radius:10px;border:none;font-size:15px}
+  code{background:#eef1f5;padding:1px 5px;border-radius:5px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📤 MEO一括投稿 Excel書き出し</h1>
+  <button class="menu-btn" onclick="openMenu()">☰ メニュー</button>
+</header>
+
+<main>
+  <div class="card">
+    <h2><span class="step info">?</span>このツールについて</h2>
+    <p class="sub">Notionの「⑥ 一括投稿作成DB」から書き出したデータを、<b>GMOの一括投稿テンプレートと全く同じ48列のExcel（.xlsx）</b>に変換します。そのままGMOにインポートできます。管理用の列（投稿予定ID・店舗・投稿ステータス・備考）は自動で取り除き、列の数・並び・見出しは元のテンプレと完全に同じにします。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">1</span>NotionからCSVを書き出す</h2>
+    <p class="sub">⑥DBの右上「…」→ <b>エクスポート</b> →「マークダウン＆CSV」または「CSV」を選び、出てきたCSVファイルを用意してください。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span>CSVを読み込む</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".csv,text/csv">
+      <div id="dropText">📄 ここをタップしてCSVを選択<br><span class="sub">（ドラッグ＆ドロップもOK）</span></div>
+    </label>
+    <p class="sub mt">うまくいかないときは、CSVの中身をコピーして下に貼り付けてもOKです。</p>
+    <textarea id="paste" placeholder="（任意）CSVの中身をここに貼り付け"></textarea>
+    <div class="center mt"><button class="btn ghost" onclick="userPaste()">貼り付けた内容を読み込む</button></div>
+    <div id="status1" class="status"></div>
+  </div>
+
+  <div class="card" id="previewCard" style="display:none">
+    <h2><span class="step">3</span>確認して書き出す</h2>
+    <div id="matchInfo"></div>
+    <div class="tablewrap mt"><table id="preview"></table></div>
+    <div class="center mt">
+      <button class="btn" id="dlBtn" onclick="downloadXlsx()">⬇️ Excel(.xlsx)で書き出す</button>
+      <button class="btn ghost" onclick="downloadCsv()">⬇️ CSVで書き出す</button>
+      <button class="btn ghost" onclick="openGmo()">🔗 GMOツールを開く</button>
+    </div>
+    <p class="sub center mt">ファイル名：<span id="fname">MEO一括投稿_yyyymmdd.xlsx</span></p>
+    <p class="sub center">GMO取込は<b>.xlsx</b>を使ってください（プルダウンが付きます）。CSVは共有・確認用です。</p>
+  </div>
+</main>
+
+<!-- menu -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeMenu()">
+  <div class="sheet">
+    <h3>メニュー</h3>
+    <button class="link" onclick="setGmo();closeMenu()">🔗 GMOツールのURLを設定</button>
+    <button class="link" onclick="showInfo('improve')">💬 改善・問い合わせ</button>
+    <button class="link" onclick="showInfo('release')">🆕 リリース情報</button>
+    <button class="link" onclick="showInfo('help')">❓ 列の対応について</button>
+    <button class="close" onclick="closeMenu()">閉じる</button>
+  </div>
+</div>
+
+<script>
+/* ===== GMOテンプレ 48列（この順番・この見出しが絶対）===== */
+const GMO_HEADERS = [
+"店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間",
+"Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔",
+"Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）",
+"Google繰り返し投稿終了日（省略可）",
+"掲載期間の設定（Yahoo!記載欄）の予約投稿日","掲載期間の設定（Yahoo!記載欄）の予約投稿時間",
+"掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間",
+"概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間",
+"概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間",
+"タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像",
+"クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","ハッシュタグ",
+"開始日","開始時間","終了日","終了時間",
+"Facebook","Instagram","X（旧Twitter）","Yahoo!","エキテン",
+"エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）",
+"エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"
+];
+/* 管理列（書き出しから除外） */
+const DROP_COLS = ["投稿予定ID","店舗","投稿ステータス","備考"];
+
+let parsedRows = []; // 配列の配列（GMO_HEADERS順に整形済み）
+
+/* ===== CSVパーサ（ダブルクォート・改行・カンマ対応）===== */
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/,''); // BOM除去
+  const rows=[]; let row=[]; let cur=''; let i=0; let inQ=false;
+  while(i<text.length){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){
+        if(text[i+1]==='"'){cur+='"';i+=2;continue;}
+        inQ=false;i++;continue;
+      }
+      cur+=c;i++;continue;
+    }
+    if(c==='"'){inQ=true;i++;continue;}
+    if(c===','){row.push(cur);cur='';i++;continue;}
+    if(c==='\r'){i++;continue;}
+    if(c==='\n'){row.push(cur);rows.push(row);row=[];cur='';i++;continue;}
+    cur+=c;i++;
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows.filter(r=>!(r.length===1&&r[0]===''));
+}
+
+/* ===== 列名で対応づけ → 48列に整形 ===== */
+function buildRows(csvText){
+  const grid=parseCSV(csvText);
+  if(grid.length<1) throw new Error('CSVが空のようです。');
+  const header=grid[0].map(h=>h.trim());
+  // CSV見出し→列index の辞書
+  const idx={}; header.forEach((h,k)=>{ idx[h]=k; });
+  // 何列が対応したか集計
+  const matched=[]; const missing=[];
+  GMO_HEADERS.forEach(g=>{ (g in idx)?matched.push(g):missing.push(g); });
+  const dataRows=grid.slice(1);
+  const out=dataRows.map(r=>{
+    return GMO_HEADERS.map(g=> (g in idx) ? (r[idx[g]]??'') : '' );
+  });
+  return {out, matched, missing, header};
+}
+
+/* ===== 表示 ===== */
+function showResult(res){
+  parsedRows = res.out;
+  const card=document.getElementById('previewCard');
+  card.style.display='block';
+  const mi=document.getElementById('matchInfo');
+  let html='<p class="sub">'+
+    '<span class="pill ok">48列で出力</span> '+
+    '<span class="pill ok">'+res.out.length+'行のデータ</span> '+
+    '<span class="pill '+(res.missing.length?'warn':'ok')+'">CSVと一致した列 '+res.matched.length+'/48</span></p>';
+  if(res.missing.length){
+    html+='<p class="sub">CSVに見つからず<b>空欄</b>で出力する列（'+res.missing.length+'）：<br>'+
+      res.missing.map(m=>'<code>'+esc(m)+'</code>').join(' ')+'</p>'+
+      '<p class="sub">※GMO側で必須でなければ空欄でも問題ありません。投稿に必要な「店舗ID・店舗名・投稿タイプ・タイトル・投稿内容」などが空欄なら、Notion側の見出しがテンプレと違う可能性があります。</p>';
+  }
+  // 必須項目（中身）の空欄チェック：GMO取込で一番よく弾かれる原因
+  const blanks=checkRequired(res.out);
+  if(blanks.length){
+    html+='<p class="sub"><span class="pill warn">要確認</span> 取込に必要な項目が空の行があります（GMO側でエラーになりやすい箇所です）：</p><ul class="tight">';
+    blanks.forEach(b=>{
+      html+='<li>'+rowsLabel(b.rows)+'の<b>'+esc(b.name)+'</b>が空欄です</li>';
+    });
+    html+='</ul><p class="sub">※Notion側でこれらの値を入れてから書き出し直すと、GMOで弾かれにくくなります。</p>';
+  }
+  mi.innerHTML=html;
+  // プレビュー（先頭8列 × 先頭5行）
+  const t=document.getElementById('preview');
+  const showCols=GMO_HEADERS.slice(0,8);
+  let thtml='<tr>'+showCols.map(c=>'<th>'+esc(c)+'</th>').join('')+'<th>…</th></tr>';
+  res.out.slice(0,5).forEach(r=>{
+    thtml+='<tr>'+r.slice(0,8).map(c=>'<td>'+esc(trunc(c))+'</td>').join('')+'<td>…</td></tr>';
+  });
+  if(res.out.length>5) thtml+='<tr><td colspan="9" class="center sub">ほか '+(res.out.length-5)+' 行</td></tr>';
+  t.innerHTML=thtml;
+  document.getElementById('fname').textContent=fileName();
+  card.scrollIntoView({behavior:'smooth'});
+}
+/* 取込に必須な項目の中身が空の行を探す（行番号は元CSVのデータ1件目=1） */
+const REQUIRED_COLS=['店舗ID','店舗名','投稿タイプ'];
+function checkRequired(rows){
+  const res=[];
+  REQUIRED_COLS.forEach(name=>{
+    const ci=GMO_HEADERS.indexOf(name);
+    if(ci<0) return;
+    const bad=[];
+    rows.forEach((r,i)=>{ if(String(r[ci]??'').trim()==='') bad.push(i+1); });
+    if(bad.length) res.push({name, rows:bad});
+  });
+  return res;
+}
+function rowsLabel(nums){
+  if(nums.length<=5) return nums.map(n=>n+'件目').join('・');
+  return nums.slice(0,5).map(n=>n+'件目').join('・')+' ほか'+(nums.length-5)+'件';
+}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function trunc(s){s=String(s);return s.length>18?s.slice(0,18)+'…':s;}
+function fileName(ext){
+  const d=new Date();const p=n=>String(n).padStart(2,'0');
+  return 'MEO一括投稿_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'.'+(ext||'xlsx');
+}
+
+/* ===== 入力ハンドラ ===== */
+function handleText(txt){
+  const s=document.getElementById('status1');
+  try{
+    const res=buildRows(txt);
+    if(res.out.length===0){ s.className='status warn'; s.textContent='見出しは読めましたが、データ行がありません。'; }
+    else { s.className='status ok'; s.textContent='読み込み成功：'+res.out.length+'行を整形しました。'; }
+    showResult(res);
+  }catch(e){
+    s.className='status err'; s.textContent='読み込みエラー：'+e.message;
+    document.getElementById('previewCard').style.display='none';
+  }
+}
+function userPaste(){
+  const v=document.getElementById('paste').value.trim();
+  if(!v){const s=document.getElementById('status1');s.className='status err';s.textContent='貼り付け欄が空です。';return;}
+  handleText(v);
+}
+const fileEl=document.getElementById('file');
+fileEl.addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  document.getElementById('dropText').innerHTML='📄 '+esc(f.name);
+  const rd=new FileReader();
+  rd.onload=ev=>handleText(ev.target.result);
+  rd.readAsText(f,'UTF-8');
+});
+const drop=document.getElementById('drop');
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{
+  const f=e.dataTransfer.files[0];if(!f)return;
+  document.getElementById('dropText').innerHTML='📄 '+esc(f.name);
+  const rd=new FileReader();rd.onload=ev=>handleText(ev.target.result);rd.readAsText(f,'UTF-8');
+});
+
+/* =========================================================
+   .xlsx 生成（外部ライブラリなし・自前実装）
+   - 文字列は inlineStr で出力（sharedStrings省略）
+   - ZIPは無圧縮(store)・自前CRC32
+   ========================================================= */
+function colLetter(n){ // 1->A
+  let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;
+}
+function xmlEsc(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,''); // 不正な制御文字を除去
+}
+function sheetXml(headers,rows){
+  let xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  const all=[headers,...rows];
+  all.forEach((row,r)=>{
+    xml+='<row r="'+(r+1)+'">';
+    row.forEach((val,c)=>{
+      const ref=colLetter(c+1)+(r+1);
+      const v=(val==null)?'':String(val);
+      xml+='<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+xmlEsc(v)+'</t></is></c>';
+    });
+    xml+='</row>';
+  });
+  xml+='</sheetData>'+validationsXml(rows.length)+'</worksheet>';
+  return xml;
+}
+/* GMOテンプレと同じプルダウン（入力規則）。列は「見出し名」で対応づけ */
+const VALIDATIONS=[
+  {names:['投稿タイプ'], list:'最新情報,イベント,クーポン'},
+  {names:['下書き保存','即時投稿','Facebook','Instagram','X（旧Twitter）','Yahoo!','エキテン','エ_タイムライン通知'], list:'○,✕'},
+  {names:['Google繰り返し設定_繰り返し'], list:'週,月（日付）,月（曜日）'},
+  {names:['Google繰り返し設定_間隔'], list:'1週毎,2週毎,1ヶ月毎,2ヶ月毎,3ヶ月毎'},
+  {names:['Google繰り返し設定_曜日（週 選択時）'], list:'月,火,水,木,金,土,日'},
+  {names:['Google繰り返し設定_日付（月_日付 選択時）'], list:'1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,月末'},
+  {names:['Google繰り返し設定_週指定（月_曜日 選択時）'], list:'第1月,第1火,第1水,第1木,第1金,第1土,第1日,第2月,第2火,第2水,第2木,第2金,第2土,第2日,第3月,第3火,第3水,第3木,第3金,第3土,第3日,第4月,第4火,第4水,第4木,第4金,第4土,第4日,第5月,第5火,第5水,第5木,第5金,第5土,第5日'},
+  {names:['ボタンの追加'], list:'なし,予約,オンライン注文,購入,詳細,登録,今すぐ電話'},
+  {names:['エ_投稿カテゴリー'], list:'お知らせ,お得な情報'},
+];
+function validationsXml(nRows){
+  const last=1+Math.max(nRows,1); // データ行（2行目〜）。最低でも2行目
+  const parts=VALIDATIONS.map(v=>{
+    const sq=v.names.map(name=>{
+      const col=colLetter(GMO_HEADERS.indexOf(name)+1);
+      return col+'2:'+col+last;
+    }).join(' ');
+    return '<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" sqref="'+sq+'"><formula1>"'+v.list+'"</formula1></dataValidation>';
+  });
+  return '<dataValidations count="'+VALIDATIONS.length+'">'+parts.join('')+'</dataValidations>';
+}
+const CONTENT_TYPES='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+'<Default Extension="xml" ContentType="application/xml"/>'+
+'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
+'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'+
+'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+'</Types>';
+const ROOT_RELS='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'+
+'</Relationships>';
+const WORKBOOK='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '+
+'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
+'<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>';
+const WB_RELS='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'+
+'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'+
+'</Relationships>';
+const STYLES='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+'<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>'+
+'<fills count="1"><fill><patternFill patternType="none"/></fill></fills>'+
+'<borders count="1"><border/></borders>'+
+'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+'<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>'+
+'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'+
+'</styleSheet>';
+
+/* ---- CRC32 ---- */
+const CRC_TABLE=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}return t;})();
+function crc32(bytes){let c=0xFFFFFFFF;for(let i=0;i<bytes.length;i++)c=CRC_TABLE[(c^bytes[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+
+/* ---- ZIP（store方式・自前）---- */
+function strToU8(s){return new TextEncoder().encode(s);}
+function dosDateTime(d){
+  const time=((d.getHours()<<11)|(d.getMinutes()<<5)|(Math.floor(d.getSeconds()/2)))&0xFFFF;
+  const date=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
+  return {time,date};
+}
+function makeZip(files){ // files: [{name, data(Uint8Array)}]
+  const now=new Date(); const {time,date}=dosDateTime(now);
+  const chunks=[]; const central=[]; let offset=0;
+  const u16=v=>new Uint8Array([v&0xFF,(v>>8)&0xFF]);
+  const u32=v=>new Uint8Array([v&0xFF,(v>>8)&0xFF,(v>>16)&0xFF,(v>>24)&0xFF]);
+  function concat(arr){let len=0;arr.forEach(a=>len+=a.length);const out=new Uint8Array(len);let p=0;arr.forEach(a=>{out.set(a,p);p+=a.length;});return out;}
+  files.forEach(f=>{
+    const nameU8=strToU8(f.name); const crc=crc32(f.data); const size=f.data.length;
+    const local=concat([
+      u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(time),u16(date),
+      u32(crc),u32(size),u32(size),u16(nameU8.length),u16(0),nameU8,f.data
+    ]);
+    chunks.push(local);
+    const cen=concat([
+      u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(time),u16(date),
+      u32(crc),u32(size),u32(size),u16(nameU8.length),u16(0),u16(0),u16(0),u16(0),
+      u32(0),u32(offset),nameU8
+    ]);
+    central.push(cen);
+    offset+=local.length;
+  });
+  const centralData=concat(central);
+  const end=concat([
+    u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),
+    u32(centralData.length),u32(offset),u16(0)
+  ]);
+  return concat([...chunks,centralData,end]);
+}
+
+function downloadXlsx(){
+  if(!parsedRows.length){alert('先にCSVを読み込んでください。');return;}
+  const sheet=sheetXml(GMO_HEADERS,parsedRows);
+  const files=[
+    {name:'[Content_Types].xml',data:strToU8(CONTENT_TYPES)},
+    {name:'_rels/.rels',data:strToU8(ROOT_RELS)},
+    {name:'xl/workbook.xml',data:strToU8(WORKBOOK)},
+    {name:'xl/_rels/workbook.xml.rels',data:strToU8(WB_RELS)},
+    {name:'xl/styles.xml',data:strToU8(STYLES)},
+    {name:'xl/worksheets/sheet1.xml',data:strToU8(sheet)},
+  ];
+  const zip=makeZip(files);
+  triggerDownload(new Blob([zip],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),fileName('xlsx'));
+}
+/* ===== CSV書き出し（共有・確認用。GMO取込は.xlsx推奨） ===== */
+function downloadCsv(){
+  if(!parsedRows.length){alert('先にCSVを読み込んでください。');return;}
+  const cell=v=>{v=(v==null)?'':String(v);return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const lines=[GMO_HEADERS.map(cell).join(',')];
+  parsedRows.forEach(r=>lines.push(r.map(cell).join(',')));
+  const csv='\uFEFF'+lines.join('\r\n'); // BOM付き＝Excelで文字化けしない
+  triggerDownload(new Blob([csv],{type:'text/csv;charset=utf-8'}),fileName('csv'));
+}
+function triggerDownload(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+/* ===== GMOツールを開く（リンクはこの端末に保存／自動送信はしない） =====
+   既定＝あさばグループ アカウント全店舗用の一括インポート画面。
+   将来はグローバル設定/Notionでアカウント・グループ・店舗別に切替予定。 */
+const DEFAULT_GMO_URL='https://app.meo-dash.com/groups/14324/list_bookings';
+function gmoUrl(){return localStorage.getItem('gmoUrl')||DEFAULT_GMO_URL;}
+function openGmo(){ window.open(gmoUrl(),'_blank','noopener'); }
+function setGmo(){
+  const cur=gmoUrl();
+  const u=(prompt('GMO一括インポート画面のURLを設定／変更します。\n空欄にすると既定（あさばグループ全店舗用）に戻ります。',cur)||'').trim();
+  if(u===''){localStorage.removeItem('gmoUrl');alert('既定のURL（あさばグループ全店舗用）に戻しました。');return;}
+  if(!/^https?:\/\//i.test(u)){alert('URLは http(s):// で始まる必要があります。');return;}
+  localStorage.setItem('gmoUrl',u);alert('保存しました。');
+}
+
+/* ===== メニュー ===== */
+function openMenu(){document.getElementById('overlay').classList.add('open');}
+function closeMenu(){document.getElementById('overlay').classList.remove('open');}
+function showInfo(kind){
+  const msgs={
+    improve:'改善のご要望・不具合のご連絡は、担当（ハルカ）までチャットでお知らせください。「どの列がうまく入らない」など具体的だと助かります。',
+    release:'v1.2（2026-06-27）\n・読み込み時に「取込に必要な項目（店舗ID／店舗名／投稿タイプ）が空の行」を自動チェックし、何件目かを警告表示（GMOで弾かれる前に気づけます）\n\nv1.1（2026-06-27）\n・プルダウン（入力規則）をGMOテンプレと同じ9種類で再現（投稿タイプ/○✕/繰り返し設定/ボタンの追加/エキテンカテゴリ等）\n・CSV書き出しボタンを追加（共有・確認用）\n・「GMOツールを開く」ボタンを追加（あさばグループ全店舗用の一括インポート画面を既定で登録済み。メニューから変更可）\n\nv1.0（2026-06-27）\n・GMO一括投稿テンプレと同じ48列の.xlsxを書き出し\n・NotionのCSVを列名で自動マッピング\n・管理列（投稿予定ID/店舗/投稿ステータス/備考）は自動除外',
+    help:'GMOテンプレの48列を「列の見出し名」で対応づけます。NotionのCSVで列の並びが違っても、見出しが同じなら正しい位置に入ります。テンプレに無い管理列は出力しません。CSVに無い列は空欄で出力します（列の数は必ず48のまま）。'
+  };
+  alert(msgs[kind]);
+}
+</script>
+</body>
+</html>
