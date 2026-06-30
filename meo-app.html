@@ -2290,6 +2290,213 @@ linksLoad();
    ==================================================================== */
 function setTargetCTA(v){ SETTINGS.targetCTA=v; renderDash(); renderSettings(); }
 function setGroupKW(g,v){ SETTINGS.groupKW[g]=v; renderDash(); }
+
+/* ====================================================================
+   Notion連携（チーム同期）
+   ブラウザ→/api/notion（Vercelサーバーレス）→Notion API の流れで中継。
+   トークンはVercelの環境変数にだけ置き、この画面には保存しない。
+   ==================================================================== */
+const NOTION = {
+  ds: {
+    schedule:'fefe2e2a-b53a-4654-95f5-d4c1fa1c55c8', // ⑦定期投稿スケジュール
+    gallery :'096c218a-608c-4e0b-b9cf-1444796ba08c', // ⑨サムネ画像管理
+    links   :'e1e00327-edb8-4986-a620-ff84e34acb86', // ⑩リンク集
+    kaizen  :'b05e1dc3-0c58-48cb-a977-5e63778e4f3b', // 🔧改善DB
+    store   :'753aef16-fc92-4b27-abdb-7340eafaae5b', // ③店舗要項DB（店舗リレーション解決用）
+  }
+};
+function notionProxy(){ return (localStorage.getItem('meo_notion_proxy')||'').trim() || '/api/notion'; }
+function setNotionProxy(v){ localStorage.setItem('meo_notion_proxy',(v||'').trim()); toast('保存しました'); }
+function setNotionSecret(v){ localStorage.setItem('meo_notion_secret',(v||'').trim()); toast('保存しました'); }
+function setSyncMsg(k,m){ const e=el('sync_'+k); if(e) e.textContent=m; }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+async function notionCall(payload){
+  const headers={'Content-Type':'application/json'};
+  const secret=(localStorage.getItem('meo_notion_secret')||'').trim();
+  if(secret) headers['x-app-secret']=secret;
+  const r=await fetch(notionProxy(),{method:'POST',headers,body:JSON.stringify(payload)});
+  const t=await r.text(); let d; try{ d=t?JSON.parse(t):{}; }catch(e){ d={raw:t}; }
+  if(!r.ok){ throw new Error((d&&d.error)||(d&&d.message)||('HTTP '+r.status)); }
+  return d;
+}
+async function queryAllRows(ds){
+  const out=[]; let cursor=null, guard=0;
+  do{ const body={page_size:100}; if(cursor) body.start_cursor=cursor;
+    const res=await notionCall({op:'query',ds,body});
+    (res.results||[]).forEach(x=>out.push(x));
+    cursor=res.has_more?res.next_cursor:null; guard++;
+  }while(cursor && guard<25);
+  return out;
+}
+function mapBy(rows,prop,kind){ const m={}; rows.forEach(pg=>{ const c=pg.properties&&pg.properties[prop];
+  const v=kind==='title'?(c&&c.title&&c.title[0]&&c.title[0].plain_text):(c&&c.rich_text&&c.rich_text[0]&&c.rich_text[0].plain_text);
+  if(v) m[v.trim()]=pg.id; }); return m; }
+function pTitle(pr,n){ const c=pr&&pr[n]; return (c&&c.title&&c.title[0]&&c.title[0].plain_text)||''; }
+function pText(pr,n){ const c=pr&&pr[n]; return (c&&c.rich_text&&c.rich_text[0]&&c.rich_text[0].plain_text)||''; }
+function pSel(pr,n){ const c=pr&&pr[n]; return (c&&c.select&&c.select.name)||''; }
+function pUrl(pr,n){ const c=pr&&pr[n]; return (c&&c.url)||''; }
+function pNum(pr,n){ const c=pr&&pr[n]; return (c&&typeof c.number==='number')?c.number:0; }
+function pRel0(pr,n){ const c=pr&&pr[n]; return (c&&c.relation&&c.relation[0]&&c.relation[0].id)||''; }
+
+async function notionPing(){
+  setSyncMsg('ping','確認中…');
+  try{ const d=await notionCall({op:'ping'});
+    const nm=(d&&(d.name||(d.bot&&d.bot.owner&&d.bot.owner.user&&d.bot.owner.user.name)))||'インテグレーション';
+    setSyncMsg('ping','✅ 接続OK（'+nm+'）'); }
+  catch(e){ setSyncMsg('ping','❌ '+e.message); }
+}
+
+/* 店舗コード⇔NotionページID */
+let _storeMap=null, _storeInv=null;
+async function loadStoreMaps(){
+  if(_storeMap) return;
+  const rows=await queryAllRows(NOTION.ds.store);
+  _storeMap={}; _storeInv={};
+  rows.forEach(pg=>{ const code=pText(pg.properties,'店舗コード').trim(); if(code){ _storeMap[code]=pg.id; _storeInv[pg.id]=code; } });
+}
+
+/* ⑦ 投稿予定 */
+async function syncSchedulePush(){
+  if(!DATA.schedule.length){ toast('投稿予定がありません'); return; }
+  setSyncMsg('sch','送信中…');
+  try{
+    await loadStoreMaps();
+    const existing=mapBy(await queryAllRows(NOTION.ds.schedule),'投稿予定ID','title');
+    let ok=0,ng=0;
+    for(const p of DATA.schedule){
+      const props={ '投稿予定ID':{title:[{text:{content:p.id||''}}]} };
+      if(p.date) props['投稿予定日']={date:{start:(p.time?(p.date+'T'+p.time+':00'):p.date)}};
+      if(p.type) props['投稿タイプ']={select:{name:p.type}};
+      if(p.status) props['ステータス']={select:{name:p.status}};
+      if(p.theme) props['備考']={rich_text:[{text:{content:String(p.theme).slice(0,1800)}}]};
+      const sp=_storeMap[p.store]; if(sp) props['店舗']={relation:[{id:sp}]};
+      try{ if(existing[p.id]) await notionCall({op:'update',pageId:existing[p.id],properties:props});
+           else await notionCall({op:'create',ds:NOTION.ds.schedule,properties:props}); ok++; }
+      catch(e){ ng++; }
+    }
+    setSyncMsg('sch','完了：'+ok+'件送信'+(ng?'／'+ng+'件失敗':'')); toast('✅ 投稿予定をNotionへ送信しました');
+  }catch(e){ setSyncMsg('sch','失敗：'+e.message); }
+}
+async function syncSchedulePull(){
+  setSyncMsg('sch','取得中…');
+  try{
+    await loadStoreMaps();
+    const rows=await queryAllRows(NOTION.ds.schedule); let n=0;
+    rows.forEach(pg=>{ const pr=pg.properties; const id=pTitle(pr,'投稿予定ID'); if(!id) return;
+      const dRaw=(pr['投稿予定日']&&pr['投稿予定日'].date&&pr['投稿予定日'].date.start)||'';
+      let date=dRaw,time=''; if(dRaw.indexOf('T')>=0){ date=dRaw.slice(0,10); time=dRaw.slice(11,16); }
+      const code=_storeInv[pRel0(pr,'店舗')]||'';
+      const obj={ id, store:code, type:pSel(pr,'投稿タイプ'), date, time, status:pSel(pr,'ステータス')||'未投稿', theme:pText(pr,'備考') };
+      const ex=DATA.schedule.find(x=>x.id===id);
+      if(ex){ Object.assign(ex,obj); } else { obj.img='📝'; obj.title=''; obj.body=''; obj.imgFile=''; obj.postMode=time?'予約':'即時'; DATA.schedule.push(obj); }
+      n++; });
+    saveSchedule(); renderPost(); setSyncMsg('sch','取得：'+n+'件'); toast('✅ Notionから投稿予定を取得しました');
+  }catch(e){ setSyncMsg('sch','失敗：'+e.message); }
+}
+
+/* ⑨ 画像 */
+function storeFromImgId(id){ const a=String(id||'').split('-'); return a.length>=2?(a[0]+'-'+a[1]):''; }
+async function syncGalleryPush(){
+  if(!DATA.gallery.length){ toast('画像情報がありません'); return; }
+  setSyncMsg('gal','送信中…');
+  try{
+    const existing=mapBy(await queryAllRows(NOTION.ds.gallery),'画像ID','title');
+    let ok=0,ng=0;
+    for(const g of DATA.gallery){
+      const props={ '画像ID':{title:[{text:{content:g.id||''}}]} };
+      if(g.ai) props['生成AI']={select:{name:(g.ai==='ChatGPT'?'ChatGPT':'その他')}};
+      if(g.status) props['ステータス']={select:{name:g.status}};
+      if(g.drive) props['Drive保存先']={url:g.drive};
+      if(g.prompt) props['プロンプト']={rich_text:[{text:{content:String(g.prompt).slice(0,1800)}}]};
+      try{ if(existing[g.id]) await notionCall({op:'update',pageId:existing[g.id],properties:props});
+           else await notionCall({op:'create',ds:NOTION.ds.gallery,properties:props}); ok++; }
+      catch(e){ ng++; }
+    }
+    setSyncMsg('gal','完了：'+ok+'件送信'+(ng?'／'+ng+'件失敗':'')); toast('✅ 画像情報をNotionへ送信しました');
+  }catch(e){ setSyncMsg('gal','失敗：'+e.message); }
+}
+async function syncGalleryPull(){
+  setSyncMsg('gal','取得中…');
+  try{
+    const rows=await queryAllRows(NOTION.ds.gallery); let n=0;
+    rows.forEach(pg=>{ const pr=pg.properties; const id=pTitle(pr,'画像ID'); if(!id) return;
+      const obj={ id, ai:pSel(pr,'生成AI')||'その他', status:pSel(pr,'ステータス')||'未生成', drive:pUrl(pr,'Drive保存先'), prompt:pText(pr,'プロンプト') };
+      const ex=DATA.gallery.find(x=>x.id===id);
+      if(ex){ Object.assign(ex,obj); } else { obj.store=storeFromImgId(id); DATA.gallery.push(obj); }
+      n++; });
+    saveGallery(); renderGallery(); setSyncMsg('gal','取得：'+n+'件'); toast('✅ Notionから画像情報を取得しました');
+  }catch(e){ setSyncMsg('gal','失敗：'+e.message); }
+}
+
+/* ⑩ リンク集 */
+const SCOPE2JP={global:'全体',group:'グループ',store:'店舗'};
+const JP2SCOPE={'全体':'global','グループ':'group','店舗':'store'};
+async function syncLinksPush(){
+  setSyncMsg('lnk','送信中…');
+  try{
+    const existing=mapBy(await queryAllRows(NOTION.ds.links),'リンクID','text');
+    let ok=0,ng=0,i=0;
+    for(const l of LINKS){ i++;
+      const props={ 'リンク名':{title:[{text:{content:l.label||'リンク'}}]},
+        'リンクID':{rich_text:[{text:{content:l.id||''}}]},
+        '対象範囲':{select:{name:SCOPE2JP[l.scope]||'全体'}},
+        '表示順':{number:i} };
+      if(l.url) props['URL']={url:l.url};
+      if(l.cat) props['区分']={select:{name:(['GMO','GBP','画像'].indexOf(l.cat)>=0?l.cat:'その他')}};
+      if(l.key) props['対象キー']={rich_text:[{text:{content:l.key}}]};
+      try{ if(existing[l.id]) await notionCall({op:'update',pageId:existing[l.id],properties:props});
+           else await notionCall({op:'create',ds:NOTION.ds.links,properties:props}); ok++; }
+      catch(e){ ng++; }
+    }
+    setSyncMsg('lnk','完了：'+ok+'件送信'+(ng?'／'+ng+'件失敗':'')); toast('✅ リンク集をNotionへ送信しました');
+  }catch(e){ setSyncMsg('lnk','失敗：'+e.message); }
+}
+async function syncLinksPull(){
+  setSyncMsg('lnk','取得中…');
+  try{
+    const rows=await queryAllRows(NOTION.ds.links); const inc=[];
+    rows.forEach(pg=>{ const pr=pg.properties;
+      inc.push({ id:pText(pr,'リンクID')||('L'+pg.id.slice(0,8)), label:pTitle(pr,'リンク名')||'リンク', url:pUrl(pr,'URL'),
+        scope:JP2SCOPE[pSel(pr,'対象範囲')]||'global', key:pText(pr,'対象キー'), cat:pSel(pr,'区分')||'その他', ord:pNum(pr,'表示順') }); });
+    if(!inc.length){ setSyncMsg('lnk','Notionにリンクがありません'); return; }
+    inc.sort((a,b)=>a.ord-b.ord);
+    LINKS=inc.map(function(o){ return {id:o.id,label:o.label,url:o.url,scope:o.scope,key:o.key,cat:o.cat}; });
+    linksSave(); renderLinks(); setSyncMsg('lnk','取得：'+inc.length+'件'); toast('✅ Notionからリンク集を取得しました');
+  }catch(e){ setSyncMsg('lnk','失敗：'+e.message); }
+}
+
+/* 🔧 改善・問い合わせ */
+function openKaizenForm(){
+  const lbl=function(t){ return '<div style="margin-top:10px;font-weight:600;font-size:13px">'+t+'</div>'; };
+  openSheet('<h3>💬 改善・問い合わせ</h3>'
+   +'<p class="sub">送信すると、Notionの「🔧改善DB」に登録され、担当が確認します。</p>'
+   +lbl('種別')+'<select id="kzKind" class="inp" style="width:100%">'+['改善要望','不具合報告','質問・お問い合わせ','その他'].map(function(o){return '<option>'+o+'</option>';}).join('')+'</select>'
+   +lbl('タイトル（必須）')+'<input id="kzTitle" class="inp" style="width:100%" placeholder="例）投稿カレンダーで前月に戻れない">'
+   +lbl('内容')+'<textarea id="kzBody" class="inp" style="width:100%;min-height:90px" placeholder="具体的な状況・再現手順・ご要望など"></textarea>'
+   +lbl('優先度')+'<select id="kzPri" class="inp" style="width:100%"><option>中</option><option>高</option><option>低</option></select>'
+   +lbl('お名前・連絡先（任意）')+'<input id="kzContact" class="inp" style="width:100%" placeholder="お名前／メール等">'
+   +'<button class="btn" style="margin-top:12px;width:100%" onclick="submitKaizen()">📨 Notionへ送信</button>'
+   +'<div id="sync_kz" class="sub" style="margin-top:8px"></div>');
+}
+async function submitKaizen(){
+  const title=(el('kzTitle')&&el('kzTitle').value||'').trim();
+  if(!title){ setSyncMsg('kz','タイトルを入力してください'); return; }
+  const props={ '改善タイトル':{title:[{text:{content:title}}]},
+    '種別':{select:{name:el('kzKind').value}},
+    '優先度':{select:{name:el('kzPri').value}},
+    '状態':{select:{name:'未対応'}},
+    '起票日':{date:{start:todayISO()}} };
+  const body=(el('kzBody')&&el('kzBody').value||'').trim();
+  const contact=(el('kzContact')&&el('kzContact').value||'').trim();
+  if(body) props['改善内容']={rich_text:[{text:{content:body.slice(0,1800)}}]};
+  if(contact) props['連絡先']={rich_text:[{text:{content:contact}}]};
+  setSyncMsg('kz','送信中…');
+  try{ await notionCall({op:'create',ds:NOTION.ds.kaizen,properties:props});
+    closeSheet(); toast('✅ 改善DBへ送信しました。ありがとうございます！'); }
+  catch(e){ setSyncMsg('kz','送信に失敗：'+e.message); }
+}
+
 function renderSettings(){
   const ctaOpts=CTA_KEYS.map(x=>`<option value="${x}" ${x===SETTINGS.targetCTA?'selected':''}>${METRICS[x].label}</option>`).join("");
   const chartOpts=[["bar","棒グラフ"],["line","折れ線グラフ"],["area","面グラフ"]]
@@ -2317,8 +2524,29 @@ function renderSettings(){
     </div>
 
     <div class="card">
-      <h2>🔁 投稿・画像データ（⑦⑧⑨）のNotion連携</h2>
-      <p class="sub">投稿予定・投稿文・画像情報をCSVで取り込み／書き出しします。NotionのDBからエクスポートしたCSVを取り込み、編集後に書き出してNotionへ戻せます。</p>
+      <h2>🔗 Notion連携（チーム同期）</h2>
+      <p class="sub">投稿予定・画像・リンク集をNotionと直接やり取りして、<b>チーム全員で同じ最新データ</b>を見られるようにします。下の「送信」でこの端末→Notion、「取得」でNotion→この端末に反映します。</p>
+      <div class="setrow"><div><div class="k">接続の確認</div><div class="d">Notionとつながっているかチェック</div></div>
+        <button class="btn ghost sm" onclick="notionPing()">🔌 疎通確認</button></div>
+      <div id="sync_ping" class="sub" style="margin:2px 0 8px"></div>
+      <div class="setrow"><div><div class="k">📅 投稿予定（⑦）</div><div class="d" id="sync_sch">現在 ${DATA.schedule.length} 件</div></div>
+        <div class="row"><button class="btn sm" onclick="syncSchedulePush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncSchedulePull()">⬇️ 取得</button></div></div>
+      <div class="setrow"><div><div class="k">🖼️ 画像（⑨）</div><div class="d" id="sync_gal">現在 ${DATA.gallery.length} 件</div></div>
+        <div class="row"><button class="btn sm" onclick="syncGalleryPush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncGalleryPull()">⬇️ 取得</button></div></div>
+      <div class="setrow"><div><div class="k">🔗 リンク集（⑩）</div><div class="d" id="sync_lnk">店舗別・グループ別のリンク</div></div>
+        <div class="row"><button class="btn sm" onclick="syncLinksPush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncLinksPull()">⬇️ 取得</button></div></div>
+      <details style="margin-top:10px">
+        <summary class="sub" style="cursor:pointer">⚙️ 連携の詳細設定（中継先・合言葉）</summary>
+        <div class="setrow" style="margin-top:8px"><div><div class="k">中継先URL</div><div class="d">通常は空でOK（既定 /api/notion）</div></div>
+          <input class="inp" style="max-width:220px" placeholder="/api/notion" value="${esc(localStorage.getItem('meo_notion_proxy')||'')}" onchange="setNotionProxy(this.value)"></div>
+        <div class="setrow"><div><div class="k">合言葉（任意）</div><div class="d">中継先で設定した場合のみ入力</div></div>
+          <input class="inp" type="password" style="max-width:220px" placeholder="未設定なら空のまま" value="${esc(localStorage.getItem('meo_notion_secret')||'')}" onchange="setNotionSecret(this.value)"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>🔁 ＣＳＶでのやり取り（予備）</h2>
+      <p class="sub">Notion連携が使えないときの予備手段です。NotionのDBからエクスポートしたCSVを取り込み、編集後に書き出してNotionへ戻せます。</p>
       <div class="setrow"><div><div class="k">投稿（⑦スケジュール＋⑧投稿文）</div><div class="d">現在 ${DATA.schedule.length} 件</div></div>
         <div class="row"><button class="btn ghost sm" onclick="importScheduleCSV()">📥 取込</button><button class="btn ghost sm" onclick="exportScheduleCSV()">⬇️ 書出</button></div></div>
       <div class="setrow"><div><div class="k">画像（⑨サムネ画像管理）</div><div class="d">現在 ${DATA.gallery.length} 件</div></div>
@@ -2378,7 +2606,7 @@ function renderSettings(){
 
     <div class="card">
       <h2>このツールについて</h2>
-      <div class="setrow"><div class="k">💬 改善・問い合わせ</div><button class="btn ghost sm" onclick="alert('改善のご要望・不具合は担当（ハルカ）までチャットでお知らせください。')">開く</button></div>
+      <div class="setrow"><div class="k">💬 改善・問い合わせ</div><button class="btn ghost sm" onclick="openKaizenForm()">開く</button></div>
       <div class="setrow"><div class="k">🆕 リリース情報</div><button class="btn ghost sm" onclick="showRelease()">開く</button></div>
     </div>`;
 }
