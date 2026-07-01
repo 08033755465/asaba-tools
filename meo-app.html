@@ -157,6 +157,16 @@
   .setrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
   .setrow:last-child{border-bottom:none}
   .setrow .k{font-size:14px;font-weight:700}.setrow .d{font-size:12px;color:var(--sub)}
+  .setrow.click{cursor:pointer;border-radius:10px;margin:0 -8px;padding-left:8px;padding-right:8px;transition:background .12s}
+  .setrow.click:hover{background:rgba(120,120,120,.08)}
+  .setrow .val{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--accent)}
+  .setrow .val .chev{color:var(--sub);font-size:18px;font-weight:400}
+  .picklist{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .pickopt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+    border:1px solid var(--line);background:#fff;border-radius:11px;padding:13px 15px;font-size:15px;cursor:pointer;text-align:left}
+  .pickopt.sel{border-color:var(--accent);color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1px var(--accent)}
+  .pickopt .ck{color:var(--accent);font-weight:900}
+  body.dark .pickopt{background:#2a2f37;color:#e8eaed}
   .swatch{display:inline-block;width:20px;height:20px;border-radius:6px;border:1px solid var(--line);vertical-align:middle}
 
   /* ===== タブバー ===== */
@@ -1317,6 +1327,18 @@ function goSub(i){
 /* ===== modal ===== */
 function openSheet(html){el('sheetBody').innerHTML=html+'<button class="close" onclick="closeSheet()">閉じる</button>';el('overlay').classList.add('open');}
 function closeSheet(){el('overlay').classList.remove('open');}
+/* 設定行タップ→ポップ選択（右端の小さいボタンではなく行全体で操作） */
+let __pickCB=null;
+function openPickSheet(title, sub, opts, current, cb){
+  __pickCB=cb;
+  const rows=opts.map(o=>{
+    const on=String(o.value)===String(current);
+    return `<button class="pickopt${on?' sel':''}" onclick="__pickDo('${String(o.value).replace(/'/g,"\\'")}')">
+      <span>${esc(o.label)}</span>${on?'<span class="ck">✓</span>':''}</button>`;
+  }).join('');
+  openSheet(`<h3>${esc(title)}</h3>${sub?`<p class="sub">${esc(sub)}</p>`:''}<div class="picklist">${rows}</div>`);
+}
+function __pickDo(v){ const cb=__pickCB; closeSheet(); if(cb) cb(v); }
 /* ESCキーでモーダル／ナビパネルを閉じる */
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
@@ -1402,6 +1424,9 @@ function miniSpark(vals,better,unit){
   return `<div class="trendcell ${cls}"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg><span class="pill ${cls}">${imp>0?'▲':(imp<0?'▼':'±')}${Math.abs(imp)}${unit}</span></div>`;
 }
 function setChartType(v){ SETTINGS.chartType=v; renderDash(); renderSettings(); }
+function pickTargetCTA(){ openPickSheet('🎯 目標CTA','メイングラフ・KPIの主役にする指標を選びます', CTA_KEYS.map(k=>({value:k,label:METRICS[k].label})), SETTINGS.targetCTA, setTargetCTA); }
+function pickChartType(){ openPickSheet('📈 グラフのデザイン','',[{value:'bar',label:'棒グラフ'},{value:'line',label:'折れ線グラフ'},{value:'area',label:'面グラフ'}], SETTINGS.chartType, setChartType); }
+function pickTheme(){ openPickSheet('表示モード','端末に保存されます',[{value:'light',label:'☀️ ライト'},{value:'dark',label:'🌙 ダーク'}], document.body.classList.contains('dark')?'dark':'light', function(v){ applyTheme(v); savePrefs(); renderSettings(); }); }
 function setChartMetric(v){ SETTINGS.chartMetric=v; renderDash(); }
 function setTargetCTADash(v){ SETTINGS.targetCTA=v; renderDash(); renderSettings(); }
 
@@ -2880,10 +2905,10 @@ function renderSettings(){
 
     <div class="card">
       <h2>📈 ダッシュボード表示設定</h2>
-      <div class="setrow"><div><div class="k">目標CTA</div><div class="d">メイングラフ・KPI主役に表示する指標</div></div>
-        <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setTargetCTA(this.value)">${ctaOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span></div>
-      <div class="setrow"><div><div class="k">グラフのデザイン</div><div class="d">棒／折れ線／面から選択</div></div>
-        <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setChartType(this.value)">${chartOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span></div>
+      <div class="setrow click" onclick="pickTargetCTA()"><div><div class="k">目標CTA</div><div class="d">メイングラフ・KPI主役に表示する指標</div></div>
+        <span class="val">${esc(METRICS[SETTINGS.targetCTA].label)}<span class="chev">›</span></span></div>
+      <div class="setrow click" onclick="pickChartType()"><div><div class="k">グラフのデザイン</div><div class="d">棒／折れ線／面から選択</div></div>
+        <span class="val">${esc({bar:'棒グラフ',line:'折れ線グラフ',area:'面グラフ'}[SETTINGS.chartType]||'棒グラフ')}<span class="chev">›</span></span></div>
     </div>
 
     <div class="card">
@@ -2929,18 +2954,18 @@ function renderSettings(){
 
     <div class="card">
       <h2>表示・操作</h2>
-      <div class="setrow"><div><div class="k">表示モード</div><div class="d">ライト／ダーク（端末に保存されます）</div></div>
-        <button class="btn ghost sm" onclick="toggleTheme()">${document.body.classList.contains('dark')?'☀️ ライトに':'🌙 ダークに'}</button></div>
-      <div class="setrow"><div><div class="k">しぼり込みをリセット</div><div class="d">投稿・画像の状態／グループのしぼり込みを「すべて」に戻します</div></div>
-        <button class="btn ghost sm" onclick="resetFilters()">リセット</button></div>
+      <div class="setrow click" onclick="pickTheme()"><div><div class="k">表示モード</div><div class="d">ライト／ダーク（端末に保存されます）</div></div>
+        <span class="val">${document.body.classList.contains('dark')?'🌙 ダーク':'☀️ ライト'}<span class="chev">›</span></span></div>
+      <div class="setrow click" onclick="resetFilters()"><div><div class="k">しぼり込みをリセット</div><div class="d">投稿・画像の状態／グループのしぼり込みを「すべて」に戻します</div></div>
+        <span class="val">リセット<span class="chev">›</span></span></div>
     </div>
 
     <div class="card">
       <h2>このツールについて</h2>
-      <div class="setrow"><div class="k">💬 改善・問い合わせ</div><button class="btn ghost sm" onclick="openKaizenForm()">開く</button></div>
-      <div class="setrow"><div><div class="k">💬 改善フロートボタン</div><div class="d">画面右下に送信ボタンを常時表示（運営者向け・クライアント配布時はオフ推奨）</div></div>
-        <button class="btn ghost sm" onclick="toggleKzFab()">${kzFabState()?'表示中：オフにする':'非表示：オンにする'}</button></div>
-      <div class="setrow"><div class="k">🆕 リリース情報</div><button class="btn ghost sm" onclick="showRelease()">開く</button></div>
+      <div class="setrow click" onclick="openKaizenForm()"><div class="k">💬 改善・問い合わせ</div><span class="val">開く<span class="chev">›</span></span></div>
+      <div class="setrow click" onclick="toggleKzFab()"><div><div class="k">💬 改善フロートボタン</div><div class="d">画面右下に送信ボタンを常時表示（運営者向け・クライアント配布時はオフ推奨）</div></div>
+        <span class="val">${kzFabState()?'表示中':'非表示'}<span class="chev">›</span></span></div>
+      <div class="setrow click" onclick="showRelease()"><div class="k">🆕 リリース情報</div><span class="val">開く<span class="chev">›</span></span></div>
     </div>`;
 }
 function resetFilters(){
