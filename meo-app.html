@@ -581,6 +581,11 @@ const CHART_KEYS=["views","web","tel","route","reviews","rating"];
 const RANK_KEYS=["rank","views","web","tel","route","reviews","rating"];
 /* 店舗グループ（整骨院／整体院／Peace） */
 const RANK_GROUPS=["整骨院","整体院","Peace"];
+/* レポート・投稿では整骨院と整体院を区別しない（区別は色とNotionグループ表示のみ）。
+   実質コンテンツ区分は 整骨整体 / ピラティスPeace の2つ。 */
+const CONTENT_GROUPS=["整骨整体","Peace"];
+function contentGroup(s){ return (s&&s.group==='Peace')?'Peace':'整骨整体'; }
+const CONTENT_COLORS={ "整骨整体":"#2f6df0", "Peace":"#a24bd0" };
 
 /* ===== グローバル設定（本番では管理者が変更／Notionに保存） ===== */
 const SETTINGS={
@@ -595,7 +600,7 @@ const SETTINGS={
   postGroup:"all",               // 投稿予定一覧のグループしぼり込み（all/整骨院/整体院/Peace）
   galFilter:"all",               // 画像ギャラリーの状態しぼり込み（all/未生成/生成済/確定）
   groupKW:{ "整骨院":"整体", "整体院":"整体", "Peace":"マシンピラティス" },
-  trendScope:"all",              // 年間推移グラフの範囲（all/整骨院/整体院/Peace）
+  trendScope:"all",              // 年間推移グラフの範囲（all/整骨整体/Peace）
   trendMetric:"views",           // 年間推移グラフの指標
   trendHidden:{},                // 非表示にした店舗（code→true）
   integMode:"month",             // 統合レポートの表示（month=月別×全指標 / metric=項目別×12か月）
@@ -1646,10 +1651,10 @@ function buildChart(vals, labels, type, color, better, metricKey){
   return `<svg viewBox="0 0 ${W} ${H}" role="img">${grid}${body}${xl}${hits}</svg>`;
 }
 /* ===== 店舗別 年間推移（複数折れ線が交わる形式） ===== */
-const TREND_SCOPES=["all","整骨院","整体院","Peace"];
+const TREND_SCOPES=["all","整骨整体","Peace"];
 function trendStoresInScope(){
   const sc=SETTINGS.trendScope;
-  return sc==='all' ? DATA.stores.slice() : DATA.stores.filter(s=>s.group===sc);
+  return sc==='all' ? DATA.stores.slice() : DATA.stores.filter(s=>contentGroup(s)===sc);
 }
 function setTrendScope(delta){
   let i=TREND_SCOPES.indexOf(SETTINGS.trendScope); if(i<0)i=0;
@@ -2030,10 +2035,10 @@ function integMonthTable(k,kp){
   };
   const head=`<tr><th>店舗</th>${INTEG_COLS.map(key=>`<th>${METRICS[key].icon}${METRICS[key].label}</th>`).join("")}<th>反応数</th></tr>`;
   let body="";
-  RANK_GROUPS.forEach(g=>{
-    const list=DATA.stores.filter(x=>x.group===g);
+  CONTENT_GROUPS.forEach(g=>{
+    const list=DATA.stores.filter(x=>contentGroup(x)===g);
     if(!list.length) return;
-    const gc=THEME_COLORS[g]||"#888";
+    const gc=CONTENT_COLORS[g]||"#888";
     body+=`<tr class="grprow"><td colspan="${INTEG_COLS.length+2}"><i class="gdot" style="background:${gc}"></i><b>${esc(g)}</b>（${list.length}店）</td></tr>`;
     list.forEach(x=>{
       const m=getM(x.code,k); const react=m?reaction(m):null;
@@ -2054,10 +2059,10 @@ function integMetricTable(){
   const labels=keys.map(kk=>Number(kk.split("-")[1])+"月");
   const head=`<tr><th>店舗</th>${labels.map(l=>`<th>${l}</th>`).join("")}</tr>`;
   let body="";
-  RANK_GROUPS.forEach(g=>{
-    const list=DATA.stores.filter(x=>x.group===g);
+  CONTENT_GROUPS.forEach(g=>{
+    const list=DATA.stores.filter(x=>contentGroup(x)===g);
     if(!list.length) return;
-    const gc=THEME_COLORS[g]||"#888";
+    const gc=CONTENT_COLORS[g]||"#888";
     body+=`<tr class="grprow"><td colspan="${keys.length+1}"><i class="gdot" style="background:${gc}"></i><b>${esc(g)}</b>（${list.length}店）</td></tr>`;
     list.forEach(x=>{
       const isSel=x.code===CURRENT_STORE;
