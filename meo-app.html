@@ -2451,6 +2451,7 @@ function renderPost(){
       <div id="batchTray"></div>
       <div class="row mt">
         <button class="btn" onclick="batchExportCSV()">⬇️ たまった分をCSVで書き出す</button>
+        <button class="btn ghost" onclick="batchCopyText()">📋 コピペ用テキストで出す</button>
         <a class="btn ghost" href="meo-export.html">GMO書き出しツールを開く ↗</a>
         <button class="btn ghost" onclick="batchClear()">🗑️ 一括テンプレを空にする</button>
       </div>
@@ -2478,6 +2479,30 @@ function renderBatchTray(){
 }
 function batchRemove(i){
   const arr=batchLoad(); arr.splice(i,1); batchSave(arr); renderBatchTray(); toast('1件削除しました（残り'+arr.length+'件）。');
+}
+/* コピペ用テキスト：1店ずつGMO等に手で貼り付ける用（本文・タイトル・URL） */
+function batchCopyText(){
+  const arr=batchLoad();
+  if(!arr.length){ alert('一括テンプレが空です。先に投稿づくりで「📦 一括テンプレに送る」してください。'); return; }
+  const titleKey='タイトル(GoogleとSNSは任意入力、Yahoo!は必須）';
+  const blocks=arr.map(r=>{
+    const url=r['ボタンURL']||'';
+    return `■ ${r['店舗名']}（${r['投稿タイプ']||'最新情報'}）`
+      +`\n予約日時：${r['予約投稿日']||'即時'}${r['予約投稿時間']?' '+r['予約投稿時間']:''}`
+      +`\nタイトル：${r[titleKey]||''}`
+      +`\n本文：\n${r['投稿内容']||''}`
+      +`\nボタン：${url?('予約　'+url):'なし'}`
+      +(r['画像']?`\n画像：${r['画像']}`:'');
+  });
+  const text=blocks.join('\n\n──────────\n\n');
+  openSheet(`
+    <h3>📋 コピペ用テキスト（${arr.length}件）</h3>
+    <p class="sub">下の枠をコピーして、GMOや各投稿画面に貼り付けてください。店舗ごとに区切っています。</p>
+    <textarea id="batchCopyArea" style="min-height:280px">${esc(text)}</textarea>
+    <div class="row mt">
+      <button class="btn" onclick="copyText('batchCopyArea')">📋 ぜんぶコピー</button>
+      <button class="btn ghost" onclick="closeSheet()">閉じる</button>
+    </div>`);
 }
 function buildTextPrompt(p){
   const st=DATA.stores.find(x=>x.code===p.store);
@@ -3034,6 +3059,19 @@ async function loadStoreMaps(){
   rows.forEach(pg=>{ const code=pText(pg.properties,'店舗コード').trim(); if(code){ _storeMap[code]=pg.id; _storeInv[pg.id]=code; } });
 }
 
+/* ⑦ 投稿予定：本文・タイトル・種別も同期するため、備考にテーマ＋JSONを埋め込む。
+   （NotionのDBスキーマは変えずに、端末間で投稿内容まで同期できるようにする） */
+const SCH_SEP='\n〔MEO同期データ・編集しないでください〕';
+function encSchNote(p){
+  const extra={ k:p.bodyKind||'store', t:p.title||'', b:p.body||'', f:p.imgFile||'', m:p.postMode||'' };
+  return String(p.theme||'')+SCH_SEP+JSON.stringify(extra);
+}
+function decSchNote(raw){
+  raw=String(raw||''); const i=raw.indexOf(SCH_SEP);
+  if(i<0) return { theme:raw };
+  let extra={}; try{ extra=JSON.parse(raw.slice(i+SCH_SEP.length)); }catch(e){}
+  return { theme:raw.slice(0,i), bodyKind:extra.k, title:extra.t, body:extra.b, imgFile:extra.f, postMode:extra.m };
+}
 /* ⑦ 投稿予定 */
 async function syncSchedulePush(){
   if(!DATA.schedule.length){ toast('投稿予定がありません'); return; }
@@ -3047,7 +3085,7 @@ async function syncSchedulePush(){
       if(p.date) props['投稿予定日']={date:{start:(p.time?(p.date+'T'+p.time+':00'):p.date)}};
       if(p.type) props['投稿タイプ']={select:{name:p.type}};
       if(p.status) props['ステータス']={select:{name:p.status}};
-      if(p.theme) props['備考']={rich_text:[{text:{content:String(p.theme).slice(0,1800)}}]};
+      props['備考']={rich_text:[{text:{content:encSchNote(p).slice(0,1990)}}]};
       const sp=_storeMap[p.store]; if(sp) props['店舗']={relation:[{id:sp}]};
       try{ if(existing[p.id]) await notionCall({op:'update',pageId:existing[p.id],properties:props});
            else await notionCall({op:'create',ds:NOTION.ds.schedule,properties:props}); ok++; }
@@ -3065,9 +3103,15 @@ async function syncSchedulePull(){
       const dRaw=(pr['投稿予定日']&&pr['投稿予定日'].date&&pr['投稿予定日'].date.start)||'';
       let date=dRaw,time=''; if(dRaw.indexOf('T')>=0){ date=dRaw.slice(0,10); time=dRaw.slice(11,16); }
       const code=_storeInv[pRel0(pr,'店舗')]||'';
-      const obj={ id, store:code, type:pSel(pr,'投稿タイプ'), date, time, status:pSel(pr,'ステータス')||'未投稿', theme:pText(pr,'備考') };
+      const dec=decSchNote(pText(pr,'備考'));
+      const obj={ id, store:code, type:pSel(pr,'投稿タイプ'), date, time, status:pSel(pr,'ステータス')||'未投稿',
+        theme:dec.theme||'', bodyKind:dec.bodyKind||'store' };
+      if(dec.title!=null) obj.title=dec.title;
+      if(dec.body!=null) obj.body=dec.body;
+      if(dec.imgFile!=null) obj.imgFile=dec.imgFile;
+      obj.postMode=dec.postMode||(time?'予約':'即時');
       const ex=DATA.schedule.find(x=>x.id===id);
-      if(ex){ Object.assign(ex,obj); } else { obj.img='📝'; obj.title=''; obj.body=''; obj.imgFile=''; obj.postMode=time?'予約':'即時'; DATA.schedule.push(obj); }
+      if(ex){ Object.assign(ex,obj); } else { obj.img='📝'; if(obj.title==null)obj.title=''; if(obj.body==null)obj.body=''; if(obj.imgFile==null)obj.imgFile=''; DATA.schedule.push(obj); }
       n++; });
     saveSchedule(); renderPost(); setSyncMsg('sch','取得：'+n+'件'); toast('✅ Notionから投稿予定を取得しました');
   }catch(e){ setSyncMsg('sch','失敗：'+e.message); }
