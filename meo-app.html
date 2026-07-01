@@ -1102,6 +1102,13 @@ function openAddPostModal(){
       <button class="btn ghost npt-btn" data-v="クーポン" onclick="setNewPostType('クーポン')">クーポン</button>
     </div>
 
+    <label class="fl mt">本文の種類</label>
+    <div class="row" style="gap:16px;margin-bottom:2px;flex-wrap:wrap">
+      <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="npBodyKind" value="store" checked> 店舗別（店ごとの文・URL付き）</label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="npBodyKind" value="common"> グループ共通（全店同じ文・URLなし）</label>
+    </div>
+    <p class="sub" style="font-size:11px;margin:0 0 4px">例）月＝グループ共通でまとめて同じ文（URLなし）／金＝店舗別に本文＋店舗別URL。</p>
+
     <label class="fl mt">投稿方法</label>
     <div class="row" style="gap:16px;margin-bottom:6px">
       <label style="cursor:pointer;display:flex;align-items:center;gap:6px"><input type="radio" name="npMode" value="予約" checked onchange="setNewPostMode(this.value)"> 予約投稿</label>
@@ -1140,13 +1147,15 @@ function submitAddPost(){
   const date=(el('newPostDate')?el('newPostDate').value:'').trim();
   const time=(el('newPostTime')?el('newPostTime').value:'').trim();
   const type=window._npType||'最新情報';
+  const bkEl=document.querySelector('[name=npBodyKind]:checked');
+  const bodyKind=bkEl?bkEl.value:'store';
   const theme=(el('newPostTheme')?el('newPostTheme').value:'').trim();
   const imgFile=(el('newPostImgFile')?el('newPostImgFile').value:'').trim();
   if(mode==='予約' && !date){ toast('予約投稿の場合、日付を入力してください。'); return; }
   let added=0;
   checked.forEach(code=>{
     const entry={ id:makePostId(code,date,type), store:code, type, date,
-      time:(mode==='予約'?time:''), postMode:mode,
+      time:(mode==='予約'?time:''), postMode:mode, bodyKind,
       theme, imgFile, status:'未投稿', img:'📝', title:'', body:'' };
     DATA.schedule.push(entry); added++;
   });
@@ -1159,8 +1168,20 @@ function saveDraft(id){
   p.title=el('postTitle')?el('postTitle').value:p.title;
   p.body =el('postBody') ?el('postBody').value :p.body;
   if(p.body && p.status==='未投稿') p.status='作成中';
+  let spread=0;
+  if(p.bodyKind==='common'){
+    const cg=contentGroup(DATA.stores.find(x=>x.code===p.store));
+    DATA.schedule.forEach(q=>{
+      if(q.id===p.id||q.bodyKind!=='common'||q.date!==p.date) return;
+      if(contentGroup(DATA.stores.find(x=>x.code===q.store))!==cg) return;
+      q.title=p.title; q.body=p.body;
+      if(q.body && q.status==='未投稿') q.status='作成中';
+      spread++;
+    });
+  }
   saveSchedule(); renderPost(); renderDash();
-  toast('💾 下書きを保存しました。');
+  const cgName=contentGroup(DATA.stores.find(x=>x.code===p.store));
+  toast(spread?`💾 保存し、同じ日の${cgName}${spread+1}店に反映しました。`:'💾 下書きを保存しました。');
 }
 /* 投稿管理CSVを取込（⑦＋⑧。投稿予定IDで突合・無ければ追加） */
 function importScheduleCSV(){
@@ -1581,6 +1602,11 @@ function openBodyDetail(id){
       <button class="btn" onclick="closeSheet();openPostEditor('${esc(p.id)}')">この投稿を編集する</button>
       <button class="btn ghost" onclick="openGBP('${esc(p.store)}')">GBP投稿ページへ</button>
     </div>`);
+}
+/* 投稿ボタンに載せる店舗別URL（店舗HP／予約）。リンク集の店舗別リンクから解決 */
+function storePostUrl(code){
+  const l=linkFirst('store',code,'HP')||linkFirst('store',code,'予約');
+  return (l&&l.url)||'';
 }
 function openGBP(code){
   const st=DATA.stores.find(x=>x.code===code);
@@ -2455,9 +2481,17 @@ function batchRemove(i){
 }
 function buildTextPrompt(p){
   const st=DATA.stores.find(x=>x.code===p.store);
+  const cg=contentGroup(st);
+  if(p.bodyKind==='common'){
+    return `あなたは「${cg}」グループ全店で使う、共通のGoogleビジネスプロフィール投稿の担当です。\n`
+      +`▼テーマ：${p.theme}\n▼投稿の種類：${p.type}\n▼文字数：250〜350字\n`
+      +`▼ルール：\n・特定の店名や住所は入れない（全店で同じ文を使います）\n・専門用語はかみくだいて説明する\n・効果の保証や誇大な表現はしない\n・親しみやすい敬語\n・URL／リンクは入れない（この投稿にはボタンを付けません）\n・「お近くの${cg}へ」のような、全店共通で使える自然な締めにする\n\n`
+      +`上記をふまえて、グループ共通の投稿本文を1案つくってください。`;
+  }
+  const url=storePostUrl(p.store);
   return `あなたは「${st?st.name:p.store}」のGoogleビジネスプロフィール投稿の担当です。\n`
     +`▼テーマ：${p.theme}\n▼投稿の種類：${p.type}\n▼文字数：250〜350字\n`
-    +`▼ルール：\n・専門用語はかみくだいて説明する\n・効果の保証や誇大な表現はしない\n・親しみやすい敬語\n・最後にお電話／Web予約への自然な導線を入れる\n\n`
+    +`▼ルール：\n・専門用語はかみくだいて説明する\n・効果の保証や誇大な表現はしない\n・親しみやすい敬語\n・最後にお電話／Web予約への自然な導線を入れる${url?`（予約リンク：${url}）`:''}\n\n`
     +`上記をふまえて、投稿本文を1案つくってください。`;
 }
 function buildImagePrompt(p){
@@ -2477,6 +2511,14 @@ function composerOpen(id){
   openSheet(`
     <h3>投稿づくり <span class="pill">AIはアプリの外で使います</span></h3>
     <p class="sub"><code>${esc(p.id)}</code>／${esc(st?st.name:p.store)}</p>
+    ${(function(){
+      const cg=contentGroup(st);
+      if(p.bodyKind==='common'){
+        return `<p class="sub" style="margin-top:0"><span class="pill">📢 グループ共通（${esc(cg)}）</span> 全店で同じ文・<b>URLなし</b>。保存すると同じ日の${esc(cg)}全店に反映されます。</p>`;
+      }
+      const url=storePostUrl(p.store);
+      return `<p class="sub" style="margin-top:0"><span class="pill">🏥 店舗別</span> この店だけの文・URLは${url?`<b>あり</b>（${esc(url)}）`:'<b>未登録</b>（🔗リンク集で店舗別HP/予約を登録すると自動で付きます）'}。</p>`;
+    })()}
 
     <label class="fl mt">③ スケジュールからテーマを選ぶ（過去投稿の作り直しもOK）</label>
     <select class="inp" style="width:100%" onchange="composerOpen(this.value)">${themeOpts}</select>
@@ -2562,6 +2604,8 @@ function sendToBatch(id){
   }
   const imgFile=el('postImgFile')?el('postImgFile').value.trim():p.imgFile||'';
   const isImmediate=(p.postMode==='即時');
+  const isCommon=(p.bodyKind==='common');
+  const btnUrl=isCommon?'':storePostUrl(p.store);
   const row={
     '投稿予定ID': p.id,
     '店舗': st?st.name:p.store,
@@ -2578,8 +2622,8 @@ function sendToBatch(id){
     '投稿内容': body||p.body||'',
     '投稿内容２': '',
     '画像': imgFile,
-    'ボタンの追加': '予約',
-    'ボタンURL': ''
+    'ボタンの追加': (isCommon||!btnUrl)?'なし':'予約',
+    'ボタンURL': btnUrl
   };
   const arr=batchLoad();
   const i=arr.findIndex(r=>r['投稿予定ID']===p.id);
