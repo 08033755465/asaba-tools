@@ -190,6 +190,10 @@
   .stepper{display:flex;flex-direction:column;gap:3px}
   .stepper button{border:1px solid var(--line);background:#fff;border-radius:7px;width:30px;height:21px;
     font-size:11px;line-height:1;cursor:pointer;color:var(--accent)}
+  .selstep{display:inline-flex;align-items:center;gap:4px}
+  .selstep button{border:1px solid var(--line);background:#fff;border-radius:8px;width:28px;height:30px;
+    font-size:12px;line-height:1;cursor:pointer;color:var(--accent);flex:0 0 auto}
+  .selstep button:active{background:var(--accent);color:#fff}
   .calwrap{display:flex;align-items:center;gap:6px}
   .calwrap input[type=month]{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:14px;background:#fff}
   /* ランキング：グループ別 */
@@ -1347,6 +1351,12 @@ function stepMonth(delta){                 // ◀▶で前後の月へ（setMont
   while(m<1){m+=12;y--;} while(m>12){m-=12;y++;}
   setMonthInput(y+'-'+String(m).padStart(2,'0'));
 }
+function cycleSelect(btn,delta){           // プルダウンを◀▶で前後の選択肢へ
+  const sel=btn.closest('.selstep').querySelector('select');
+  const n=sel.options.length; if(!n) return;
+  let i=sel.selectedIndex+delta; if(i<0)i=n-1; if(i>=n)i=0;
+  sel.selectedIndex=i; sel.dispatchEvent(new Event('change'));
+}
 function toggleReportCal(v){ SHOW_REPORT_CAL=v; renderDash(); }
 function cycleRank(dir){
   let i=RANK_KEYS.indexOf(SETTINGS.rankMetric);
@@ -1679,7 +1689,7 @@ function renderDash(){
         <h2 style="margin:0">📌 ${esc(shortName(s.name))}の主要指標（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h2>
         <div class="row" style="gap:5px;align-items:center">
           <label class="fl" style="margin:0">🎯目標CTA</label>
-          <select onchange="setTargetCTADash(this.value)">${ctaOptsDash}</select>
+          <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setTargetCTADash(this.value)">${ctaOptsDash}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span>
         </div>
       </div>
       <p class="sub">各カードに<b>前月</b>・<b>昨年</b>との比較を表示。🎯が目標CTA（先頭に固定）です。</p>
@@ -2123,10 +2133,10 @@ function renderPost(){
         <h2 style="margin:0">投稿予定一覧</h2>
         <div class="selgrp" style="flex-wrap:wrap;gap:8px">
           <div class="selgrp"><label class="fl">グループ</label>
-            <select onchange="setPostGroup(this.value)">${groupOpts}</select>
+            <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setPostGroup(this.value)">${groupOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span>
             ${SETTINGS.postGroup&&SETTINGS.postGroup!=='all'?`<button class="btn ghost sm" onclick="openGroupGMO('${esc(SETTINGS.postGroup)}')" title="このグループのGMOツール">🔧 GMO</button>`:''}</div>
           <div class="selgrp"><label class="fl">状態</label>
-            <select onchange="setPostFilter(this.value)">${filterOpts}</select></div>
+            <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setPostFilter(this.value)">${filterOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span></div>
         </div>
       </div>
       <div class="tablewrap">
@@ -2376,7 +2386,7 @@ function renderGallery(){
       <p class="sub">投稿用サムネの管理情報（画像ID・生成AI・状態・Drive保存先）をまとめます。画像ファイル本体はGoogle Drive／GMOで管理し、ここでは投稿予定IDでひも付けます。サムネをタップすると詳細が開きます。</p>
       <div class="selrow mb">
         <div class="selgrp"><label class="fl">状態でしぼる</label>
-          <select onchange="setGalFilter(this.value)">${filterOpts}</select></div>
+          <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setGalFilter(this.value)">${filterOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span></div>
       </div>
       <div class="row mb">
         <button class="btn" onclick="addGalleryEntry()">＋ 画像情報を登録</button>
@@ -2871,9 +2881,9 @@ function renderSettings(){
     <div class="card">
       <h2>📈 ダッシュボード表示設定</h2>
       <div class="setrow"><div><div class="k">目標CTA</div><div class="d">メイングラフ・KPI主役に表示する指標</div></div>
-        <select onchange="setTargetCTA(this.value)">${ctaOpts}</select></div>
+        <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setTargetCTA(this.value)">${ctaOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span></div>
       <div class="setrow"><div><div class="k">グラフのデザイン</div><div class="d">棒／折れ線／面から選択</div></div>
-        <select onchange="setChartType(this.value)">${chartOpts}</select></div>
+        <span class="selstep"><button onclick="cycleSelect(this,-1)" title="前へ">◀</button><select onchange="setChartType(this.value)">${chartOpts}</select><button onclick="cycleSelect(this,1)" title="次へ">▶</button></span></div>
     </div>
 
     <div class="card">
