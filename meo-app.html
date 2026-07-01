@@ -180,6 +180,20 @@
   .lkcopy{border:0;background:transparent;cursor:pointer;font-size:13px;padding:2px 3px;opacity:.55;line-height:1}
   .lkcopy:hover{opacity:1}
   .lkcopy:disabled{opacity:.25;cursor:default}
+  /* ダッシュ：取込ドロワー（上から引き出し）＋店舗バー固定 */
+  .drawer{padding:0!important;overflow:hidden}
+  .dhandle{display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;padding:11px 14px;font-weight:800;font-size:14px;user-select:none}
+  .dhandle .grab{width:38px;height:4px;border-radius:3px;background:var(--line)}
+  .dhandle .dchev{margin-left:auto;color:var(--sub);transition:transform .25s}
+  .drawer.open .dhandle .dchev{transform:rotate(180deg)}
+  .dbody{max-height:0;opacity:0;overflow:hidden;transition:max-height .3s ease,opacity .2s;padding:0 16px}
+  .drawer.open .dbody{max-height:1600px;opacity:1;padding:0 16px 16px}
+  .stickybar{position:sticky;top:48px;z-index:15}
+  .covwrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .covm{font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+  .covm b{font-weight:800}
+  .covm.full{border-color:var(--ok);color:var(--ok)}
+  .covm.part{border-color:var(--warn);color:var(--warn)}
   .swatch{display:inline-block;width:20px;height:20px;border-radius:6px;border:1px solid var(--line);vertical-align:middle}
 
   /* ===== タブバー ===== */
@@ -1607,6 +1621,14 @@ function chartTip(ev, text){
 }
 function chartTipHide(){ const tip=el('chartTip'); if(tip) tip.style.display='none'; }
 
+let DASH_IMPORT_OPEN=null; // null=未設定（データ無しなら開く）
+function toggleImportDrawer(){ const d=el('importDrawer'); if(!d)return; DASH_IMPORT_OPEN=!d.classList.contains('open'); d.classList.toggle('open',DASH_IMPORT_OPEN); }
+function importCoverage(){
+  const monthSet={};
+  Object.keys(DATA.monthly).forEach(c=>Object.keys(DATA.monthly[c]||{}).forEach(mm=>{ monthSet[mm]=(monthSet[mm]||0)+1; }));
+  const months=Object.keys(monthSet).sort();
+  return {months, monthSet, total:DATA.stores.length};
+}
 function renderDash(){
   const s=DATA.stores.find(x=>x.code===CURRENT_STORE);
   const k=curKey(), kp=prevKey(k), ky=yoyKey(k);
@@ -1702,23 +1724,41 @@ function renderDash(){
   const scopeBtn=(v,lbl)=>`<button class="${scope===v?'on':''}" onclick="setRankScope('${v}')">${lbl}</button>`;
 
   const noData = !hasReportData();
+  const drawerOpen = (DASH_IMPORT_OPEN===null ? noData : DASH_IMPORT_OPEN);
+  const cov=importCoverage();
+  const covChips = cov.months.length
+    ? cov.months.map(mm=>{ const n=cov.monthSet[mm]; const cls=n>=cov.total?'full':'part';
+        return `<span class="covm ${cls}" title="${n}/${cov.total}店舗にデータあり">${mm} <b>${n}/${cov.total}</b></span>`; }).join('')
+    : '<span class="sub">まだ取り込んだ月はありません。</span>';
+  const covRange = cov.months.length ? `${cov.months[0]} 〜 ${cov.months[cov.months.length-1]}（${cov.months.length}か月）` : '—';
   const dataBanner = `
-    <div class="card span2">
-      <h2 style="margin:0 0 6px">📥 月次レポートを取り込む</h2>
-      <p class="sub">GMOのインサイト書き出し<b>Excel（.xlsx）</b>やCSVを取り込んで数値を表示します。${noData?'まだデータがありません。':'別の月を追加したいときも、ここから取り込めます。'}</p>
-      <div class="dropzone mt" onclick="pickReportFile()" ondragover="onReportDragOver(event)" ondragleave="onReportDragLeave(event)" ondrop="onReportDrop(event)">
-        <div class="dz-ttl">📊 ここにファイルをドラッグ＆ドロップ</div>
-        <div class="dz-sub">またはここをクリックして選ぶ　／　GMOのExcel(.xlsx)・CSVに対応</div>
+    <div class="card span2 drawer${drawerOpen?' open':''}" id="importDrawer">
+      <div class="dhandle" onclick="toggleImportDrawer()">
+        <span class="grab"></span>
+        <span>📥 月次レポートを取り込む${noData?'（まだデータがありません）':''}</span>
+        <span class="dchev">▾</span>
       </div>
-      <div class="row mt">
-        <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す（CSV）</button>
+      <div class="dbody">
+        <p class="sub">GMOのインサイト書き出し<b>Excel（.xlsx）</b>やCSVを取り込んで数値を表示します。複数月まとめての取り込みにも対応。</p>
+        <div class="dropzone mt" onclick="pickReportFile()" ondragover="onReportDragOver(event)" ondragleave="onReportDragLeave(event)" ondrop="onReportDrop(event)">
+          <div class="dz-ttl">📊 ここにファイルをドラッグ＆ドロップ</div>
+          <div class="dz-sub">またはここをクリックして選ぶ　／　GMOのExcel(.xlsx)・CSVに対応</div>
+        </div>
+        <div class="row mt">
+          <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す（CSV）</button>
+        </div>
+        <details class="mt" ${noData?'':''}>
+          <summary class="sub" style="cursor:pointer;font-weight:700">📅 取込済みの期間を見る（${cov.months.length}か月）</summary>
+          <p class="sub" style="margin:6px 0 0">期間：<b>${covRange}</b>　※<span style="color:var(--ok)">緑</span>=全${cov.total}店舗そろい、<span style="color:var(--warn)">橙</span>=一部店舗のみ</p>
+          <div class="covwrap">${covChips}</div>
+        </details>
       </div>
     </div>`;
   el('page-dash').innerHTML=`
    <div class="dashgrid">
     ${dataBanner}
-    <!-- ① 店舗・期間えらび ＋ 🗺️マップボタン -->
-    <div class="card compactsel span2">
+    <!-- ① 店舗・期間えらび ＋ 🗺️マップボタン（常時見えるよう固定） -->
+    <div class="card compactsel span2 stickybar">
       <div class="selrow">
         <div class="selgrp">
           <label class="fl" style="margin:0 6px 0 0">店舗</label>
