@@ -333,6 +333,10 @@
   .alltbl thead th .sub{display:block;font-size:9px;color:#c7cdd9;font-weight:400}
   .alltbl tbody tr:hover{background:#f5f8ff}
   .gdot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
+  .alltbl.integ th,.alltbl.integ td{font-size:12px;padding:7px 8px}
+  .alltbl .grprow td{background:#eef1f7;text-align:left;font-size:11px;color:#3a4253;padding:6px 9px}
+  .alltbl .grprow td .gdot{width:8px;height:8px}
+  body.dark .alltbl .grprow td{background:#232830;color:#c7cdd9}
   /* マップ：ポップ表示用（縦長・店名＋数値はっきり） */
   .map-mock.tall{height:62vh;min-height:380px}
   .map-mock.tall .map-pin .lab{display:inline-block}
@@ -579,6 +583,8 @@ const SETTINGS={
   trendScope:"all",              // 年間推移グラフの範囲（all/整骨院/整体院/Peace）
   trendMetric:"views",           // 年間推移グラフの指標
   trendHidden:{},                // 非表示にした店舗（code→true）
+  integMode:"month",             // 統合レポートの表示（month=月別×全指標 / metric=項目別×12か月）
+  integMetric:"views",           // 統合レポート「項目別」で表示する指標
 };
 const THEME_COLORS={ "整骨院":"#2f6df0", "整体院":"#138a52", "Peace":"#a24bd0" };
 /* 店舗ごとのカラー上書き（端末保存）。未設定ならグループ色にフォールバック */
@@ -1888,12 +1894,17 @@ function renderDash(){
     <!-- ③-2 店舗別 年間推移（複数折れ線） -->
     ${buildTrendChart()}
 
-    <!-- ④ アカウント内 全店舗レポート -->
+    <!-- ④ アカウント内 全店舗レポート（統合表：月別／項目別） -->
     <div class="card span2">
-      <div class="row between mb">
-        <h2 style="margin:0">🏢 アカウント内 全店舗レポート（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h2>
-        <button class="btn ghost sm noprint" onclick="window.print()">🖨️ 印刷／PDF保存</button>
+      <div class="row between mb" style="flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">🏢 全店舗 統合レポート（${SETTINGS.period.year}年${SETTINGS.period.month}月）</h2>
+        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+          <span class="selstep"><button onclick="setIntegMode(-1)" title="前へ">◀</button><span class="segval">${SETTINGS.integMode==='metric'?'項目別':'月別'}</span><button onclick="setIntegMode(1)" title="次へ">▶</button></span>
+          ${SETTINGS.integMode==='metric'?`<span class="selstep"><button onclick="setIntegMetric(-1)" title="前へ">◀</button><span class="segval">${METRICS[SETTINGS.integMetric].icon}${METRICS[SETTINGS.integMetric].label}</span><button onclick="setIntegMetric(1)" title="次へ">▶</button></span>`:''}
+          <button class="btn ghost sm noprint" onclick="window.print()">🖨️ 印刷／PDF保存</button>
+        </div>
       </div>
+      <p class="sub" style="margin-top:0">${SETTINGS.integMode==='metric'?'<b>項目別</b>：1つの指標を直近12か月で横並び比較。':'<b>月別</b>：対象月の全指標を店舗ごとに一覧（前月比つき）。'}整骨院・整体院・Peaceのグループ別に並びます。左のボタンで切替。</p>
       <div class="sumgrid">${summary}</div>
       ${allStoreTable}
     </div>
@@ -1960,34 +1971,79 @@ function buildPostStatusCard(s){
 }
 
 /* ===== アカウント内 全店舗レポート 一覧テーブル ===== */
+const INTEG_COLS=["views","web","tel","route","reviews","rating"]; // 月別モードの表示列
+function setIntegMode(delta){
+  const modes=["month","metric"]; let i=modes.indexOf(SETTINGS.integMode); if(i<0)i=0;
+  i=(i+delta+modes.length)%modes.length; SETTINGS.integMode=modes[i]; renderDash();
+}
+function setIntegMetric(delta){
+  let i=CHART_KEYS.indexOf(SETTINGS.integMetric); if(i<0)i=0;
+  i=(i+delta+CHART_KEYS.length)%CHART_KEYS.length; SETTINGS.integMetric=CHART_KEYS[i]; renderDash();
+}
+function integGroupHeaderRow(cols){
+  return `<tr class="grprow"><td colspan="${cols}"></td></tr>`;
+}
+// 月別モード：現在月の全指標を店舗ごとに（グループ別に区切り）
+function integMonthTable(k,kp){
+  const reaction=m=> (mv(m,'web')||0)+(mv(m,'tel')||0)+(mv(m,'route')||0);
+  const cell=(x,key)=>{
+    const m=getM(x.code,k), mp=getM(x.code,kp);
+    const cur=mv(m,key), prev=mv(mp,key);
+    if(cur==null) return '<td>—</td>';
+    const dv=(prev!=null)?cur-prev:null;
+    const better=METRICS[key].better;
+    const good=dv==null?'flat':(dv>0?(better==='low'?'down':'up'):(dv<0?(better==='low'?'up':'down'):'flat'));
+    const dPill=dv==null||dv===0?'':`<span class="pill ${good}" style="margin-left:4px">${dv>0?'▲':'▼'}${Math.abs(dv).toLocaleString()}</span>`;
+    return `<td>${fmtMetric(key,cur)}${dPill}</td>`;
+  };
+  const head=`<tr><th>店舗</th>${INTEG_COLS.map(key=>`<th>${METRICS[key].icon}${METRICS[key].label}</th>`).join("")}<th>反応数</th></tr>`;
+  let body="";
+  RANK_GROUPS.forEach(g=>{
+    const list=DATA.stores.filter(x=>x.group===g);
+    if(!list.length) return;
+    const gc=THEME_COLORS[g]||"#888";
+    body+=`<tr class="grprow"><td colspan="${INTEG_COLS.length+2}"><i class="gdot" style="background:${gc}"></i><b>${esc(g)}</b>（${list.length}店）</td></tr>`;
+    list.forEach(x=>{
+      const m=getM(x.code,k); const react=m?reaction(m):null;
+      const isSel=x.code===CURRENT_STORE;
+      body+=`<tr onclick="selectStore('${x.code}')" style="cursor:pointer${isSel?';background:#f0f5ff':''}">
+        <td><i class="gdot" style="background:${colorFor(x)}"></i>${esc(shortName(x.name))}</td>
+        ${INTEG_COLS.map(key=>cell(x,key)).join("")}
+        <td>${react==null?'—':react.toLocaleString()+'回'}</td></tr>`;
+    });
+  });
+  return `<div class="tablewrap mt"><table class="alltbl integ"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <p class="sub mt">前月比を▲▼で表示（指標の性質にあわせ、良い変化を緑にしています）。反応数＝電話＋ルート＋webの合計。行タップでその店舗に切り替わります。横スクロールできます。</p>`;
+}
+// 項目別モード：1指標を直近12か月マトリクスで（グループ別に区切り）
+function integMetricTable(){
+  const mkey=SETTINGS.integMetric;
+  const keys=trailing12(SETTINGS.period.year,SETTINGS.period.month);
+  const labels=keys.map(kk=>Number(kk.split("-")[1])+"月");
+  const head=`<tr><th>店舗</th>${labels.map(l=>`<th>${l}</th>`).join("")}</tr>`;
+  let body="";
+  RANK_GROUPS.forEach(g=>{
+    const list=DATA.stores.filter(x=>x.group===g);
+    if(!list.length) return;
+    const gc=THEME_COLORS[g]||"#888";
+    body+=`<tr class="grprow"><td colspan="${keys.length+1}"><i class="gdot" style="background:${gc}"></i><b>${esc(g)}</b>（${list.length}店）</td></tr>`;
+    list.forEach(x=>{
+      const isSel=x.code===CURRENT_STORE;
+      const cells=keys.map((kk,i)=>{
+        const v=mv(getM(x.code,kk),mkey);
+        const isCur=(i===keys.length-1);
+        return `<td${isCur?' style="font-weight:800"':''}>${v==null?'—':fmtMetric(mkey,v)}</td>`;
+      }).join("");
+      body+=`<tr onclick="selectStore('${x.code}')" style="cursor:pointer${isSel?';background:#f0f5ff':''}">
+        <td><i class="gdot" style="background:${colorFor(x)}"></i>${esc(shortName(x.name))}</td>${cells}</tr>`;
+    });
+  });
+  return `<div class="tablewrap mt"><table class="alltbl integ"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <p class="sub mt">直近12か月・${METRICS[mkey].icon}${METRICS[mkey].label}。右端（太字）が対象月です。横スクロールできます。行タップでその店舗に切り替わります。</p>`;
+}
 function buildAllStoreTable(k,kp){
   if(!hasReportData()) return '';
-  const reaction=m=> (mv(m,'web')||0)+(mv(m,'tel')||0)+(mv(m,'route')||0);
-  const rows=DATA.stores.map(x=>{
-    const m=getM(x.code,k), mp=getM(x.code,kp);
-    const views=mv(m,'views');
-    return {x, m, mp, views, sortv: views==null?-1:views};
-  }).sort((a,b)=>b.sortv-a.sortv);
-  const body=rows.map(o=>{
-    const {x,m,mp}=o;
-    const gc=colorFor(x)||"#888";
-    const isSel=x.code===CURRENT_STORE;
-    const views=mv(m,'views'), rv=mv(m,'reviews'), rt=mv(m,'rating');
-    const react=m?reaction(m):null;
-    const dv=(views!=null&&mv(mp,'views')!=null)?views-mv(mp,'views'):null;
-    const dPill=dv==null?'':`<span class="pill ${dv>0?'up':(dv<0?'down':'flat')}" style="margin-left:5px">${dv>0?'▲':(dv<0?'▼':'±')}${Math.abs(dv).toLocaleString()}</span>`;
-    const star=rt==null?'—':`⭐${Number(rt).toFixed(1)}`;
-    return `<tr onclick="selectStore('${x.code}')" style="cursor:pointer${isSel?';background:#f0f5ff':''}">
-      <td><i class="gdot" style="background:${gc}"></i>${esc(shortName(x.name))}</td>
-      <td><b>${views==null?'—':views.toLocaleString()}</b>${dPill}</td>
-      <td>${react==null?'—':react.toLocaleString()+'回'}</td>
-      <td>${rv==null?'—':rv.toLocaleString()+'件'}</td>
-      <td>${star}</td></tr>`;
-  }).join("");
-  return `<div class="tablewrap mt"><table class="alltbl"><thead>
-      <tr><th>店舗（表示回数の多い順）</th><th>表示回数<span class="sub">（前月比）</span></th><th>反応数<span class="sub">電話+ルート+web</span></th><th>口コミ</th><th>評価</th></tr>
-    </thead><tbody>${body}</tbody></table></div>
-    <p class="sub mt">行タップでその店舗のダッシュボードに切り替わります。反応数＝電話タップ＋ルート検索＋ウェブクリックの合計。</p>`;
+  return SETTINGS.integMode==='metric' ? integMetricTable() : integMonthTable(k,kp);
 }
 
 /* ===== 活動カレンダー生成 ===== */
