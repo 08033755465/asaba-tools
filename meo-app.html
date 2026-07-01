@@ -620,6 +620,123 @@ function importReportsCSV(){
     }catch(e){ toast('CSVの読み込みに失敗しました。形式をご確認ください。'); }
   });
 }
+/* ===== 月次レポートExcel（GMOインサイト書き出し .xlsx）の取込 =====
+   GMOのインサイト書き出しは「インサイト情報サマリ」「クチコミ推移（単月)」など
+   店舗が横並び／縦並びのクロス集計。列位置に依存せず、店舗名・対象月を走査して抜き出す。 */
+let _XLSXPromise=null;
+function loadXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(_XLSXPromise) return _XLSXPromise;
+  _XLSXPromise=new Promise((res,rej)=>{
+    const urls=['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+                'https://cdn.jsdelivr.net/npm/xlsx@0.20.3/dist/xlsx.full.min.js'];
+    let idx=0;
+    const tryNext=()=>{
+      if(idx>=urls.length){ rej(new Error('Excel読み込み用の部品を取得できませんでした（ネット接続をご確認ください）')); return; }
+      const sc=document.createElement('script'); sc.src=urls[idx++];
+      sc.onload=()=>window.XLSX?res(window.XLSX):tryNext();
+      sc.onerror=tryNext; document.head.appendChild(sc);
+    };
+    tryNext();
+  });
+  return _XLSXPromise;
+}
+/* 店舗名（Excel表記ゆれ対応）→店舗コード。空白/全角空白/アンダーバー/「店」を無視して突合 */
+function matchStoreCode(v){
+  const norm=s=>String(s==null?'':s).replace(/[ \u3000_店]/g,'').trim();
+  const k=norm(v); if(!k) return null;
+  for(const s of DATA.stores){ if(norm(s.name)===k) return s.code; }
+  for(const s of DATA.stores){ const n=norm(s.name); if(n && (k.includes(n)||n.includes(k))) return s.code; }
+  return null;
+}
+function xlNum(v){ if(v==null) return null; const s=String(v).replace(/[^0-9.\-]/g,''); if(s===''||s==='-'||s==='.') return null; const n=parseFloat(s); return isNaN(n)?null:n; }
+function xlRowStore(row){ for(const x of row){ const c=matchStoreCode(x); if(c) return c; } return null; }
+/* 行の中から対象月(YYYY-MM)の列番号を探す（見出し "2026/06" 等） */
+function xlMonthCol(row, month){
+  const y=month.slice(0,4), mo=parseInt(month.slice(5,7),10);
+  for(let ci=0;ci<row.length;ci++){
+    const m=String(row[ci]==null?'':row[ci]).trim().match(/^(\d{4})\/(\d{1,2})(?!\d)/);
+    if(m && m[1]===y && parseInt(m[2],10)===mo) return ci;
+  }
+  return null;
+}
+function importReportsExcel(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  inp.onchange=async ()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    try{
+      const XLSX=await loadXLSX();
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const sheetByKw=(...kws)=>{
+        for(const nm of wb.SheetNames){ if(kws.every(k=>nm.includes(k))) return XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,defval:'',raw:false}); }
+        return null;
+      };
+      const summary=sheetByKw('インサイト','サマリ')||sheetByKw('サマリ');
+      if(!summary){ toast('「インサイト情報サマリ」シートが見つかりませんでした。GMOのインサイト書き出しExcelをご確認ください。'); return; }
+      // 対象月：サマリ先頭付近の "YYYY年M月" から
+      let month=null;
+      for(const r of summary.slice(0,4)){ for(const c of r){ const m=String(c).match(/(\d{4})\D+?(\d{1,2})\D*月/); if(m){ month=m[1]+'-'+String(parseInt(m[2],10)).padStart(2,'0'); break; } } if(month) break; }
+      if(!month){ const p=SETTINGS.period; month=p.year+'-'+String(p.month).padStart(2,'0'); }
+      const found={}; // code -> {views,web,tel,route,rating,reviews}
+      const put=(code,key,val)=>{ if(val==null) return; (found[code]||(found[code]={}))[key]=val; };
+      // --- サマリ：表示/ウェブ/電話/ルート（店舗が横並び） ---
+      const LAB={views:'閲覧ユーザー', web:'ウェブサイト', tel:'電話をかける', route:'ルート'};
+      const colMapOf=row=>{ const mp={}; for(let ci=0;ci<row.length;ci++){ const c=matchStoreCode(row[ci]); if(c) mp[ci]=c; } return mp; };
+      let i=0;
+      while(i<summary.length){
+        const cm=colMapOf(summary[i]);
+        if(Object.keys(cm).length>=3){
+          let j=i+1;
+          while(j<summary.length){
+            const r2=summary[j];
+            if(Object.keys(colMapOf(r2)).length>=3) break;
+            const label=r2.join(' ');
+            for(const key in LAB){ if(label.includes(LAB[key])){ for(const ci in cm){ put(cm[ci], key, xlNum(r2[ci])); } } }
+            j++;
+          }
+          i=j; continue;
+        }
+        i++;
+      }
+      // --- クチコミ推移（単月)：平均評価・口コミ件数（対象月の列） ---
+      const rev=sheetByKw('クチコミ','単月')||sheetByKw('クチコミ');
+      if(rev){
+        let mode=null; const mcol={};
+        for(const r of rev){
+          const joined=r.join('');
+          if(joined.includes('平均点')) mode='rating';
+          else if(joined.includes('件数')) mode='reviews';
+          const mc=xlMonthCol(r, month);
+          if(mc!=null && mode){ mcol[mode]=mc; continue; }
+          if(mode && mcol[mode]!=null){ const code=xlRowStore(r); if(code) put(code, mode, xlNum(r[mcol[mode]])); }
+        }
+      }
+      // --- DATA.monthly へマージ（既存の rank / comment は保持） ---
+      let ok=0;
+      for(const code in found){
+        const g=found[code];
+        if(!DATA.monthly[code]) DATA.monthly[code]={};
+        const cur=DATA.monthly[code][month]||{};
+        DATA.monthly[code][month]={
+          views: g.views!=null?g.views:(cur.views??null),
+          web:   g.web!=null?g.web:(cur.web??null),
+          tel:   g.tel!=null?g.tel:(cur.tel??null),
+          route: g.route!=null?g.route:(cur.route??null),
+          rank:  cur.rank??null,
+          reviews: g.reviews!=null?g.reviews:(cur.reviews??null),
+          rating: g.rating!=null?g.rating.toFixed(1):(cur.rating??null),
+          comment: cur.comment||''
+        };
+        ok++;
+      }
+      saveReports(); renderAll();
+      toast(`✅ Excelから ${ok}店舗（${month}）を取り込みました。`);
+    }catch(e){ toast('Excelの読み込みに失敗しました：'+(e&&e.message?e.message:e)); }
+  };
+  inp.click();
+}
 /* 取込フォーマット見本のCSVを書き出し（②月次レポートDBの列に対応） */
 function exportReportTemplate(){
   const head=['店舗','対象月','表示回数','ウェブクリック','電話タップ','ルート検索','平均KW順位','口コミ件数','平均評価','所感・コメント'];
@@ -1348,9 +1465,10 @@ function renderDash(){
   const dataBanner = noData ? `
     <div class="card span2" style="border:1px dashed var(--line);background:var(--warnbg)">
       <h2 style="margin:0 0 6px">📥 月次レポートを取り込んでください</h2>
-      <p class="sub">GMOには自動取得APIが無いため、毎月の<b>月次レポート（CSV）</b>を取り込んで数値を表示します。下の「取込フォーマットを書き出す」で空の表を作り、レポートの数値を入れて読み込ませてください。</p>
+      <p class="sub">GMOには自動取得APIが無いため、毎月の<b>月次レポート</b>を取り込んで数値を表示します。<b>GMOのインサイト書き出しExcel（.xlsx）</b>をそのまま取り込めます。CSVでも取り込めます（下の「取込フォーマットを書き出す」で空の表を作成）。</p>
       <div class="row mt">
-        <button class="btn" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
+        <button class="btn" onclick="importReportsExcel()">📊 GMOのExcelを取り込む</button>
+        <button class="btn ghost" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
         <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す</button>
       </div>
     </div>` : '';
@@ -2514,13 +2632,14 @@ function renderSettings(){
 
     <div class="card">
       <h2>📥 月次レポート（②月次レポートDB）</h2>
-      <p class="sub">毎月のレポート（CSV）を取り込むと、ダッシュボードの数値・グラフ・ランキングに反映されます。現在の取込件数：<b>${reportCount}</b> 件。</p>
+      <p class="sub">毎月のレポートを取り込むと、ダッシュボードの数値・グラフ・ランキングに反映されます。<b>GMOのインサイト書き出しExcel（.xlsx）</b>をそのまま取り込めます。現在の取込件数：<b>${reportCount}</b> 件。</p>
       <div class="row">
-        <button class="btn" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
+        <button class="btn" onclick="importReportsExcel()">📊 GMOのExcelを取り込む</button>
+        <button class="btn ghost" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
         <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す</button>
         <button class="btn ghost" onclick="clearReports()">🗑️ レポートを消去</button>
       </div>
-      <p class="sub" style="font-size:11px">列：店舗／対象月／表示回数／ウェブクリック／電話タップ／ルート検索／平均KW順位／口コミ件数／平均評価／所感・コメント</p>
+      <p class="sub" style="font-size:11px">Excelは「インサイト情報サマリ」から表示回数/ウェブ/電話/ルート、「クチコミ推移（単月)」から平均評価/口コミ件数を自動で読み取ります（平均KW順位・所感はCSVで補えます）。</p>
     </div>
 
     <div class="card">
