@@ -231,6 +231,14 @@
   .selstep button{border:1px solid var(--line);background:#fff;border-radius:8px;width:28px;height:30px;
     font-size:12px;line-height:1;cursor:pointer;color:var(--accent);flex:0 0 auto}
   .selstep button:active{background:var(--accent);color:#fff}
+  .segval{display:inline-block;min-width:64px;text-align:center;font-size:12px;font-weight:800;color:var(--accent);padding:0 4px}
+  .lgndwrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .lgnd{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:#fff;
+    border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--fg);cursor:pointer;line-height:1}
+  .lgnd .dotc{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+  .lgnd.off{opacity:.4;text-decoration:line-through}
+  body.dark .segval{color:var(--accent)}
+  body.dark .lgnd{background:#2a2f37;color:#e8eaed;border-color:#3a4048}
   .calwrap{display:flex;align-items:center;gap:6px}
   .calwrap input[type=month]{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:14px;background:#fff}
   /* ランキング：グループ別 */
@@ -568,6 +576,9 @@ const SETTINGS={
   postGroup:"all",               // 投稿予定一覧のグループしぼり込み（all/整骨院/整体院/Peace）
   galFilter:"all",               // 画像ギャラリーの状態しぼり込み（all/未生成/生成済/確定）
   groupKW:{ "整骨院":"整体", "整体院":"整体", "Peace":"マシンピラティス" },
+  trendScope:"all",              // 年間推移グラフの範囲（all/整骨院/整体院/Peace）
+  trendMetric:"views",           // 年間推移グラフの指標
+  trendHidden:{},                // 非表示にした店舗（code→true）
 };
 const THEME_COLORS={ "整骨院":"#2f6df0", "整体院":"#138a52", "Peace":"#a24bd0" };
 /* 店舗ごとのカラー上書き（端末保存）。未設定ならグループ色にフォールバック */
@@ -1607,6 +1618,68 @@ function buildChart(vals, labels, type, color, better, metricKey){
   const xl=labels.map((l,i)=> (i%2===0||i===n-1)?`<text x="${X(i).toFixed(1)}" y="${H-7}" font-size="9" fill="#6b7280" text-anchor="middle">${l}</text>`:"").join("");
   return `<svg viewBox="0 0 ${W} ${H}" role="img">${grid}${body}${xl}${hits}</svg>`;
 }
+/* ===== 店舗別 年間推移（複数折れ線が交わる形式） ===== */
+const TREND_SCOPES=["all","整骨院","整体院","Peace"];
+function trendStoresInScope(){
+  const sc=SETTINGS.trendScope;
+  return sc==='all' ? DATA.stores.slice() : DATA.stores.filter(s=>s.group===sc);
+}
+function setTrendScope(delta){
+  let i=TREND_SCOPES.indexOf(SETTINGS.trendScope); if(i<0)i=0;
+  i=(i+delta+TREND_SCOPES.length)%TREND_SCOPES.length;
+  SETTINGS.trendScope=TREND_SCOPES[i]; renderDash();
+}
+function setTrendMetric(delta){
+  let i=CHART_KEYS.indexOf(SETTINGS.trendMetric); if(i<0)i=0;
+  i=(i+delta+CHART_KEYS.length)%CHART_KEYS.length;
+  SETTINGS.trendMetric=CHART_KEYS[i]; renderDash();
+}
+function toggleTrendStore(code){ SETTINGS.trendHidden[code]=!SETTINGS.trendHidden[code]; renderDash(); }
+function buildTrendChart(){
+  const stores=trendStoresInScope();
+  const mkey=SETTINGS.trendMetric, better=METRICS[mkey].better;
+  const keys=trailing12(SETTINGS.period.year,SETTINGS.period.month);
+  const labels=keys.map(kk=>Number(kk.split("-")[1])+"月");
+  const visible=stores.filter(s=>!SETTINGS.trendHidden[s.code]);
+  // 表示店舗の値からY軸レンジ
+  let all=[];
+  visible.forEach(s=>keys.forEach(kk=>{const v=mv(getM(s.code,kk),mkey); if(v!=null)all.push(v);}));
+  let mn=all.length?Math.min(...all):0, mx=all.length?Math.max(...all):1;
+  if(mn===mx){mn-=1;mx+=1;} const pd=(mx-mn)*0.1; mn-=pd; mx+=pd;
+  const W=340,H=190,padL=10,padR=10,padT=12,padB=24;
+  const iw=W-padL-padR, ih=H-padT-padB, n=keys.length;
+  const X=i=> padL + (n<=1?iw/2 : i*iw/(n-1));
+  const Y=v=>{ let t=(v-mn)/(mx-mn); if(better==="low") t=1-t; return padT+(1-t)*ih; };
+  let grid="";
+  for(let g=0;g<=3;g++){const gy=padT+ih*g/3;grid+=`<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="#eef1f5"/>`;}
+  let lines="";
+  visible.forEach(s=>{
+    const c=colorFor(s);
+    const pts=keys.map((kk,i)=>{const v=mv(getM(s.code,kk),mkey); return v==null?null:`${X(i).toFixed(1)},${Y(v).toFixed(1)}`;}).filter(Boolean).join(" ");
+    if(pts) lines+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`;
+  });
+  const xl=labels.map((l,i)=> (i%2===0||i===n-1)?`<text x="${X(i).toFixed(1)}" y="${H-7}" font-size="9" fill="#6b7280" text-anchor="middle">${l}</text>`:"").join("");
+  const svg=`<svg viewBox="0 0 ${W} ${H}" role="img" style="width:100%;height:auto">${grid}${lines}${xl}</svg>`;
+  // 凡例（タップで表示/非表示）
+  const legend=stores.map(s=>{
+    const off=!!SETTINGS.trendHidden[s.code]; const c=colorFor(s);
+    return `<button class="lgnd${off?' off':''}" onclick="toggleTrendStore('${s.code}')" title="${off?'表示する':'非表示にする'}">
+      <span class="dotc" style="background:${c}"></span>${esc(shortName(s.name))}</button>`;
+  }).join("");
+  const scopeLbl = SETTINGS.trendScope==='all'?'全店舗':SETTINGS.trendScope;
+  return `<div class="card span2">
+    <div class="row between mb" style="flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">📊 店舗別 年間推移</h2>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <span class="selstep"><button onclick="setTrendScope(-1)" title="前へ">◀</button><span class="segval">${esc(scopeLbl)}</span><button onclick="setTrendScope(1)" title="次へ">▶</button></span>
+        <span class="selstep"><button onclick="setTrendMetric(-1)" title="前へ">◀</button><span class="segval">${METRICS[mkey].icon}${METRICS[mkey].label}</span><button onclick="setTrendMetric(1)" title="次へ">▶</button></span>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:0">直近12か月・店舗ごとに色分け（凡例をタップで表示/非表示）。縦軸＝${METRICS[mkey].label}${better==='low'?'（上ほど良い＝順位）':''}</p>
+    ${all.length?svg:'<p class="sub">この範囲・指標のデータがまだありません。月次レポートを取り込むと表示されます。</p>'}
+    <div class="lgndwrap">${legend}</div>
+  </div>`;
+}
 /* グラフ用ツールチップ（PCホバー・スマホタップ共通） */
 function chartTip(ev, text){
   let tip=el('chartTip');
@@ -1811,6 +1884,9 @@ function renderDash(){
       <div class="chartwrap">${chart}</div>
       <p class="sub mt">グラフは<b>マウスを乗せる／タップ</b>でその月の数値が出ます。上のボタンで指標を切り替えられます。</p>
     </div>
+
+    <!-- ③-2 店舗別 年間推移（複数折れ線） -->
+    ${buildTrendChart()}
 
     <!-- ④ アカウント内 全店舗レポート -->
     <div class="card span2">
