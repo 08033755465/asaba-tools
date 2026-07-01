@@ -3006,6 +3006,7 @@ function setGroupKW(g,v){ SETTINGS.groupKW[g]=v; renderDash(); }
    ==================================================================== */
 const NOTION = {
   ds: {
+    reports :'85cfc572-bb47-4d75-a4a1-2d10c5841115', // ②月次レポートDB
     schedule:'fefe2e2a-b53a-4654-95f5-d4c1fa1c55c8', // ⑦定期投稿スケジュール
     gallery :'096c218a-608c-4e0b-b9cf-1444796ba08c', // ⑨サムネ画像管理
     links   :'e1e00327-edb8-4986-a620-ff84e34acb86', // ⑩リンク集
@@ -3120,6 +3121,80 @@ async function syncSchedulePull(){
       n++; });
     saveSchedule(); renderPost(); setSyncMsg('sch','取得：'+n+'件'); toast('✅ Notionから投稿予定を取得しました');
   }catch(e){ setSyncMsg('sch','失敗：'+e.message); }
+}
+
+/* ② 月次レポート（端末間でレポートの数値を同期）
+   DATA.monthly[code][YYYY-MM]={views,web,tel,route,rank,reviews,rating,comment} ⇔ ②月次レポートDB
+   レポートID=RPT-<店舗コード>-<YYYYMM> をキーに突合。数値7列＋所感、店舗relation・対象月dateを同期する。 */
+function reportRptId(code,key){ return 'RPT-'+code+'-'+String(key||'').replace('-',''); }
+function reportsCount(){ return Object.keys(DATA.monthly).reduce((a,c)=>a+Object.keys(DATA.monthly[c]||{}).length,0); }
+async function syncReportsPush(){
+  if(!reportsCount()){ toast('レポートがありません'); return; }
+  setSyncMsg('rep','送信中…');
+  try{
+    await loadStoreMaps();
+    const existing=mapBy(await queryAllRows(NOTION.ds.reports),'レポートID','title');
+    let ok=0,ng=0;
+    for(const code of Object.keys(DATA.monthly)){
+      const byMonth=DATA.monthly[code]||{};
+      for(const key of Object.keys(byMonth)){
+        const m=byMonth[key]||{}; const rid=reportRptId(code,key);
+        const numProp=v=>{ const n=(v==null||v==='')?null:Number(v); return { number:(n==null||isNaN(n))?null:n }; };
+        const props={
+          'レポートID':{title:[{text:{content:rid}}]},
+          '対象月':{date:{start:key+'-01'}},
+          '表示回数':numProp(m.views), 'ウェブクリック':numProp(m.web), '電話タップ':numProp(m.tel),
+          'ルート検索':numProp(m.route), '平均KW順位':numProp(m.rank), '口コミ件数':numProp(m.reviews),
+          '平均評価':numProp(m.rating),
+          '所感・コメント':{rich_text:[{text:{content:String(m.comment||'').slice(0,1990)}}]}
+        };
+        const sp=_storeMap[code]; if(sp) props['店舗']={relation:[{id:sp}]};
+        try{ if(existing[rid]) await notionCall({op:'update',pageId:existing[rid],properties:props});
+             else await notionCall({op:'create',ds:NOTION.ds.reports,properties:props}); ok++; }
+        catch(e){ ng++; }
+      }
+    }
+    setSyncMsg('rep','完了：'+ok+'件送信'+(ng?'／'+ng+'件失敗':'')); toast('✅ レポートをNotionへ送信しました');
+  }catch(e){ setSyncMsg('rep','失敗：'+e.message); }
+}
+async function syncReportsPull(){
+  setSyncMsg('rep','取得中…');
+  try{
+    await loadStoreMaps();
+    const rows=await queryAllRows(NOTION.ds.reports); let n=0;
+    rows.forEach(pg=>{ const pr=pg.properties;
+      let code=_storeInv[pRel0(pr,'店舗')]||'';
+      const dRaw=(pr['対象月']&&pr['対象月'].date&&pr['対象月'].date.start)||'';
+      let key=dRaw?dRaw.slice(0,7):'';
+      const rid=pTitle(pr,'レポートID');
+      if(!code||!key){ const m=String(rid||'').match(/^RPT-(.+)-(\d{4})(\d{2})$/); if(m){ if(!code)code=m[1]; if(!key)key=m[2]+'-'+m[3]; } }
+      if(!code||!key) return;
+      if(!DATA.monthly[code]) DATA.monthly[code]={};
+      const has=n=>pr[n]&&typeof pr[n].number==='number';
+      DATA.monthly[code][key]={
+        views:has('表示回数')?pNum(pr,'表示回数'):null, web:has('ウェブクリック')?pNum(pr,'ウェブクリック'):null,
+        tel:has('電話タップ')?pNum(pr,'電話タップ'):null, route:has('ルート検索')?pNum(pr,'ルート検索'):null,
+        rank:has('平均KW順位')?pNum(pr,'平均KW順位'):null, reviews:has('口コミ件数')?pNum(pr,'口コミ件数'):null,
+        rating:has('平均評価')?Number(pNum(pr,'平均評価')).toFixed(1):null,
+        comment:pText(pr,'所感・コメント')
+      };
+      n++; });
+    saveReports(); renderAll(); setSyncMsg('rep','取得：'+n+'件'); toast('✅ Notionからレポートを取得しました');
+  }catch(e){ setSyncMsg('rep','失敗：'+e.message); }
+}
+
+/* まとめて同期（レポート→投稿→画像→リンク） */
+async function syncAllPull(){
+  setSyncMsg('all','取得中…');
+  try{ await syncReportsPull(); await syncSchedulePull(); await syncGalleryPull(); await syncLinksPull();
+    setSyncMsg('all','✅ 全部の取得が完了'); toast('✅ Notionから全データを取得しました');
+  }catch(e){ setSyncMsg('all','失敗：'+e.message); }
+}
+async function syncAllPush(){
+  setSyncMsg('all','送信中…');
+  try{ await syncReportsPush(); await syncSchedulePush(); await syncGalleryPush(); await syncLinksPush();
+    setSyncMsg('all','✅ 全部の送信が完了'); toast('✅ Notionへ全データを送信しました');
+  }catch(e){ setSyncMsg('all','失敗：'+e.message); }
 }
 
 /* ⑨ 画像 */
@@ -3259,10 +3334,14 @@ function renderSettings(){
 
     <div class="card">
       <h2>🔗 Notion連携（チーム同期）</h2>
-      <p class="sub">投稿予定・画像・リンク集をNotionと直接やり取りして、<b>チーム全員で同じ最新データ</b>を見られるようにします。下の「送信」でこの端末→Notion、「取得」でNotion→この端末に反映します。</p>
+      <p class="sub">レポートの数値・投稿予定・画像・リンク集をNotionと直接やり取りして、<b>チーム全員がPC・スマホで同じ最新データ</b>を見られるようにします。下の「送信」でこの端末→Notion、「取得」でNotion→この端末に反映します。<b>スマホでレポートが空のときは「レポート（②）→取得」を押してください。</b></p>
       <div class="setrow"><div><div class="k">接続の確認</div><div class="d">Notionとつながっているかチェック</div></div>
         <button class="btn ghost sm" onclick="notionPing()">🔌 疎通確認</button></div>
       <div id="sync_ping" class="sub" style="margin:2px 0 8px"></div>
+      <div class="setrow"><div><div class="k">🔄 まとめて同期</div><div class="d" id="sync_all">レポート＋投稿＋画像＋リンクを一括で</div></div>
+        <div class="row"><button class="btn sm" onclick="syncAllPush()">⬆️ 全部送信</button><button class="btn ghost sm" onclick="syncAllPull()">⬇️ 全部取得</button></div></div>
+      <div class="setrow"><div><div class="k">📊 レポートの数値（②）</div><div class="d" id="sync_rep">現在 ${reportCount} 件</div></div>
+        <div class="row"><button class="btn sm" onclick="syncReportsPush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncReportsPull()">⬇️ 取得</button></div></div>
       <div class="setrow"><div><div class="k">📅 投稿予定（⑦）</div><div class="d" id="sync_sch">現在 ${DATA.schedule.length} 件</div></div>
         <div class="row"><button class="btn sm" onclick="syncSchedulePush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncSchedulePull()">⬇️ 取得</button></div></div>
       <div class="setrow"><div><div class="k">🖼️ 画像（⑨）</div><div class="d" id="sync_gal">現在 ${DATA.gallery.length} 件</div></div>
