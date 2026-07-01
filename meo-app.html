@@ -28,8 +28,9 @@
   body.dark table th{background:#222a36}
   body.dark .login-card{background:rgba(31,37,48,.94)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{overflow-x:hidden}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
-    background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px}
+    background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px;overflow-x:hidden;max-width:100vw}
 
   /* ===== 地図風背景（共通） ===== */
   .mapbg{position:absolute;inset:0;overflow:hidden;
@@ -229,6 +230,27 @@
   /* 天気別／曜日別の横棒 */
   .twocol{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   @media(max-width:560px){.twocol{grid-template-columns:1fr}}
+  /* ===== スマホUI整え（PCと切り分け／横幅はみ出し・急な拡大を防止） ===== */
+  @media(max-width:560px){
+    main{padding:12px 12px 92px}
+    .card{padding:13px}
+    /* 店舗・期間などの選択行は内側グループも折り返す */
+    .selrow,.selgrp{flex-wrap:wrap}
+    .selgrp{gap:6px 8px}
+    /* インラインのmin-widthを無効化して画面幅に収める */
+    .selrow select,.selgrp select{min-width:0!important;flex:1 1 120px;max-width:100%}
+    .selrow input[type=month],.selgrp input[type=month]{flex:1 1 120px;min-width:0}
+    .selstep{flex:1 1 auto}
+    .selstep select{flex:1 1 auto}
+    /* 設定の入力は幅いっぱいに統一 */
+    .setrow .inp{max-width:none!important;width:100%}
+    .setrow{flex-wrap:wrap}
+    /* 見出し・小ボタンの折り返し */
+    .row.between{flex-wrap:wrap;gap:8px}
+    h2{font-size:16px}
+    /* 表は内部スクロール（レイアウトを広げない） */
+    .tablewrap{max-width:100%}
+  }
   .halfcard{border:1px solid var(--line);border-radius:11px;padding:10px}
   .subhd{font-weight:800;font-size:13px;margin-bottom:6px}
   .hbar{display:flex;align-items:center;gap:7px;margin:5px 0}
