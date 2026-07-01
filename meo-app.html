@@ -1603,9 +1603,14 @@ function openBodyDetail(id){
       <button class="btn ghost" onclick="openGBP('${esc(p.store)}')">GBP投稿ページへ</button>
     </div>`);
 }
-/* 投稿ボタンに載せる店舗別URL（店舗HP／予約）。リンク集の店舗別リンクから解決 */
+/* 投稿ボタンに載せる店舗別URL＝各店の公式LINE。リンク集の店舗別リンクから解決
+   （区分=LINE、またはラベル/URLがLINE=lin.ee・line.me を優先。無ければHP/予約） */
 function storePostUrl(code){
-  const l=linkFirst('store',code,'HP')||linkFirst('store',code,'予約');
+  const isLine=u=>/lin\.ee|line\.me|LINE/i.test(u||'');
+  const cand=LINKS.filter(l=>l.scope==='store'&&l.key===code&&l.url);
+  const line=cand.find(l=>l.cat==='LINE'||isLine(l.label)||isLine(l.url));
+  if(line) return line.url;
+  const l=linkFirst('store',code,'LINE')||linkFirst('store',code,'HP')||linkFirst('store',code,'予約');
   return (l&&l.url)||'';
 }
 function openGBP(code){
@@ -2516,7 +2521,7 @@ function buildTextPrompt(p){
   const url=storePostUrl(p.store);
   return `あなたは「${st?st.name:p.store}」のGoogleビジネスプロフィール投稿の担当です。\n`
     +`▼テーマ：${p.theme}\n▼投稿の種類：${p.type}\n▼文字数：250〜350字\n`
-    +`▼ルール：\n・専門用語はかみくだいて説明する\n・効果の保証や誇大な表現はしない\n・親しみやすい敬語\n・最後にお電話／Web予約への自然な導線を入れる${url?`（予約リンク：${url}）`:''}\n\n`
+    +`▼ルール：\n・専門用語はかみくだいて説明する\n・効果の保証や誇大な表現はしない\n・親しみやすい敬語\n・最後に公式LINEでのご予約への自然な導線を入れる${url?`（公式LINE：${url}）`:''}\n\n`
     +`上記をふまえて、投稿本文を1案つくってください。`;
 }
 function buildImagePrompt(p){
@@ -2542,7 +2547,7 @@ function composerOpen(id){
         return `<p class="sub" style="margin-top:0"><span class="pill">📢 グループ共通（${esc(cg)}）</span> 全店で同じ文・<b>URLなし</b>。保存すると同じ日の${esc(cg)}全店に反映されます。</p>`;
       }
       const url=storePostUrl(p.store);
-      return `<p class="sub" style="margin-top:0"><span class="pill">🏥 店舗別</span> この店だけの文・URLは${url?`<b>あり</b>（${esc(url)}）`:'<b>未登録</b>（🔗リンク集で店舗別HP/予約を登録すると自動で付きます）'}。</p>`;
+      return `<p class="sub" style="margin-top:0"><span class="pill">🏥 店舗別</span> この店だけの文・ボタンは公式LINE${url?`<b>あり</b>（${esc(url)}）`:'<b>未取得</b>（🔗リンク集の店舗別リンクに公式LINEが見つかりません）'}。</p>`;
     })()}
 
     <label class="fl mt">③ スケジュールからテーマを選ぶ（過去投稿の作り直しもOK）</label>
