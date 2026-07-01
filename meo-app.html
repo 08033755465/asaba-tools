@@ -168,6 +168,18 @@
   .pickopt.sel{border-color:var(--accent);color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1px var(--accent)}
   .pickopt .ck{color:var(--accent);font-weight:900}
   body.dark .pickopt{background:#2a2f37;color:#e8eaed}
+  /* リンク集：青文字リンク＋コピー */
+  .lktabs{display:flex;gap:8px;margin-bottom:4px}
+  .lktabs button{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px;font-size:14px;font-weight:700;cursor:pointer;color:var(--sub)}
+  .lktabs button.on{border-color:var(--accent);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  body.dark .lktabs button{background:#222a36}
+  .lkitem{display:inline-flex;align-items:center;gap:3px;margin:4px 10px 4px 0}
+  .lk{color:var(--accent);font-weight:800;text-decoration:underline;text-underline-offset:2px;cursor:pointer;
+    user-select:none;-webkit-user-select:none;font-size:14px}
+  .lk.warn{color:var(--warn);text-decoration:underline dotted}
+  .lkcopy{border:0;background:transparent;cursor:pointer;font-size:13px;padding:2px 3px;opacity:.55;line-height:1}
+  .lkcopy:hover{opacity:1}
+  .lkcopy:disabled{opacity:.25;cursor:default}
   .swatch{display:inline-block;width:20px;height:20px;border-radius:6px;border:1px solid var(--line);vertical-align:middle}
 
   /* ===== タブバー ===== */
@@ -2542,30 +2554,61 @@ function linksLoad(){
   LINKS=linksDefault(); linksSave();
 }
 function linksSave(){ try{ localStorage.setItem(LINKS_KEY, JSON.stringify(LINKS)); }catch(e){} }
+/* 個人リンク（この端末のみに保存・Notion非連携） */
+let PLINKS=[]; const PLINKS_KEY='meo_plinks_v1';
+function plinksLoad(){ try{const r=localStorage.getItem(PLINKS_KEY); PLINKS=r?JSON.parse(r):[];}catch(e){PLINKS=[];} }
+function plinksSave(){ try{ localStorage.setItem(PLINKS_KEY, JSON.stringify(PLINKS)); }catch(e){} }
+plinksLoad();
+/* リンク操作: タップ=編集 / ダブルタップ=ひらく / 長押し=削除 / 📋=コピー */
+function lkFind(id){ return LINKS.find(x=>x.id===id) || PLINKS.find(x=>x.id===id) || null; }
+function lkIsPersonal(id){ return PLINKS.some(x=>x.id===id); }
+function lkStore(id){ if(lkIsPersonal(id)) plinksSave(); else linksSave(); }
+let __lkT=null,__lkPress=null,__lkLong=false;
+function lkTap(id){ if(__lkLong){__lkLong=false;return;} if(__lkT){clearTimeout(__lkT);__lkT=null;return;} __lkT=setTimeout(function(){__lkT=null; lkEdit(id);},260); }
+function lkDbl(id){ if(__lkT){clearTimeout(__lkT);__lkT=null;} openLinkById(id); }
+function lkDown(id){ __lkLong=false; if(__lkPress)clearTimeout(__lkPress); __lkPress=setTimeout(function(){ __lkLong=true; lkDelete(id); },600); }
+function lkUp(){ if(__lkPress){clearTimeout(__lkPress);__lkPress=null;} }
+function lkEdit(id){
+  const l=lkFind(id); if(!l)return;
+  const label=prompt('リンクの名前',l.label); if(label===null)return;
+  const url=prompt('URL',l.url||''); if(url===null)return;
+  l.label=(label.trim()||l.label); l.url=(url||'').trim();
+  lkStore(id); renderLinks(); toast('🔗 保存しました');
+}
+function lkDelete(id){
+  const l=lkFind(id); if(!l)return;
+  if(!confirm('「'+l.label+'」を削除しますか？'))return;
+  if(lkIsPersonal(id)){ PLINKS=PLINKS.filter(x=>x.id!==id); plinksSave(); }
+  else { LINKS=LINKS.filter(x=>x.id!==id); linksSave(); }
+  renderLinks(); toast('削除しました');
+}
+function lkCopy(id){
+  const l=lkFind(id); if(!l||!l.url){ toast('URL未登録です'); return; }
+  const done=()=>toast('📋 URLをコピーしました');
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(l.url).then(done,()=>fallbackCopy(l.url,done)); }
+  else fallbackCopy(l.url,done);
+}
+function fallbackCopy(text,cb){ try{ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); cb&&cb(); }catch(e){ toast('コピーできませんでした'); } }
+function plinkAdd(){
+  const label=prompt('リンクの名前（例：自分用メモのURL）',''); if(label===null)return;
+  const url=prompt('URL（あとで変更OK・空でも保存できます）','https://'); if(url===null)return;
+  PLINKS.push({id:luid(),label:(label.trim()||'リンク'),url:(url||'').trim().replace(/^https:\/\/$/,'')});
+  plinksSave(); renderLinks(); toast('🔗 個人リンクを追加しました');
+}
+let LINK_TAB='shared';
+function setLinkTab(t){ LINK_TAB=t; renderLinks(); }
 function linksFor(scope,key){ return LINKS.filter(l=> l.scope===scope && (scope==='global'||l.key===key)); }
 function linkFirst(scope,key,cat){ return LINKS.find(l=> l.scope===scope && (scope==='global'||l.key===key) && (!cat||l.cat===cat)); }
 function openLink(url){
   if(!url){ toast('このリンクはURL未登録です。「🔗リンク集」で設定してください。'); return; }
   window.open(url,'_blank');
 }
-function openLinkById(id){ const l=LINKS.find(x=>x.id===id); openLink(l&&l.url); }
+function openLinkById(id){ const l=lkFind(id); openLink(l&&l.url); }
 function linkAdd(scope,key,cat){
   const label=prompt('リンクの名前（例：GMOツール／GBP投稿ページ）',''); if(label===null)return;
   const url=prompt('URL（あとで変更OK・空でも保存できます）','https://'); if(url===null)return;
   LINKS.push({id:luid(),label:(label.trim()||'リンク'),url:(url||'').trim().replace(/^https:\/\/$/,''),scope,key:key||'',cat:cat||'その他'});
   linksSave(); renderLinks(); toast('🔗 リンクを追加しました');
-}
-function linkEdit(id){
-  const l=LINKS.find(x=>x.id===id); if(!l)return;
-  const label=prompt('リンクの名前',l.label); if(label===null)return;
-  const url=prompt('URL',l.url||''); if(url===null)return;
-  l.label=(label.trim()||l.label); l.url=(url||'').trim();
-  linksSave(); renderLinks(); toast('🔗 保存しました');
-}
-function linkRemove(id){
-  const l=LINKS.find(x=>x.id===id); if(!l)return;
-  if(!confirm('「'+l.label+'」を削除しますか？'))return;
-  LINKS=LINKS.filter(x=>x.id!==id); linksSave(); renderLinks(); toast('削除しました');
 }
 function linksResetDefault(){
   if(!confirm('リンク集を初期状態に戻しますか？（追加・編集した内容は消えます）'))return;
@@ -2590,10 +2633,13 @@ function linksExportCSV(){
 }
 function linkChip(l){
   const ok=!!l.url;
-  return `<span style="display:inline-flex;align-items:center;gap:2px;background:var(--chip);border-radius:8px;padding:2px 4px;margin:2px 4px 2px 0">
-    <button class="btn ghost sm" style="border:0;background:transparent" onclick="openLinkById('${l.id}')" title="${ok?esc(l.url):'URL未登録'}">${ok?'🔗':'⚠️'} ${esc(l.label)}</button>
-    <button class="btn ghost sm" style="border:0;background:transparent;padding:2px 4px" onclick="linkEdit('${l.id}')" title="編集">✏️</button>
-    <button class="btn ghost sm" style="border:0;background:transparent;padding:2px 4px" onclick="linkRemove('${l.id}')" title="削除">🗑️</button>
+  return `<span class="lkitem">
+    <span class="lk${ok?'':' warn'}" role="link" tabindex="0"
+      onclick="lkTap('${l.id}')" ondblclick="lkDbl('${l.id}')"
+      onmousedown="lkDown('${l.id}')" onmouseup="lkUp()" onmouseleave="lkUp()"
+      ontouchstart="lkDown('${l.id}')" ontouchend="lkUp()"
+      title="${ok?esc(l.url):'URL未登録'}｜タップ=編集／ダブルタップ=ひらく／長押し=削除">${ok?'':'⚠️ '}${esc(l.label)}</span>
+    <button class="lkcopy" onclick="lkCopy('${l.id}')" title="URLをコピー"${ok?'':' disabled'}>📋</button>
   </span>`;
 }
 function linkBlock(title, code, links, scope, key){
@@ -2621,17 +2667,11 @@ function renderLinks(){
     return `<div style="margin-top:6px"><div class="pill" style="margin:6px 0">${esc(dg.label)}</div>`
       + stores.map(s=>linkBlock(s.name,s.code,linksFor('store',s.code),'store',s.code)).join('') + `</div>`;
   }).join('');
-  wrap.innerHTML=`
-    <div class="card">
-      <h2>🔗 リンク集</h2>
-      <p class="sub">GMOツール・GBP投稿ページなど、よく飛ぶ外部URLをここでまとめて管理します。
-      <b>URLが変わったらここを直すだけ</b>で、店舗別ページや投稿づくりのボタンも全部新しいURLに切り替わります。
-      内容はこの端末に保存され、CSVに書き出せばNotionにも移せます。</p>
-      <div class="row">
-        <button class="btn ghost" onclick="linksExportCSV()">⬇️ CSVで書き出す（Notion用）</button>
-        <button class="btn ghost" onclick="linksResetDefault()">↺ 初期状態に戻す</button>
-      </div>
-    </div>
+  const personalItems = PLINKS.length
+    ? `<div style="display:flex;flex-wrap:wrap;align-items:center">${PLINKS.map(linkChip).join('')}</div>`
+    : '<p class="sub">まだありません。「＋追加」から自分用のリンクを登録できます。</p>';
+
+  const sharedView = `
     <div class="card">
       <h2 style="font-size:15px">全体共通</h2>
       <p class="sub" style="margin-top:0">どの店舗にも共通のリンク（GMO一覧・画像アップロードなど）</p>
@@ -2647,6 +2687,26 @@ function renderLinks(){
       <p class="sub" style="margin-top:0">各店舗のGMOツール・GBP投稿ページ。⚠️マークはURL未登録です。</p>
       ${storeBlocks}
     </div>`;
+
+  const personalView = `
+    <div class="card">
+      <h2 style="font-size:15px">個人リンク</h2>
+      <p class="sub" style="margin-top:0">この端末だけに保存され、Notionには同期しません。自分の好きにご利用ください。</p>
+      ${personalItems}
+      <div class="row mt"><button class="btn ghost sm" onclick="plinkAdd()">＋追加</button></div>
+    </div>`;
+
+  wrap.innerHTML=`
+    <div class="card">
+      <h2>🔗 リンク集</h2>
+      <p class="sub"><b>タップ=編集</b>／<b>ダブルタップ=ひらく</b>／<b>長押し=削除</b>／<b>📋=URLコピー</b>。
+      「共有」はNotionと連携するチーム共通のリンク、「個人」はこの端末だけの自分用リンクです。</p>
+      <div class="lktabs">
+        <button class="${LINK_TAB==='shared'?'on':''}" onclick="setLinkTab('shared')">👥 共有管理</button>
+        <button class="${LINK_TAB==='personal'?'on':''}" onclick="setLinkTab('personal')">🙋 個人管理</button>
+      </div>
+    </div>
+    ${LINK_TAB==='shared'?sharedView:personalView}`;
 }
 linksLoad();
 
@@ -2907,6 +2967,8 @@ function renderSettings(){
         <div class="row"><button class="btn sm" onclick="syncGalleryPush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncGalleryPull()">⬇️ 取得</button></div></div>
       <div class="setrow"><div><div class="k">🔗 リンク集（⑩）</div><div class="d" id="sync_lnk">店舗別・グループ別のリンク</div></div>
         <div class="row"><button class="btn sm" onclick="syncLinksPush()">⬆️ 送信</button><button class="btn ghost sm" onclick="syncLinksPull()">⬇️ 取得</button></div></div>
+      <div class="setrow"><div><div class="k">リンク集のメンテ</div><div class="d">共有リンクのCSV書き出し／初期状態に戻す（誤操作防止のためここだけに設置）</div></div>
+        <div class="row"><button class="btn ghost sm" onclick="linksExportCSV()">⬇️ CSV</button><button class="btn ghost sm" onclick="linksResetDefault()">↺ 初期化</button></div></div>
       <details style="margin-top:10px">
         <summary class="sub" style="cursor:pointer">⚙️ 連携の詳細設定（中継先・合言葉）</summary>
         <div class="setrow" style="margin-top:8px"><div><div class="k">中継先URL</div><div class="d">通常は空でOK（既定 /api/notion）</div></div>
