@@ -785,6 +785,7 @@ function routeReportCSV(text, fname){
   const head=(rows[0]||[]).join(',');
   const head3=rows.slice(0,3).map(r=>r.join(',')).join(' ');
   if(head.includes('店舗名') && head.includes('キーワード')) return importKwRankRows(rows);
+  if(head.includes('年月') && head.includes('店舗名')) return importInsightMonthlyRows(rows);
   if(head.includes('項目名') || head3.includes('閲覧ユーザー数')) return importInsightRows(rows, fname);
   return processReportCSVText(text);
 }
@@ -807,6 +808,34 @@ function importInsightRows(rows, fname){
   let ok=0; for(const code in found){ mergeMonthly(code, month, found[code]); ok++; }
   saveReports(); renderAll();
   toast(`✅ insight CSVから ${ok}店舗（${month}）を取り込みました。`);
+}
+/* GMO insight（月別・1行=1店舗×1月）：年月と店舗名の行形式を月別に取り込む */
+function importInsightMonthlyRows(rows){
+  const hdr=rows[0]||[];
+  let monthCol=-1, storeCol=-1;
+  for(let ci=0;ci<hdr.length;ci++){ const h=String(hdr[ci]).trim();
+    if(monthCol<0 && h==='年月') monthCol=ci;
+    if(storeCol<0 && h==='店舗名') storeCol=ci; }
+  if(monthCol<0) monthCol=0;
+  if(storeCol<0) storeCol=1;
+  const LAB=[['views','全体閲覧ユーザー数'],['web','Webサイトアクション'],['tel','電話アクション'],['route','ルートアクション'],['reviews','クチコミ件数'],['rating','クチコミ評価点']];
+  const mcol={};
+  for(let ci=0;ci<hdr.length;ci++){ const h=String(hdr[ci]); for(const [key,kw] of LAB){ if(mcol[key]==null && h.indexOf(kw)>-1) mcol[key]=ci; } }
+  const months=new Set(); let ok=0;
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    const mm=String(row[monthCol]||'').match(/(\d{4})[\/\-年](\d{1,2})/);
+    if(!mm) continue;
+    const month=mm[1]+'-'+String(+mm[2]).padStart(2,'0');
+    const code=matchStoreCode(row[storeCol]); if(!code) continue;
+    const g={};
+    for(const key in mcol){ const v=xlNum(row[mcol[key]]); if(v!=null) g[key]=v; }
+    const act=(g.views||0)+(g.web||0)+(g.tel||0)+(g.route||0)+(g.reviews||0);
+    if(act<=0) continue; // 開業前など全指標0の月は取り込まない
+    mergeMonthly(code, month, g); months.add(month); ok++;
+  }
+  saveReports(); renderAll();
+  toast(`✅ 月別insightから ${ok}件（${months.size}か月ぶん）を取り込みました。`);
 }
 /* GMO kwrank（日別順位）：店舗×月で平均し、平均KW順位を月別に反映 */
 function importKwRankRows(rows){
