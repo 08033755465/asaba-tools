@@ -1302,6 +1302,11 @@ function setMonthInput(val){           // "YYYY-MM"（カレンダー入力）
   SETTINGS.period={year:y,month:m}; renderDash();
 }
 function resetMonth(){ SETTINGS.period={year:TODAY.y,month:TODAY.m}; renderDash(); }
+function stepMonth(delta){                 // ◀▶で前後の月へ（setMonthInputが上下限をクランプ）
+  let y=SETTINGS.period.year, m=SETTINGS.period.month+delta;
+  while(m<1){m+=12;y--;} while(m>12){m-=12;y++;}
+  setMonthInput(y+'-'+String(m).padStart(2,'0'));
+}
 function toggleReportCal(v){ SHOW_REPORT_CAL=v; renderDash(); }
 function cycleRank(dir){
   let i=RANK_KEYS.indexOf(SETTINGS.rankMetric);
@@ -1620,7 +1625,9 @@ function renderDash(){
         </div>
         <div class="selgrp">
           <label class="fl" style="margin:0 6px 0 0">年月</label>
+          <div class="stepper"><button onclick="stepMonth(-1)" title="前の月">◀</button></div>
           <input type="month" min="2025-01" max="${TODAY.y}-${String(TODAY.m).padStart(2,'0')}" value="${monthVal}" onchange="setMonthInput(this.value)">
+          <div class="stepper"><button onclick="stepMonth(1)" title="次の月" ${isThisMonth?'disabled':''}>▶</button></div>
           <button class="btn ghost sm" onclick="resetMonth()" ${isThisMonth?'disabled':''}>↩ 今月</button>
         </div>
       </div>
@@ -1826,7 +1833,22 @@ function updatePS(k,v){ window._PS[k]=v; try{localStorage.setItem(PROMPT_KEY,JSO
 function getPS(k,def){ const v=window._PS[k]; return (v!=null&&v!==undefined)?v:def; }
 
 function psUpdateDays(){
-  updatePS('days',[...document.querySelectorAll('.ps-day-cb:checked')].map(c=>c.value));
+  const count=parseInt(getPS('count',2),10)||7;
+  let days=[...document.querySelectorAll('.ps-day-cb:checked')].map(c=>c.value);
+  if(days.length>count){
+    toast(`週${count}回なので曜日は${count}つまでです。回数を増やすと追加できます。`);
+    days=getPS('days',[]); // 上限超過の選択は取り消し（これまでの選択を維持）
+  }
+  updatePS('days',days);
+  renderPost();
+}
+/* 週N回を変更：曜日の選択数を上限に合わせて調整 */
+function psSetCount(v){
+  const count=parseInt(v,10)||7;
+  updatePS('count',count);
+  let days=getPS('days',[]);
+  if(days.length>count) days=days.slice(0,count);
+  updatePS('days',days);
   renderPost();
 }
 function psUpdateLinked(){
@@ -1883,7 +1905,7 @@ function buildPromptCard(){
 
     <label class="fl mt">投稿頻度（週◯回）と曜日</label>
     <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-      <select class="inp" style="width:72px" onchange="updatePS('count',this.value)">
+      <select class="inp" style="width:72px" onchange="psSetCount(this.value)">
         ${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${getPS('count',2)==n?'selected':''}>${n}回</option>`).join('')}
       </select>
       <div style="display:flex;flex-wrap:wrap;gap:4px">${dayCbs}</div>
