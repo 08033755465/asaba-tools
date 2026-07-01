@@ -247,6 +247,14 @@
   .chartwrap .hit{cursor:pointer}
   .charttip{position:fixed;z-index:200;background:#1f2430;color:#fff;font-size:12px;font-weight:600;
     padding:6px 10px;border-radius:8px;pointer-events:none;display:none;box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap}
+  /* レポート取込ドロップゾーン */
+  .dropzone{border:2px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;
+    cursor:pointer;background:var(--card);transition:.15s;user-select:none}
+  .dropzone:hover{border-color:var(--accent);background:var(--warnbg)}
+  .dropzone.drag{border-color:var(--accent);background:var(--warnbg);transform:scale(1.01)}
+  .dropzone .dz-ttl{font-size:16px;font-weight:800;margin-bottom:4px}
+  .dropzone .dz-sub{font-size:12px;color:var(--sub);line-height:1.6}
+  .dropzone *{pointer-events:none}
   /* 全店舗レポート 一覧テーブル */
   .alltbl{width:100%;border-collapse:collapse;font-size:13px}
   .alltbl th,.alltbl td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -585,8 +593,8 @@ function normMonth(v){
   return m ? m[1]+"-"+String(Number(m[2])).padStart(2,"0") : null;
 }
 /* ===== 月次レポートCSVの取込 ===== */
-function importReportsCSV(){
-  pickCSV(text=>{
+function importReportsCSV(){ pickCSV(processReportCSVText); }
+function processReportCSVText(text){
     try{
       const rows=parseCSV(text);
       if(rows.length<2){ toast('データ行が見つかりませんでした。'); return; }
@@ -618,7 +626,6 @@ function importReportsCSV(){
       saveReports(); renderAll();
       toast(`✅ ${ok}件のレポートを取り込みました${ng?`（${ng}件はスキップ）`:''}。`);
     }catch(e){ toast('CSVの読み込みに失敗しました。形式をご確認ください。'); }
-  });
 }
 /* ===== 月次レポートExcel（GMOインサイト書き出し .xlsx）の取込 =====
    GMOのインサイト書き出しは「インサイト情報サマリ」「クチコミ推移（単月)」など
@@ -663,8 +670,11 @@ function xlMonthCol(row, month){
 function importReportsExcel(){
   const inp=document.createElement('input');
   inp.type='file'; inp.accept='.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  inp.onchange=async ()=>{
-    const f=inp.files&&inp.files[0]; if(!f) return;
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) processReportExcelFile(f); };
+  inp.click();
+}
+async function processReportExcelFile(f){
+    if(!f) return;
     try{
       const XLSX=await loadXLSX();
       const buf=await f.arrayBuffer();
@@ -734,9 +744,25 @@ function importReportsExcel(){
       saveReports(); renderAll();
       toast(`✅ Excelから ${ok}店舗（${month}）を取り込みました。`);
     }catch(e){ toast('Excelの読み込みに失敗しました：'+(e&&e.message?e.message:e)); }
-  };
+}
+/* ファイル種別を判定して取込（.xlsx/.xls→Excel、.csv→CSV）。クリック選択・ドラッグ&ドロップ共通 */
+function handleReportFile(f){
+  if(!f) return;
+  const n=(f.name||'').toLowerCase();
+  if(n.endsWith('.xlsx')||n.endsWith('.xls')) processReportExcelFile(f);
+  else if(n.endsWith('.csv')){ const rd=new FileReader(); rd.onload=()=>processReportCSVText(String(rd.result)); rd.readAsText(f,'utf-8'); }
+  else toast('対応していないファイルです。GMOのExcel(.xlsx)またはCSVを選んでください。');
+}
+function pickReportFile(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.xlsx,.xls,.csv';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) handleReportFile(f); };
   inp.click();
 }
+function onReportDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('drag'); }
+function onReportDragLeave(e){ e.currentTarget.classList.remove('drag'); }
+function onReportDrop(e){ e.preventDefault(); e.currentTarget.classList.remove('drag');
+  const dt=e.dataTransfer; const f=dt&&dt.files&&dt.files[0]; if(f) handleReportFile(f); }
 /* 取込フォーマット見本のCSVを書き出し（②月次レポートDBの列に対応） */
 function exportReportTemplate(){
   const head=['店舗','対象月','表示回数','ウェブクリック','電話タップ','ルート検索','平均KW順位','口コミ件数','平均評価','所感・コメント'];
@@ -1462,16 +1488,18 @@ function renderDash(){
   const scopeBtn=(v,lbl)=>`<button class="${scope===v?'on':''}" onclick="setRankScope('${v}')">${lbl}</button>`;
 
   const noData = !hasReportData();
-  const dataBanner = noData ? `
-    <div class="card span2" style="border:1px dashed var(--line);background:var(--warnbg)">
-      <h2 style="margin:0 0 6px">📥 月次レポートを取り込んでください</h2>
-      <p class="sub">GMOには自動取得APIが無いため、毎月の<b>月次レポート</b>を取り込んで数値を表示します。<b>GMOのインサイト書き出しExcel（.xlsx）</b>をそのまま取り込めます。CSVでも取り込めます（下の「取込フォーマットを書き出す」で空の表を作成）。</p>
-      <div class="row mt">
-        <button class="btn" onclick="importReportsExcel()">📊 GMOのExcelを取り込む</button>
-        <button class="btn ghost" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
-        <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す</button>
+  const dataBanner = `
+    <div class="card span2">
+      <h2 style="margin:0 0 6px">📥 月次レポートを取り込む</h2>
+      <p class="sub">GMOのインサイト書き出し<b>Excel（.xlsx）</b>やCSVを取り込んで数値を表示します。${noData?'まだデータがありません。':'別の月を追加したいときも、ここから取り込めます。'}</p>
+      <div class="dropzone mt" onclick="pickReportFile()" ondragover="onReportDragOver(event)" ondragleave="onReportDragLeave(event)" ondrop="onReportDrop(event)">
+        <div class="dz-ttl">📊 ここにファイルをドラッグ＆ドロップ</div>
+        <div class="dz-sub">またはここをクリックして選ぶ　／　GMOのExcel(.xlsx)・CSVに対応</div>
       </div>
-    </div>` : '';
+      <div class="row mt">
+        <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す（CSV）</button>
+      </div>
+    </div>`;
   el('page-dash').innerHTML=`
    <div class="dashgrid">
     ${dataBanner}
@@ -2633,9 +2661,11 @@ function renderSettings(){
     <div class="card">
       <h2>📥 月次レポート（②月次レポートDB）</h2>
       <p class="sub">毎月のレポートを取り込むと、ダッシュボードの数値・グラフ・ランキングに反映されます。<b>GMOのインサイト書き出しExcel（.xlsx）</b>をそのまま取り込めます。現在の取込件数：<b>${reportCount}</b> 件。</p>
-      <div class="row">
-        <button class="btn" onclick="importReportsExcel()">📊 GMOのExcelを取り込む</button>
-        <button class="btn ghost" onclick="importReportsCSV()">📥 レポートCSVを取り込む</button>
+      <div class="dropzone" onclick="pickReportFile()" ondragover="onReportDragOver(event)" ondragleave="onReportDragLeave(event)" ondrop="onReportDrop(event)">
+        <div class="dz-ttl">📊 ここにファイルをドラッグ＆ドロップ</div>
+        <div class="dz-sub">またはここをクリックして選ぶ　／　GMOのExcel(.xlsx)・CSVに対応</div>
+      </div>
+      <div class="row mt">
         <button class="btn ghost" onclick="exportReportTemplate()">📄 取込フォーマットを書き出す</button>
         <button class="btn ghost" onclick="clearReports()">🗑️ レポートを消去</button>
       </div>
