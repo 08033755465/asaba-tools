@@ -373,6 +373,9 @@
   /* ダッシュのレイアウト枠（スマホ＝1列） */
   .dashgrid{display:grid;grid-template-columns:1fr;gap:14px}
   .dashgrid>.card{margin-bottom:0}
+  /* グリッド／カードが中身に押し広げられて画面から見切れるのを防ぐ（横に広い表はtablewrap内でスクロール） */
+  .dashgrid,.dashgrid>*{min-width:0}
+  .card{min-width:0}
   /* レポートまとめ */
   .sumgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
   .sumbox{border:1px solid var(--line);border-radius:10px;padding:11px;background:#fafbfc}
