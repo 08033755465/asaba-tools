@@ -331,7 +331,13 @@
     border:1px solid var(--line);background:var(--card);color:var(--accent);font-size:19px;line-height:1;
     box-shadow:0 4px 14px rgba(0,0,0,.18);cursor:pointer;opacity:0;pointer-events:none;transition:opacity .2s}
   .toTop.show{opacity:1;pointer-events:auto}
-  @media(min-width:880px){ .toast{bottom:24px} .toTop{bottom:22px;right:22px} }
+  /* 改善フロート送信ボタン（運営者向け・設定でON/OFF） */
+  .kzFab{position:fixed;right:14px;bottom:122px;z-index:110;width:46px;height:46px;border-radius:50%;
+    border:none;background:var(--accent);color:#fff;font-size:20px;line-height:1;
+    box-shadow:0 4px 14px rgba(0,0,0,.22);cursor:pointer;transition:transform .12s}
+  .kzFab:hover{transform:scale(1.06)}
+  .kzFab.hidden{display:none}
+  @media(min-width:880px){ .toast{bottom:24px} .toTop{bottom:22px;right:22px} .kzFab{bottom:70px;right:22px} }
   /* 印刷（レポートまとめのPDF保存用） */
   @media print{
     .tabbar,.navPanel,.toTop,.toast,header,.noprint{display:none!important}
@@ -427,6 +433,9 @@
 
 <!-- トップへ戻る -->
 <button class="toTop" id="toTop" onclick="scrollTopSmooth()" aria-label="トップへ戻る" title="トップへ戻る">↑</button>
+
+<!-- 改善フロート送信ボタン（設定でON/OFF） -->
+<button class="kzFab" id="kzFab" onclick="openKaizenForm()" aria-label="改善・問い合わせを送る" title="改善・問い合わせを送る">💬</button>
 
 <script>
 /* =========================================================
@@ -1206,7 +1215,7 @@ function deltaPill(metricKey, cur, cmp, tag){
 }
 
 /* ===== ログイン（認証は次フェーズで接続） ===== */
-function doLogin(){ el('loginWrap').style.display='none'; el('app').style.display='block'; renderAll(); }
+function doLogin(){ el('loginWrap').style.display='none'; el('app').style.display='block'; renderAll(); applyKzFab(); }
 function logout(){ closePanel(); el('app').style.display='none'; el('loginWrap').style.display='flex'; }
 
 /* ===== ナビ：スライドアップ・パネル＋左右スワイプ ===== */
@@ -2735,6 +2744,10 @@ async function syncLinksPull(){
 }
 
 /* 🔧 改善・問い合わせ */
+const KZFAB_KEY='meo_kzfab_v1';
+function kzFabState(){ return localStorage.getItem(KZFAB_KEY)!=='0'; } // 既定=表示
+function applyKzFab(){ const b=el('kzFab'); if(b) b.classList.toggle('hidden', !kzFabState()); }
+function toggleKzFab(){ localStorage.setItem(KZFAB_KEY, kzFabState()?'0':'1'); applyKzFab(); renderSettings(); }
 function openKaizenForm(){
   const lbl=function(t){ return '<div style="margin-top:10px;font-weight:600;font-size:13px">'+t+'</div>'; };
   openSheet('<h3>💬 改善・問い合わせ</h3>'
@@ -2878,6 +2891,8 @@ function renderSettings(){
     <div class="card">
       <h2>このツールについて</h2>
       <div class="setrow"><div class="k">💬 改善・問い合わせ</div><button class="btn ghost sm" onclick="openKaizenForm()">開く</button></div>
+      <div class="setrow"><div><div class="k">💬 改善フロートボタン</div><div class="d">画面右下に送信ボタンを常時表示（運営者向け・クライアント配布時はオフ推奨）</div></div>
+        <button class="btn ghost sm" onclick="toggleKzFab()">${kzFabState()?'表示中：オフにする':'非表示：オンにする'}</button></div>
       <div class="setrow"><div class="k">🆕 リリース情報</div><button class="btn ghost sm" onclick="showRelease()">開く</button></div>
     </div>`;
 }
