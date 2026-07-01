@@ -745,13 +745,84 @@ async function processReportExcelFile(f){
       toast(`✅ Excelから ${ok}店舗（${month}）を取り込みました。`);
     }catch(e){ toast('Excelの読み込みに失敗しました：'+(e&&e.message?e.message:e)); }
 }
-/* ファイル種別を判定して取込（.xlsx/.xls→Excel、.csv→CSV）。クリック選択・ドラッグ&ドロップ共通 */
+/* 月データを既存値を保持したままマージ（提供された項目だけ上書き） */
+function mergeMonthly(code, month, g){
+  if(!DATA.monthly[code]) DATA.monthly[code]={};
+  const cur=DATA.monthly[code][month]||{};
+  const pick=k=> (g[k]!=null?g[k]:(cur[k]!=null?cur[k]:null));
+  DATA.monthly[code][month]={
+    views:pick('views'), web:pick('web'), tel:pick('tel'), route:pick('route'),
+    rank:pick('rank'), reviews:pick('reviews'),
+    rating:(g.rating!=null?(typeof g.rating==='number'?g.rating.toFixed(1):g.rating):(cur.rating!=null?cur.rating:null)),
+    comment:(g.comment!=null?g.comment:(cur.comment||''))
+  };
+}
+/* ファイル名から期間 YYYYMMDD_YYYYMMDD を取り出す */
+function reportFileRange(fname){
+  const m=String(fname||'').match(/(\d{4})(\d{2})(\d{2})[_\-](\d{4})(\d{2})(\d{2})/);
+  return m?{sy:+m[1],sm:+m[2],ey:+m[4],em:+m[5]}:null;
+}
+/* ファイル種別を判定して取込（.xlsx→Excel、CSVは中身で判別）。クリック選択・ドラッグ&ドロップ共通 */
 function handleReportFile(f){
   if(!f) return;
   const n=(f.name||'').toLowerCase();
-  if(n.endsWith('.xlsx')||n.endsWith('.xls')) processReportExcelFile(f);
-  else if(n.endsWith('.csv')){ const rd=new FileReader(); rd.onload=()=>processReportCSVText(String(rd.result)); rd.readAsText(f,'utf-8'); }
-  else toast('対応していないファイルです。GMOのExcel(.xlsx)またはCSVを選んでください。');
+  if(n.endsWith('.xlsx')||n.endsWith('.xls')){ processReportExcelFile(f); return; }
+  if(n.endsWith('.csv')){
+    const rd=new FileReader();
+    rd.onload=()=>{ const buf=rd.result; let text;
+      try{ text=new TextDecoder('utf-8',{fatal:true}).decode(buf); }
+      catch(e){ try{ text=new TextDecoder('shift-jis').decode(buf); }catch(e2){ text=new TextDecoder('utf-8').decode(buf); } }
+      routeReportCSV(text, f.name||'');
+    };
+    rd.readAsArrayBuffer(f); return;
+  }
+  toast('対応していないファイルです。GMOのExcel(.xlsx)またはCSVを選んでください。');
+}
+/* CSVの中身を見て振り分け：kwrank順位／GMO insight数値／取込テンプレ */
+function routeReportCSV(text, fname){
+  const rows=parseCSV(text);
+  if(!rows.length){ toast('データが読めませんでした。'); return; }
+  const head=(rows[0]||[]).join(',');
+  const head3=rows.slice(0,3).map(r=>r.join(',')).join(' ');
+  if(head.includes('店舗名') && head.includes('キーワード')) return importKwRankRows(rows);
+  if(head.includes('項目名') || head3.includes('閲覧ユーザー数')) return importInsightRows(rows, fname);
+  return processReportCSVText(text);
+}
+/* GMO insight（クロス集計・Shift-JIS）：表示/ウェブ/電話/ルート/口コミ件数/評価点 */
+function importInsightRows(rows, fname){
+  const rng=reportFileRange(fname);
+  if(rng && !(rng.sy===rng.ey && rng.sm===rng.em)){
+    toast('このinsightは期間まとめ（複数月）の合計です。月ごとに割り当てできないため取り込みませんでした。1か月ずつ書き出すか、月次Excelをご利用ください（順位はkwrankから月別に入ります）。'); return;
+  }
+  let month = rng ? (rng.sy+'-'+String(rng.sm).padStart(2,'0'))
+                  : (SETTINGS.period.year+'-'+String(SETTINGS.period.month).padStart(2,'0'));
+  const r0=rows[0], colmap={};
+  for(let ci=0;ci<r0.length;ci++){ const c=matchStoreCode(r0[ci]); if(c) colmap[ci]=c; }
+  const LAB=[['views','全体閲覧ユーザー数'],['web','Webサイトアクション'],['tel','電話アクション'],['route','ルートアクション'],['reviews','クチコミ件数'],['rating','クチコミ評価点']];
+  const found={};
+  for(let r=1;r<rows.length;r++){
+    const label=String(rows[r][0]||'');
+    for(const [key,kw] of LAB){ if(label.indexOf(kw)>-1){ for(const ci in colmap){ const v=xlNum(rows[r][ci]); if(v!=null){ (found[colmap[ci]]||(found[colmap[ci]]={}))[key]=v; } } } }
+  }
+  let ok=0; for(const code in found){ mergeMonthly(code, month, found[code]); ok++; }
+  saveReports(); renderAll();
+  toast(`✅ insight CSVから ${ok}店舗（${month}）を取り込みました。`);
+}
+/* GMO kwrank（日別順位）：店舗×月で平均し、平均KW順位を月別に反映 */
+function importKwRankRows(rows){
+  const hdr=rows[0], datecols=[];
+  for(let ci=0;ci<hdr.length;ci++){ const m=String(hdr[ci]).trim().match(/^(\d{4})\/(\d{2})\/(\d{2})$/); if(m) datecols.push([ci, m[1]+'-'+m[2]]); }
+  if(!datecols.length){ toast('kwrankの日付列が見つかりませんでした。'); return; }
+  const acc={};
+  for(let r=1;r<rows.length;r++){
+    const code=matchStoreCode(rows[r][0]); if(!code) continue;
+    for(const [ci,ym] of datecols){ const v=xlNum(rows[r][ci]); if(v!=null){ const k=code+'|'+ym; (acc[k]||(acc[k]=[0,0]))[0]+=v; acc[k][1]++; } }
+  }
+  const months=new Set(); let cells=0;
+  for(const k in acc){ const a=acc[k]; if(!a[1]) continue; const p=k.split('|');
+    mergeMonthly(p[0], p[1], {rank: Math.round(a[0]/a[1]*10)/10}); months.add(p[1]); cells++; }
+  saveReports(); renderAll();
+  toast(`✅ kwrankから平均KW順位を取り込みました（${months.size}か月・${cells}店舗月）。`);
 }
 function pickReportFile(){
   const inp=document.createElement('input');
