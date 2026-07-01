@@ -186,6 +186,9 @@
   .dhandle .grab{width:38px;height:4px;border-radius:3px;background:var(--line)}
   .dhandle .dchev{margin-left:auto;color:var(--sub);transition:transform .25s}
   .drawer.open .dhandle .dchev{transform:rotate(180deg)}
+  .dhandle{touch-action:pan-x}
+  .swipehint{display:none;font-size:10px;font-weight:600;color:var(--sub);margin-left:6px}
+  @media(max-width:560px){ .swipehint{display:inline} }
   .dbody{max-height:0;opacity:0;overflow:hidden;transition:max-height .3s ease,opacity .2s;padding:0 16px}
   .drawer.open .dbody{max-height:1600px;opacity:1;padding:0 16px 16px}
   .stickybar{position:sticky;top:48px;z-index:15}
@@ -1701,7 +1704,17 @@ function chartTip(ev, text){
 function chartTipHide(){ const tip=el('chartTip'); if(tip) tip.style.display='none'; }
 
 let DASH_IMPORT_OPEN=null; // null=未設定（データ無しなら開く）
-function toggleImportDrawer(){ const d=el('importDrawer'); if(!d)return; DASH_IMPORT_OPEN=!d.classList.contains('open'); d.classList.toggle('open',DASH_IMPORT_OPEN); }
+function setImportDrawer(open){ const d=el('importDrawer'); if(!d)return; DASH_IMPORT_OPEN=open; d.classList.toggle('open',open); }
+function toggleImportDrawer(){ const d=el('importDrawer'); if(!d)return; setImportDrawer(!d.classList.contains('open')); }
+/* ハンドルを上下にスワイプ（下＝開く／上＝閉じる）。タップはonclickで従来どおりトグル */
+let __swY=null, __swMoved=false;
+function drawerTouchStart(e){ __swY=e.touches?e.touches[0].clientY:null; __swMoved=false; }
+function drawerTouchMove(e){
+  if(__swY==null) return;
+  const y=e.touches[0].clientY, dy=y-__swY;
+  if(Math.abs(dy)>36){ __swMoved=true; setImportDrawer(dy>0); __swY=null; }
+}
+function drawerTouchEnd(e){ __swY=null; }
 function importCoverage(){
   const monthSet={};
   Object.keys(DATA.monthly).forEach(c=>Object.keys(DATA.monthly[c]||{}).forEach(mm=>{ monthSet[mm]=(monthSet[mm]||0)+1; }));
@@ -1812,9 +1825,10 @@ function renderDash(){
   const covRange = cov.months.length ? `${cov.months[0]} 〜 ${cov.months[cov.months.length-1]}（${cov.months.length}か月）` : '—';
   const dataBanner = `
     <div class="card span2 drawer${drawerOpen?' open':''}" id="importDrawer">
-      <div class="dhandle" onclick="toggleImportDrawer()">
+      <div class="dhandle" onclick="if(!__swMoved)toggleImportDrawer();__swMoved=false;"
+           ontouchstart="drawerTouchStart(event)" ontouchmove="drawerTouchMove(event)" ontouchend="drawerTouchEnd(event)">
         <span class="grab"></span>
-        <span>📥 月次レポートを取り込む${noData?'（まだデータがありません）':''}</span>
+        <span>📥 月次レポートを取り込む${noData?'（まだデータがありません）':''}<span class="swipehint noprint">（上下スワイプでも開閉）</span></span>
         <span class="dchev">▾</span>
       </div>
       <div class="dbody">
