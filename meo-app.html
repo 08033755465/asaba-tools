@@ -508,6 +508,37 @@ const SETTINGS={
   groupKW:{ "整骨院":"整体", "整体院":"整体", "Peace":"マシンピラティス" },
 };
 const THEME_COLORS={ "整骨院":"#2f6df0", "整体院":"#138a52", "Peace":"#a24bd0" };
+/* 店舗ごとのカラー上書き（端末保存）。未設定ならグループ色にフォールバック */
+let STORE_COLORS={};
+try{ STORE_COLORS=JSON.parse(localStorage.getItem('meo_storecolors_v1')||'{}'); }catch(e){}
+function saveStoreColors(){ try{ localStorage.setItem('meo_storecolors_v1',JSON.stringify(STORE_COLORS)); }catch(e){} }
+function colorFor(s){ if(!s) return '#2f6df0'; return STORE_COLORS[s.code]||THEME_COLORS[s.group]||'#2f6df0'; }
+function setStoreColor(code,hex){ if(hex){ STORE_COLORS[code]=hex; saveStoreColors(); renderDash(); renderSettings(); } }
+function resetStoreColor(code){ delete STORE_COLORS[code]; saveStoreColors(); renderDash(); renderSettings(); }
+/* 36色パレット（原色12・くすみ12・パステル12）＋任意のカラーコードは type=color で指定可 */
+const PALETTE_36=[
+  '#e53935','#fb8c00','#fdd835','#43a047','#00acc1','#1e88e5','#3949ab','#8e24aa','#d81b60','#6d4c41','#546e7a','#212121',
+  '#b96b6b','#b98a5e','#b0a05c','#6f9f78','#5f9aa0','#5f7fa0','#6b6fa0','#8a6b9f','#a06b83','#8a7c6f','#7c8790','#5a5a5a',
+  '#ffb3ba','#ffd9b3','#fff2b3','#c7f0c7','#b3e6ec','#b3d4f0','#c3c3f0','#e0b3ec','#f0b3cf','#e6d5c3','#d0d7dd','#cfcfcf'
+];
+function openColorPalette(code){
+  const s=DATA.stores.find(x=>x.code===code); if(!s) return;
+  const cur=colorFor(s);
+  const secs=[['原色',0,12],['くすみ',12,24],['パステル',24,36]].map(([lab,a,b])=>{
+    const sw=PALETTE_36.slice(a,b).map(h=>
+      `<button title="${h}" onclick="setStoreColor('${code}','${h}');closeSheet()" style="width:30px;height:30px;border-radius:8px;border:2px solid ${h.toLowerCase()===cur.toLowerCase()?'var(--ink)':'transparent'};background:${h};cursor:pointer"></button>`).join('');
+    return `<div style="margin-top:8px"><div class="fl">${lab}</div><div style="display:flex;flex-wrap:wrap;gap:6px">${sw}</div></div>`;
+  }).join('');
+  openSheet(`<h3>🎨 ${esc(shortName(s.name))} のカラー</h3>
+    <p class="sub">パレットから選ぶか、カラーコードを直接指定できます。</p>
+    <div class="row" style="align-items:center;gap:8px;margin-top:4px">
+      <span class="swatch" style="background:${cur}"></span>
+      <input type="color" value="${cur}" onchange="setStoreColor('${code}',this.value)" style="width:44px;height:30px;padding:0;border:none;background:none;cursor:pointer">
+      <code>${cur}</code>
+    </div>
+    ${secs}
+    <button class="btn ghost" style="margin-top:14px" onclick="resetStoreColor('${code}');closeSheet()">グループ既定に戻す</button>`);
+}
 /* ランキングの推移列の選択肢 */
 const TREND_OPTS=[
   {key:"mom", label:"前月比",     months:1},
@@ -1371,7 +1402,7 @@ function buildMapPins(metricKey){
   const vmin=vals.length?Math.min(...vals):0, vmax=vals.length?Math.max(...vals):1;
   const barH=v=> (v==null)?6:((vmax===vmin)?26:Math.round(12+(v-vmin)/(vmax-vmin)*44));
   return DATA.stores.map(x=>{
-    const c=THEME_COLORS[x.group]||"#888";
+    const c=colorFor(x)||"#888";
     const sel=x.code===CURRENT_STORE?" sel":"";
     const v=mv(getM(x.code,k),metricKey);
     return `<div class="map-pin${sel}" style="left:${x.mx}%;top:${x.my}%" onclick="pickStoreFromMap('${x.code}')" title="${esc(x.name)}">
@@ -1511,7 +1542,7 @@ function renderDash(){
   const s=DATA.stores.find(x=>x.code===CURRENT_STORE);
   const k=curKey(), kp=prevKey(k), ky=yoyKey(k);
   const m=getM(s.code,k), mp=getM(s.code,kp), my=getM(s.code,ky);
-  const color=THEME_COLORS[s.group]||"#2f6df0";
+  const color=colorFor(s);
   const cta=SETTINGS.targetCTA;
   const isThisMonth=(SETTINGS.period.year===TODAY.y&&SETTINGS.period.month===TODAY.m);
   const monthVal=`${SETTINGS.period.year}-${String(SETTINGS.period.month).padStart(2,'0')}`;
@@ -1754,7 +1785,7 @@ function buildAllStoreTable(k,kp){
   }).sort((a,b)=>b.sortv-a.sortv);
   const body=rows.map(o=>{
     const {x,m,mp}=o;
-    const gc=THEME_COLORS[x.group]||"#888";
+    const gc=colorFor(x)||"#888";
     const isSel=x.code===CURRENT_STORE;
     const views=mv(m,'views'), rv=mv(m,'reviews'), rt=mv(m,'rating');
     const react=m?reaction(m):null;
@@ -2868,9 +2899,15 @@ function renderSettings(){
     </div>
 
     <div class="card">
-      <h2>テーマカラー（グループ別）</h2>
-      ${Object.keys(THEME_COLORS).map(g=>`<div class="setrow"><div class="k">${esc(g)}</div>
-        <div><span class="swatch" style="background:${THEME_COLORS[g]}"></span> <code>${THEME_COLORS[g]}</code></div></div>`).join("")}
+      <h2>テーマカラー（店舗別）</h2>
+      <p class="sub">店舗ごとに色を変えられます。🎨でパレット（原色・くすみ・パステル）、カラー枠で任意のカラーコードを指定。未設定はグループ既定色です（整骨院 ${THEME_COLORS['整骨院']}／整体院 ${THEME_COLORS['整体院']}／Peace ${THEME_COLORS['Peace']}）。</p>
+      ${DATA.stores.map(s=>`<div class="setrow"><div><div class="k">${esc(shortName(s.name))}</div><div class="d">${esc(s.group)}${STORE_COLORS[s.code]?'・カスタム':'・既定'}</div></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="swatch" style="background:${colorFor(s)}"></span>
+          <input type="color" value="${colorFor(s)}" onchange="setStoreColor('${s.code}',this.value)" style="width:38px;height:26px;padding:0;border:none;background:none;cursor:pointer" title="カラーコードで指定">
+          <button class="btn ghost sm" onclick="openColorPalette('${s.code}')" title="パレットから選ぶ">🎨</button>
+          ${STORE_COLORS[s.code]?`<button class="btn ghost sm" onclick="resetStoreColor('${s.code}')" title="グループ既定に戻す">既定</button>`:''}
+        </div></div>`).join("")}
     </div>
 
     <div class="card">
