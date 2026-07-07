@@ -3,14 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<!-- 検索エンジンに載せない（URL秘匿用） -->
 <meta name="robots" content="noindex,nofollow" />
 <title>あさばグループ専用 サムネイル合成ツール</title>
-
-<!-- Tailwind CSS（デザイン用） -->
 <script src="https://cdn.tailwindcss.com"></script>
-
-<!-- React / lucide-react を読み込む設定 -->
 <script type="importmap">
 {
   "imports": {
@@ -20,26 +15,18 @@
   }
 }
 </script>
-
-<!-- JSXを変換するBabel -->
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
+  .dnd-hi { outline: 3px dashed #2563eb; outline-offset: -3px; background: #eff6ff !important; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 
-<!-- ================================================================
-     ▼▼▼ ここだけ自分の情報に書き換えてください ▼▼▼
-     ================================================================ -->
 <script>
-  // 【1】チームの合言葉（このパスワードを知っている人だけ使えます）
   window.APP_PASSPHRASE = "haruharu";
-
-  // 【2】自分のFirebaseの鍵（Firebaseの管理画面でコピーして貼り付け）
   window.FIREBASE_CONFIG = {
     apiKey: "AIzaSyBPIHl3RIZD4YA1RGdYJ4f_4E5PyPORw8E",
     authDomain: "thumbnail-tool-e3de6.firebaseapp.com",
@@ -48,622 +35,1130 @@
     messagingSenderId: "584050933013",
     appId: "1:584050933013:web:16fa831f62facd8249bd1c"
   };
-
-  // 【3】データの保存場所の名前（基本そのままでOK）
   window.APP_ID = "asaba-thumbnail";
+  window.APP_TOP_URL = "../";
 </script>
-<!-- ================================================================
-     ▲▲▲ 書き換えるのはここまで ▲▲▲
-     ================================================================ -->
 
 <script type="text/babel" data-type="module" data-presets="react">
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Upload, Download, Type, Image as ImageIcon, Settings, Palette, Type as TypeIcon, BookmarkPlus, List, X, Share2, Library, Trash2, Loader2, CheckCircle2, Lock } from 'lucide-react';
-
-// Firebase（公式CDN gstatic から読み込み）
+import { Upload, Download, Image as ImageIcon, Settings, X, Share2, Library, Trash2, Loader2, CheckCircle2, Lock, Menu, Link2, Home, ChevronLeft, ChevronRight, Search, Edit3, Plus, Folder, Users, Tag, FileText, Mail, Sparkles, Copy, ExternalLink, ChevronDown, ChevronRight as ChevronRightSmall } from 'lucide-react';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-// ==========================================
-// Firebase 初期化
-// ==========================================
+// ============ Firebase init ============
 let app, auth, db;
 const appId = window.APP_ID || 'default-app-id';
 try {
   const cfg = window.FIREBASE_CONFIG;
   if (cfg && cfg.apiKey && !cfg.apiKey.startsWith('ここに')) {
-    app = initializeApp(cfg);
-    auth = getAuth(app);
-    db = getFirestore(app);
+    app = initializeApp(cfg); auth = getAuth(app); db = getFirestore(app);
   }
-} catch (e) {
-  console.error("Firebase init error", e);
+} catch (e) { console.error("Firebase init error", e); }
+
+const basePath = (name) => ['artifacts', appId, 'public', 'data', name];
+const colRef = (name) => collection(db, ...basePath(name));
+const docRefFn = (name, id) => doc(db, ...basePath(name), id);
+
+// ============ Constants ============
+const RELEASE_NOTES = `【v2.0 リニューアル（2026-07-07）】
+・見出し帯／文字入れ／カラー設定を廃止し、画像整理特化に
+・保存フォルダ名で自動命名（アカウント：カテゴリ_日付_メモ）
+・運用アカウント／画像カテゴリ／プロジェクトのマスタ管理を追加（チーム共有）
+・チームギャラリーにフィルタ・検索・分類変更・リンク発行を追加
+・リンク集タブ（チーム共有／個人ローカル）を追加
+・画像アップロードを枠全体クリック＆ドラッグ&ドロップ対応`;
+
+const CONTACT_TEMPLATE = `件名：サムネツール 改善要望／不具合連絡
+
+内容：
+
+
+操作環境：（例：iPhone Safari / Windows Chrome）`;
+
+// ============ Helpers ============
+function sanitizePart(s) { return String(s ?? '').replace(/[\\\/*?"<>|]/g, '_').replace(/[:：]/g, '‐').trim(); }
+function buildFolderName({ accountName, categoryName, date, memo }) {
+  const acc = sanitizePart(accountName) || '未分類';
+  const cat = sanitizePart(categoryName) || '未分類';
+  const m = sanitizePart(memo);
+  let s = `${acc}：${cat}_${date || ''}`;
+  if (m) s += `_${m}`;
+  return s;
+}
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function isoToMMDD(iso) {
+  if (!iso) return '';
+  const p = iso.split('-'); return p.length === 3 ? `${p[1]}-${p[2]}` : '';
+}
+function fmtDateTime(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+async function copyToClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    return true;
+  }
+}
+function useLocalStorage(key, initial) {
+  const [v, setV] = useState(() => {
+    try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : initial; } catch { return initial; }
+  });
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }, [key, v]);
+  return [v, setV];
 }
 
-const PRESET_BGS = [
-  '#ffffff', '#f8fafc', '#e2e8f0',
-  '#ffedd5', '#fce7f3', '#e0f2fe', '#dcfce7',
-  '#1e3a8a', '#0f172a', '#881337', '#14532d'
-];
-
-const PRESET_TEXTS = [
-  '#000000', '#1e293b', '#334155',
-  '#1e3a8a', '#0369a1', '#831843',
-  '#ffffff', '#f8fafc'
-];
-
-// ==========================================
-// 合言葉ロック画面
-// ==========================================
+// ============ PassphraseGate ============
 function PassphraseGate({ onUnlock }) {
   const [input, setInput] = useState('');
   const [error, setError] = useState(false);
-
-  const handleSubmit = (e) => {
+  const submit = (e) => {
     e.preventDefault();
-    if (input === window.APP_PASSPHRASE) {
-      localStorage.setItem('meo_unlocked', '1');
-      onUnlock();
-    } else {
-      setError(true);
-    }
+    if (input === window.APP_PASSPHRASE) { localStorage.setItem('meo_unlocked', '1'); onUnlock(); }
+    else setError(true);
   };
-
   return (
     <div className="flex items-center justify-center h-screen bg-slate-100 p-6">
-      <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm space-y-6">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="bg-blue-600 p-3 rounded-2xl">
-            <Lock className="text-white w-7 h-7" />
-          </div>
+          <div className="bg-blue-600 p-3 rounded-2xl"><Lock className="text-white w-7 h-7" /></div>
           <h1 className="text-lg font-bold text-slate-800">あさばグループ専用ツール</h1>
           <p className="text-sm text-slate-500">合言葉を入力してください</p>
         </div>
-        <input
-          type="password"
-          value={input}
-          onChange={(e) => { setInput(e.target.value); setError(false); }}
-          autoFocus
+        <input type="password" value={input} autoFocus onChange={(e) => { setInput(e.target.value); setError(false); }}
           className={`w-full p-3 border rounded-lg text-center outline-none focus:ring-2 focus:ring-blue-500 ${error ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
-          placeholder="合言葉"
-        />
+          placeholder="合言葉" />
         {error && <p className="text-sm text-red-500 text-center -mt-3">合言葉が違います</p>}
-        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors">
-          開く
-        </button>
+        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium">開く</button>
       </form>
     </div>
   );
 }
 
-// ==========================================
-// メインアプリ
-// ==========================================
-function ThumbnailApp() {
-  const canvasRef = useRef(null);
-
-  const [baseImage, setBaseImage] = useState(null);
-  const [titleText, setTitleText] = useState("梅雨の気圧変動による\n頭痛やめまいをスッキリ整える！");
-  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
-
-  const [titleHistory, setTitleHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('meo_title_history')) || []; } catch(e) { return []; }
-  });
-  const [savedTitles, setSavedTitles] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('meo_saved_titles')) || []; } catch(e) { return []; }
-  });
-
-  const [isHeaderFixed, setIsHeaderFixed] = useState(true);
-
-  const [canvasWidth, setCanvasWidth] = useState(1200);
-  const [canvasHeight, setCanvasHeight] = useState(900);
-
-  const [headerHeightRatio, setHeaderHeightRatio] = useState(20);
-  const [fontSizeRatio, setFontSizeRatio] = useState(5.0);
-
-  const [bgColor, setBgColor] = useState('#ffffff');
-  const [textColor, setTextColor] = useState('#1e3a8a');
-
-  const [user, setUser] = useState(null);
-  const [galleryImages, setGalleryImages] = useState([]);
-  const [showGallery, setShowGallery] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [toastMsg, setToastMsg] = useState('');
-
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3000);
-  };
-
-  // 認証
-  useEffect(() => {
-    if (!auth) return;
-    signInAnonymously(auth).catch((error) => console.error("Auth error", error));
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
-
-  // ギャラリー監視
-  useEffect(() => {
-    if (!user || !db) return;
-    const thumbnailsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shared_thumbnails');
-    const unsubscribe = onSnapshot(thumbnailsRef, (snapshot) => {
-      const items = [];
-      snapshot.forEach((d) => { items.push({ id: d.id, ...d.data() }); });
-      items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      setGalleryImages(items);
-    }, (error) => { console.error("Fetch error", error); });
-    return () => unsubscribe();
-  }, [user]);
-
-  useEffect(() => {
-    localStorage.setItem('meo_title_history', JSON.stringify(titleHistory));
-  }, [titleHistory]);
-
-  useEffect(() => {
-    localStorage.setItem('meo_saved_titles', JSON.stringify(savedTitles));
-  }, [savedTitles]);
-
-  useEffect(() => {
-    if (isHeaderFixed) setHeaderHeightRatio(20);
-  }, [isHeaderFixed]);
-
-  const addToHistory = (text) => {
-    if (!text.trim()) return;
-    setTitleHistory(prev => [text, ...prev.filter(t => t !== text)].slice(0, 10));
-  };
-
-  const saveTitle = () => {
-    if (!titleText.trim()) return;
-    if (savedTitles.includes(titleText)) return;
-    setSavedTitles(prev => [titleText, ...prev]);
-  };
-
-  const removeSavedTitle = (text) => {
-    setSavedTitles(prev => prev.filter(t => t !== text));
-  };
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => { setBaseImage(event.target.result); };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // Canvas描画
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-    const drawTextAndBg = () => {
-      if (!isHeaderVisible) return;
-      const headerH = canvasHeight * (headerHeightRatio / 100);
-      const rectY = canvasHeight - headerH;
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, rectY, canvasWidth, headerH);
-
-      if (titleText) {
-        const fSize = canvasHeight * (fontSizeRatio / 100);
-        ctx.font = `bold ${fSize}px "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif`;
-        ctx.fillStyle = textColor;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        const lineHeight = fSize * 1.5;
-        const padding = fSize * 1.2;
-        const maxWidth = canvasWidth - (padding * 2);
-
-        const lines = [];
-        const paragraphs = titleText.split('\n');
-        for (const p of paragraphs) {
-          let currentLine = '';
-          const chars = Array.from(p);
-          for (let i = 0; i < chars.length; i++) {
-            const char = chars[i];
-            const testLine = currentLine + char;
-            const metrics = ctx.measureText(testLine);
-            if (metrics.width > maxWidth && currentLine !== '') {
-              lines.push(currentLine);
-              currentLine = char;
-            } else {
-              currentLine = testLine;
-            }
-          }
-          lines.push(currentLine);
-        }
-
-        const totalTextHeight = lines.length * lineHeight;
-        let currentY = rectY + (headerH - totalTextHeight) / 2 + (lineHeight / 2);
-        lines.forEach(line => {
-          ctx.fillText(line, canvasWidth / 2, currentY);
-          currentY += lineHeight;
-        });
-      }
-    };
-
-    if (baseImage) {
-      const img = new Image();
-      img.onload = () => {
-        const imgRatio = img.width / img.height;
-        const canvasRatio = canvasWidth / canvasHeight;
-        let drawWidth, drawHeight, offsetX, offsetY;
-        if (imgRatio > canvasRatio) {
-          drawHeight = canvasHeight;
-          drawWidth = img.width * (canvasHeight / img.height);
-          offsetX = (canvasWidth - drawWidth) / 2;
-          offsetY = 0;
-        } else {
-          drawWidth = canvasWidth;
-          drawHeight = img.height * (canvasWidth / img.width);
-          offsetX = 0;
-          offsetY = (canvasHeight - drawHeight) / 2;
-        }
-        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-        drawTextAndBg();
-      };
-      img.src = baseImage;
-    } else {
-      drawTextAndBg();
-    }
-  }, [baseImage, titleText, canvasWidth, canvasHeight, headerHeightRatio, fontSizeRatio, bgColor, textColor, isHeaderVisible]);
-
-  const handleDownload = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    addToHistory(titleText);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    downloadFromDataUrl(dataUrl, `meo_thumbnail_${canvasWidth}x${canvasHeight}.jpg`);
-  };
-
-  const downloadFromDataUrl = (dataUrl, filename) => {
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = dataUrl;
-    link.click();
-  };
-
-  const handleShareToGallery = async () => {
-    if (!user || !db) {
-      showToast("エラー：データベースに接続できません（Firebaseの設定を確認してください）");
-      return;
-    }
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    setIsUploading(true);
-    addToHistory(titleText);
-    try {
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
-      const thumbnailsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shared_thumbnails');
-      await addDoc(thumbnailsRef, {
-        imageUrl: dataUrl,
-        titleText: titleText,
-        authorId: user.uid,
-        createdAt: Date.now(),
-        width: canvasWidth,
-        height: canvasHeight
-      });
-      showToast("チームギャラリーに保存しました！");
-    } catch (e) {
-      console.error("Upload error", e);
-      showToast("保存に失敗しました。画像データが大きすぎる可能性があります。");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDeleteFromGallery = async (id) => {
-    if (!db) return;
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_thumbnails', id));
-      showToast("画像を削除しました");
-    } catch (e) {
-      console.error(e);
-      showToast("削除に失敗しました");
-    }
-  };
-
+// ============ Toast / Confirm ============
+function Toast({ msg }) {
+  if (!msg) return null;
   return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-800 font-sans">
-      {toastMsg && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl z-[60] flex items-center space-x-2">
-          <CheckCircle2 className="w-5 h-5 text-green-400" />
-          <span className="font-medium">{toastMsg}</span>
+    <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl z-[100] flex items-center space-x-2">
+      <CheckCircle2 className="w-5 h-5 text-green-400" />
+      <span className="font-medium">{msg}</span>
+    </div>
+  );
+}
+function ConfirmModal({ title, body, confirmLabel = '削除', onConfirm, onCancel, danger = true }) {
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 z-[110] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4">
+        <h3 className="font-bold text-slate-800">{title}</h3>
+        <p className="text-sm text-slate-600 whitespace-pre-wrap">{body}</p>
+        <div className="flex justify-end space-x-2 pt-2">
+          <button onClick={onCancel} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium">キャンセル</button>
+          <button onClick={onConfirm} className={`px-4 py-2 rounded-lg text-white text-sm font-medium ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{confirmLabel}</button>
         </div>
-      )}
-
-      <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 flex flex-col md:flex-row md:justify-between items-center shrink-0 gap-4">
-        <div className="flex items-center space-x-3 w-full md:w-auto">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <ImageIcon className="text-white w-5 h-5" />
-          </div>
-          <h1 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight truncate">
-            あさばグループ専用 サムネイル合成ツール
-          </h1>
-        </div>
-
-        <div className="flex items-center space-x-2 w-full md:w-auto justify-end">
-          <button onClick={() => setShowGallery(true)} className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 md:px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm text-sm">
-            <Library className="w-4 h-4 text-blue-600" />
-            <span className="hidden sm:inline">チームギャラリー</span>
-          </button>
-          <button onClick={handleShareToGallery} disabled={isUploading || !baseImage} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 md:px-5 py-2.5 rounded-lg font-medium transition-colors shadow-sm text-sm">
-            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
-            <span className="hidden sm:inline">保存Boxへ共有</span>
-            <span className="sm:hidden">共有</span>
-          </button>
-          <button onClick={handleDownload} className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-3 md:px-5 py-2.5 rounded-lg font-medium transition-colors shadow-sm text-sm">
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">PCに保存</span>
-            <span className="sm:hidden">DL</span>
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 overflow-hidden flex flex-col md:flex-row relative">
-        <div className="w-full md:w-[400px] bg-white border-r border-slate-200 overflow-y-auto shrink-0 shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
-          <div className="p-6 space-y-8">
-
-            <section className="space-y-4">
-              <div className="flex items-center space-x-2 border-b pb-2">
-                <ImageIcon className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold">1. ベース画像</h2>
-              </div>
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="w-8 h-8 mb-3 text-slate-400" />
-                  <p className="mb-2 text-sm text-slate-500 font-medium">クリックして画像をアップロード</p>
-                  <p className="text-xs text-slate-400">PNG, JPG, WEBP</p>
-                </div>
-                <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
-              </label>
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center justify-between border-b pb-2">
-                <div className="flex items-center space-x-2">
-                  <Type className="w-5 h-5 text-blue-600" />
-                  <h2 className="text-lg font-semibold">2. タイトルテキスト</h2>
-                </div>
-                <label className="flex items-center cursor-pointer group" title="見出し帯の表示/非表示を切り替えます">
-                  <span className="mr-2 text-sm font-medium text-slate-600 group-hover:text-slate-800 transition-colors">表示</span>
-                  <div className="relative">
-                    <input type="checkbox" className="sr-only" checked={isHeaderVisible} onChange={() => setIsHeaderVisible(!isHeaderVisible)} />
-                    <div className={`block w-10 h-6 rounded-full transition-colors ${isHeaderVisible ? 'bg-blue-600' : 'bg-slate-300'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isHeaderVisible ? 'transform translate-x-4' : ''}`}></div>
-                  </div>
-                </label>
-              </div>
-
-              {titleHistory.length > 0 && (
-                <div className="mb-2">
-                  <select className="w-full p-2 text-sm border border-slate-300 rounded-lg bg-slate-50 outline-none focus:border-blue-500" onChange={(e) => { if(e.target.value) setTitleText(e.target.value); }} value="">
-                    <option value="">過去の履歴から選択 (直近10件)</option>
-                    {titleHistory.map((t, i) => (
-                      <option key={i} value={t}>{t.replace(/\n/g, ' ')}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <textarea value={titleText} onChange={(e) => setTitleText(e.target.value)} disabled={!isHeaderVisible}
-                className={`w-full h-24 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none ${!isHeaderVisible ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' : 'border-slate-300'}`}
-                placeholder="画像に入れたいタイトルを入力してください" />
-
-              <div className="flex justify-end">
-                <button onClick={saveTitle} className="text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded font-medium flex items-center space-x-1 transition-colors">
-                  <BookmarkPlus className="w-4 h-4" />
-                  <span>リストに保存</span>
-                </button>
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center space-x-2 border-b pb-2">
-                <List className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold">保存済みリスト</h2>
-              </div>
-              {savedTitles.length === 0 ? (
-                <p className="text-sm text-slate-500">保存されたタイトルはありません</p>
-              ) : (
-                <ul className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                  {savedTitles.map((t, i) => (
-                    <li key={i} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded text-sm group transition-colors hover:bg-slate-100">
-                      <span className="truncate flex-1 mr-2 cursor-pointer" onClick={() => setTitleText(t)}>{t.replace(/\n/g, ' ')}</span>
-                      <button onClick={() => removeSavedTitle(t)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center space-x-2 border-b pb-2">
-                <Settings className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold">3. 画像サイズ（グローバル）</h2>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">幅 (px)</label>
-                  <input type="number" value={canvasWidth} onChange={(e) => setCanvasWidth(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div className="text-slate-400 font-bold mt-4">×</div>
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">高さ (px)</label>
-                  <input type="number" value={canvasHeight} onChange={(e) => setCanvasHeight(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => {setCanvasWidth(1200); setCanvasHeight(900);}} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md font-medium">1200×900 (4:3)</button>
-                <button onClick={() => {setCanvasWidth(1080); setCanvasHeight(1080);}} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md font-medium">1080×1080 (1:1)</button>
-              </div>
-            </section>
-
-            <section className="space-y-5">
-              <div className="flex items-center space-x-2 border-b pb-2">
-                <TypeIcon className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold">4. デザイン調整</h2>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <label className="text-sm font-medium text-slate-700">見出し帯の高さ</label>
-                  <label className="flex items-center space-x-1.5 text-xs text-slate-600 cursor-pointer bg-slate-100 px-2 py-1 rounded-md">
-                    <input type="checkbox" checked={isHeaderFixed} onChange={e => setIsHeaderFixed(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3 h-3 cursor-pointer" />
-                    <span>20%に固定</span>
-                  </label>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-1.5">
-                  <button disabled={isHeaderFixed || headerHeightRatio <= 10} onClick={() => setHeaderHeightRatio(prev => Math.max(10, prev - 1))} className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">-</button>
-                  <span className={`font-bold ${isHeaderFixed ? 'text-slate-400' : 'text-blue-600'}`}>{headerHeightRatio}%</span>
-                  <button disabled={isHeaderFixed || headerHeightRatio >= 50} onClick={() => setHeaderHeightRatio(prev => Math.min(50, prev + 1))} className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">+</button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <label className="text-sm font-medium text-slate-700">文字の大きさ</label>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-1.5">
-                  <button disabled={fontSizeRatio <= 2} onClick={() => setFontSizeRatio(prev => Math.max(2, prev - 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors">-</button>
-                  <span className="font-bold text-blue-600">{fontSizeRatio.toFixed(1)}%</span>
-                  <button disabled={fontSizeRatio >= 15} onClick={() => setFontSizeRatio(prev => Math.min(15, prev + 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors">+</button>
-                </div>
-              </div>
-            </section>
-
-            <section className="space-y-6 pb-8">
-              <div className="flex items-center space-x-2 border-b pb-2">
-                <Palette className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold">5. カラー設定</h2>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-slate-700">見出し背景色</label>
-                  <div className="flex items-center space-x-2">
-                    <input type="text" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="w-20 p-1 text-sm border border-slate-300 rounded font-mono uppercase text-center outline-none focus:border-blue-500" />
-                    <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="w-7 h-7 p-0 border-0 rounded cursor-pointer" />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {PRESET_BGS.map(color => (
-                    <button key={color} onClick={() => setBgColor(color)} className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${bgColor === color ? 'border-blue-500 shadow-md' : 'border-slate-200'}`} style={{ backgroundColor: color }} title={color} />
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-slate-700">文字色</label>
-                  <div className="flex items-center space-x-2">
-                    <input type="text" value={textColor} onChange={(e) => setTextColor(e.target.value)} className="w-20 p-1 text-sm border border-slate-300 rounded font-mono uppercase text-center outline-none focus:border-blue-500" />
-                    <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} className="w-7 h-7 p-0 border-0 rounded cursor-pointer" />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {PRESET_TEXTS.map(color => (
-                    <button key={color} onClick={() => setTextColor(color)} className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${textColor === color ? 'border-blue-500 shadow-md' : 'border-slate-200'}`} style={{ backgroundColor: color }} title={color} />
-                  ))}
-                </div>
-              </div>
-            </section>
-
-          </div>
-        </div>
-
-        <div className="flex-1 bg-slate-200/50 p-4 md:p-8 flex flex-col items-center justify-center overflow-auto relative">
-          {!baseImage && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div className="bg-white/80 backdrop-blur-sm px-6 py-3 rounded-full shadow-sm text-slate-500 font-medium flex items-center space-x-2 border border-slate-200">
-                <ImageIcon className="w-5 h-5" />
-                <span>左側のパネルから画像をアップロードしてください</span>
-              </div>
-            </div>
-          )}
-
-          <div className="relative shadow-2xl bg-white rounded-md overflow-hidden ring-1 ring-slate-900/5 transition-all" style={{ maxWidth: '100%', maxHeight: '100%', aspectRatio: `${canvasWidth} / ${canvasHeight}` }}>
-            <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} className="w-full h-full object-contain" />
-          </div>
-
-          <p className="mt-6 text-sm text-slate-500 font-medium">書き出しサイズ: {canvasWidth} × {canvasHeight} px</p>
-        </div>
-
-        {showGallery && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex justify-center items-center p-4 md:p-8">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-slate-50 shrink-0">
-                <div className="flex items-center space-x-3">
-                  <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600">
-                    <Library className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-800">チーム保存Box（共有ギャラリー）</h2>
-                    <p className="text-sm text-slate-500">チームで作成・共有された画像を閲覧・ダウンロードできます</p>
-                  </div>
-                </div>
-                <button onClick={() => setShowGallery(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6 bg-slate-100/50">
-                {galleryImages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
-                    <Library className="w-16 h-16 opacity-30" />
-                    <p className="font-medium text-slate-500">まだ共有された画像はありません</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {galleryImages.map(img => (
-                      <div key={img.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden group flex flex-col hover:shadow-md transition-shadow">
-                        <div className="aspect-[4/3] bg-slate-200 relative overflow-hidden">
-                          <img src={img.imageUrl} alt={img.titleText} className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-3">
-                            <button onClick={() => downloadFromDataUrl(img.imageUrl, `shared_${img.createdAt}.jpg`)} className="bg-white/90 text-slate-800 hover:bg-white p-2.5 rounded-full shadow-lg transition-transform hover:scale-105" title="画像をダウンロード">
-                              <Download className="w-5 h-5" />
-                            </button>
-                            <button onClick={() => handleDeleteFromGallery(img.id)} className="bg-white/90 text-red-600 hover:bg-red-50 p-2.5 rounded-full shadow-lg transition-transform hover:scale-105" title="ギャラリーから削除">
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="p-4 flex-1 flex flex-col justify-between">
-                          <p className="text-sm font-bold text-slate-800 line-clamp-2 leading-snug mb-2">{img.titleText || '（タイトル未設定）'}</p>
-                          <p className="text-xs text-slate-400 font-medium">{new Date(img.createdAt).toLocaleString('ja-JP')}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+      </div>
     </div>
   );
 }
 
-// ==========================================
-// 起動：合言葉チェック → アプリ表示
-// ==========================================
+// ============ Editable list row (name-only) ============
+function EditableRow({ item, onSave, onDelete, extraFields = null }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(item.name);
+  useEffect(() => setName(item.name), [item.name]);
+  if (editing) {
+    return (
+      <li className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded">
+        <input value={name} onChange={(e) => setName(e.target.value)} autoFocus className="flex-1 p-1 border rounded text-sm" />
+        <button onClick={() => { onSave(name); setEditing(false); }} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">保存</button>
+        <button onClick={() => { setName(item.name); setEditing(false); }} className="text-xs bg-slate-200 px-2 py-1 rounded">×</button>
+      </li>
+    );
+  }
+  return (
+    <li className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded text-sm group">
+      <span className="flex-1 truncate">{item.name}</span>
+      {extraFields}
+      <button onClick={() => setEditing(true)} className="text-slate-400 hover:text-blue-600 opacity-70 group-hover:opacity-100"><Edit3 className="w-4 h-4" /></button>
+      <button onClick={onDelete} className="text-slate-400 hover:text-red-500 opacity-70 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+    </li>
+  );
+}
+
+// ============ Header ============
+function Header({ tab, onTabChange, onMenu }) {
+  return (
+    <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between shrink-0 gap-2">
+      <a href={window.APP_TOP_URL} className="flex items-center space-x-2 hover:opacity-80" title="あさばツールのトップへ戻る">
+        <div className="bg-blue-600 p-2 rounded-lg"><ImageIcon className="text-white w-5 h-5" /></div>
+        <div className="hidden sm:block">
+          <div className="text-xs text-slate-500 flex items-center gap-1"><Home className="w-3 h-3" />トップへ</div>
+          <div className="text-sm md:text-base font-bold text-slate-800 tracking-tight">サムネイル合成ツール</div>
+        </div>
+      </a>
+      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+        <button onClick={() => onTabChange('create')} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'create' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:text-slate-800'}`}>
+          <span className="inline-flex items-center gap-1"><ImageIcon className="w-4 h-4" />サムネ作成</span>
+        </button>
+        <button onClick={() => onTabChange('links')} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'links' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:text-slate-800'}`}>
+          <span className="inline-flex items-center gap-1"><Link2 className="w-4 h-4" />リンク集</span>
+        </button>
+      </div>
+      <button onClick={onMenu} className="p-2 rounded-lg hover:bg-slate-100" title="メニュー"><Menu className="w-6 h-6 text-slate-700" /></button>
+    </header>
+  );
+}
+
+// ============ HamburgerMenu ============
+function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjectId, setSelectedProjectId, showToast }) {
+  const [section, setSection] = useState('main');
+  const [confirm, setConfirm] = useState(null);
+
+  const addAccount = async (name) => {
+    if (!name.trim()) return;
+    await addDoc(colRef('accounts'), { name: name.trim(), createdAt: Date.now() });
+    showToast('アカウントを追加しました');
+  };
+  const renameAccount = async (id, name) => {
+    if (!name.trim()) return;
+    await updateDoc(docRefFn('accounts', id), { name: name.trim() });
+  };
+  const deleteAccount = async (a) => {
+    const cats = categories.filter(c => c.accountId === a.id);
+    const projs = projects.filter(p => p.accountId === a.id);
+    setConfirm({
+      title: `「${a.name}」を削除しますか？`,
+      body: `関連する画像カテゴリ${cats.length}件、プロジェクト${projs.length}件も一緒に削除されます。\n（過去に保存されたギャラリー画像は残ります）`,
+      onConfirm: async () => {
+        await Promise.all(cats.map(c => deleteDoc(docRefFn('categories', c.id))));
+        await Promise.all(projs.map(p => deleteDoc(docRefFn('projects', p.id))));
+        await deleteDoc(docRefFn('accounts', a.id));
+        showToast('削除しました');
+        setConfirm(null);
+      },
+      onCancel: () => setConfirm(null),
+    });
+  };
+  const addCategory = async (accountId, name) => {
+    if (!name.trim() || !accountId) return;
+    await addDoc(colRef('categories'), { name: name.trim(), accountId, createdAt: Date.now() });
+  };
+  const renameCategory = async (id, name) => {
+    if (!name.trim()) return;
+    await updateDoc(docRefFn('categories', id), { name: name.trim() });
+  };
+  const deleteCategory = async (c) => {
+    const projs = projects.filter(p => p.categoryId === c.id);
+    setConfirm({
+      title: `「${c.name}」を削除しますか？`,
+      body: projs.length ? `このカテゴリを使うプロジェクト${projs.length}件も削除されます。` : `削除します。`,
+      onConfirm: async () => {
+        await Promise.all(projs.map(p => deleteDoc(docRefFn('projects', p.id))));
+        await deleteDoc(docRefFn('categories', c.id));
+        showToast('削除しました');
+        setConfirm(null);
+      },
+      onCancel: () => setConfirm(null),
+    });
+  };
+  const addProject = async ({ name, accountId, categoryId }) => {
+    if (!name.trim() || !accountId || !categoryId) return;
+    const a = accounts.find(x => x.id === accountId);
+    const c = categories.find(x => x.id === categoryId);
+    await addDoc(colRef('projects'), {
+      name: name.trim(), accountId, categoryId,
+      accountName: a?.name || '', categoryName: c?.name || '',
+      createdAt: Date.now(),
+    });
+  };
+  const deleteProject = async (p) => {
+    setConfirm({
+      title: `「${p.name}」を削除しますか？`,
+      body: '選択中の場合は自動で解除されます。',
+      onConfirm: async () => {
+        await deleteDoc(docRefFn('projects', p.id));
+        if (selectedProjectId === p.id) setSelectedProjectId(null);
+        showToast('削除しました');
+        setConfirm(null);
+      },
+      onCancel: () => setConfirm(null),
+    });
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-slate-900/40 z-40" onClick={onClose} />
+      <aside className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white shadow-2xl z-50 flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b bg-slate-50">
+          <h2 className="font-bold text-slate-800 flex items-center gap-2">
+            {section !== 'main' && (
+              <button onClick={() => setSection('main')} className="text-slate-500 hover:text-slate-800"><ChevronLeft className="w-5 h-5" /></button>
+            )}
+            {section === 'main' ? 'メニュー' : section === 'accounts' ? '運用アカウント管理' : section === 'categories' ? '画像カテゴリ管理' : section === 'projects' ? 'プロジェクト管理' : section === 'release' ? 'リリース情報' : '改善・問合せ'}
+          </h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {section === 'main' && (
+            <>
+              <MenuBtn icon={Sparkles} label="リリース情報" onClick={() => setSection('release')} />
+              <MenuBtn icon={Mail} label="改善・問合せ" onClick={() => setSection('contact')} />
+              <div className="border-t my-3" />
+              <MenuBtn icon={Users} label="運用アカウント管理" onClick={() => setSection('accounts')} sub={`${accounts.length}件`} />
+              <MenuBtn icon={Tag} label="画像カテゴリ管理" onClick={() => setSection('categories')} sub={`${categories.length}件`} />
+              <MenuBtn icon={Folder} label="プロジェクト管理" onClick={() => setSection('projects')} sub={`${projects.length}件`} />
+            </>
+          )}
+          {section === 'release' && <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 p-4 rounded-lg">{RELEASE_NOTES}</div>}
+          {section === 'contact' && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">下記のテンプレートをコピーして、担当（HARUKA）宛にお送りください。</p>
+              <textarea readOnly value={CONTACT_TEMPLATE} className="w-full h-56 p-3 border rounded-lg text-sm font-mono bg-slate-50" />
+              <button onClick={async () => { await copyToClipboard(CONTACT_TEMPLATE); showToast('テンプレートをコピーしました'); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2"><Copy className="w-4 h-4" />コピーする</button>
+            </div>
+          )}
+          {section === 'accounts' && <AccountManager accounts={accounts} onAdd={addAccount} onRename={renameAccount} onDelete={deleteAccount} />}
+          {section === 'categories' && <CategoryManager accounts={accounts} categories={categories} onAdd={addCategory} onRename={renameCategory} onDelete={deleteCategory} />}
+          {section === 'projects' && <ProjectManager accounts={accounts} categories={categories} projects={projects} selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId} onAdd={addProject} onDelete={deleteProject} />}
+        </div>
+      </aside>
+      {confirm && <ConfirmModal {...confirm} />}
+    </>
+  );
+}
+
+function MenuBtn({ icon: Icon, label, onClick, sub }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg text-left border border-slate-200">
+      <span className="flex items-center gap-3"><Icon className="w-5 h-5 text-blue-600" /><span className="font-medium text-slate-800">{label}</span></span>
+      <span className="flex items-center gap-2 text-xs text-slate-500">{sub}<ChevronRightSmall className="w-4 h-4" /></span>
+    </button>
+  );
+}
+
+function AccountManager({ accounts, onAdd, onRename, onDelete }) {
+  const [name, setName] = useState('');
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="新しいアカウント名" className="flex-1 p-2 border rounded text-sm" />
+        <button onClick={() => { onAdd(name); setName(''); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 rounded text-sm font-medium flex items-center gap-1"><Plus className="w-4 h-4" />追加</button>
+      </div>
+      {accounts.length === 0 ? (
+        <p className="text-sm text-slate-500 text-center py-4">まだ登録されていません</p>
+      ) : (
+        <ul className="space-y-2">
+          {accounts.map(a => (
+            <EditableRow key={a.id} item={a} onSave={(n) => onRename(a.id, n)} onDelete={() => onDelete(a)} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function CategoryManager({ accounts, categories, onAdd, onRename, onDelete }) {
+  const [accId, setAccId] = useState(accounts[0]?.id || '');
+  const [name, setName] = useState('');
+  useEffect(() => { if (!accounts.find(a => a.id === accId)) setAccId(accounts[0]?.id || ''); }, [accounts]);
+  const list = categories.filter(c => c.accountId === accId);
+  return (
+    <div className="space-y-3">
+      <select value={accId} onChange={(e) => setAccId(e.target.value)} className="w-full p-2 border rounded text-sm">
+        <option value="">アカウントを選択</option>
+        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="新しいカテゴリ名" className="flex-1 p-2 border rounded text-sm" disabled={!accId} />
+        <button onClick={() => { onAdd(accId, name); setName(''); }} disabled={!accId} className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-3 rounded text-sm font-medium flex items-center gap-1"><Plus className="w-4 h-4" />追加</button>
+      </div>
+      {!accId ? <p className="text-sm text-slate-500 text-center py-4">先にアカウントを選んでください</p> : (
+        list.length === 0 ? <p className="text-sm text-slate-500 text-center py-4">まだ登録されていません</p> : (
+          <ul className="space-y-2">
+            {list.map(c => <EditableRow key={c.id} item={c} onSave={(n) => onRename(c.id, n)} onDelete={() => onDelete(c)} />)}
+          </ul>
+        )
+      )}
+    </div>
+  );
+}
+
+function ProjectManager({ accounts, categories, projects, selectedProjectId, setSelectedProjectId, onAdd, onDelete }) {
+  const [name, setName] = useState('');
+  const [accId, setAccId] = useState('');
+  const [catId, setCatId] = useState('');
+  const cats = categories.filter(c => c.accountId === accId);
+  useEffect(() => { setCatId(''); }, [accId]);
+  return (
+    <div className="space-y-3">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+        <div className="text-xs font-medium text-blue-900">選択中のプロジェクト</div>
+        <div className="text-sm">
+          {selectedProjectId ? (projects.find(p => p.id === selectedProjectId)?.name || '（削除済み）') : '（なし）'}
+          {selectedProjectId && (
+            <button onClick={() => setSelectedProjectId(null)} className="ml-2 text-xs text-blue-700 underline">解除</button>
+          )}
+        </div>
+      </div>
+      <div className="border rounded-lg p-3 space-y-2 bg-slate-50">
+        <div className="text-xs font-medium text-slate-700">新しいプロジェクトを作る</div>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="プロジェクト名" className="w-full p-2 border rounded text-sm" />
+        <select value={accId} onChange={(e) => setAccId(e.target.value)} className="w-full p-2 border rounded text-sm">
+          <option value="">運用アカウントを選択</option>
+          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <select value={catId} onChange={(e) => setCatId(e.target.value)} disabled={!accId} className="w-full p-2 border rounded text-sm">
+          <option value="">画像カテゴリを選択</option>
+          {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <button onClick={() => { onAdd({ name, accountId: accId, categoryId: catId }); setName(''); setAccId(''); setCatId(''); }} disabled={!name.trim() || !accId || !catId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2 rounded text-sm font-medium flex items-center justify-center gap-1"><Plus className="w-4 h-4" />追加</button>
+      </div>
+      {projects.length === 0 ? <p className="text-sm text-slate-500 text-center py-4">まだプロジェクトはありません</p> : (
+        <ul className="space-y-2">
+          {projects.map(p => (
+            <li key={p.id} className={`p-3 border rounded-lg text-sm space-y-1 ${selectedProjectId === p.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
+              <div className="flex items-center justify-between">
+                <div className="font-medium truncate flex-1">{p.name}</div>
+                <button onClick={() => onDelete(p)} className="text-slate-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+              </div>
+              <div className="text-xs text-slate-500">{p.accountName || '(削除済アカウント)'} ／ {p.categoryName || '(削除済カテゴリ)'}</div>
+              <button onClick={() => setSelectedProjectId(selectedProjectId === p.id ? null : p.id)} className={`w-full mt-1 py-1.5 rounded text-xs font-medium ${selectedProjectId === p.id ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>
+                {selectedProjectId === p.id ? '選択中（クリックで解除）' : 'このプロジェクトを選ぶ'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ============ CreateTab ============
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery }) {
+  const canvasRef = useRef(null);
+  const [baseImage, setBaseImage] = useState(null);
+  const [canvasWidth, setCanvasWidth] = useState(1200);
+  const [canvasHeight, setCanvasHeight] = useState(900);
+
+  const [accountId, setAccountId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [dateISO, setDateISO] = useState(todayISO());
+  const [memo, setMemo] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  // プロジェクト選択中は自動適用
+  useEffect(() => {
+    if (selectedProject) { setAccountId(selectedProject.accountId); setCategoryId(selectedProject.categoryId); }
+  }, [selectedProject]);
+
+  const accountLocked = !!selectedProject;
+  const account = accounts.find(a => a.id === accountId);
+  const category = categories.find(c => c.id === categoryId);
+  const catsForAcc = categories.filter(c => c.accountId === accountId);
+  useEffect(() => {
+    if (!accountLocked && !catsForAcc.find(c => c.id === categoryId)) setCategoryId('');
+  }, [accountId, categories]);
+
+  const mmdd = isoToMMDD(dateISO);
+  const folderName = buildFolderName({
+    accountName: account?.name || '', categoryName: category?.name || '', date: mmdd, memo
+  });
+
+  const readFile = (file) => {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = (ev) => setBaseImage(ev.target.result);
+    r.readAsDataURL(file);
+  };
+  const onFileInput = (e) => readFile(e.target.files[0]);
+  const onDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) readFile(f);
+    else showToast('画像ファイルをドロップしてください');
+  };
+
+  // Canvas描画（画像のみ・cover fit）
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    if (!baseImage) return;
+    const img = new Image();
+    img.onload = () => {
+      const ir = img.width / img.height, cr = canvasWidth / canvasHeight;
+      let dw, dh, ox, oy;
+      if (ir > cr) { dh = canvasHeight; dw = img.width * (canvasHeight / img.height); ox = (canvasWidth - dw) / 2; oy = 0; }
+      else { dw = canvasWidth; dh = img.height * (canvasWidth / img.width); ox = 0; oy = (canvasHeight - dh) / 2; }
+      ctx.drawImage(img, ox, oy, dw, dh);
+    };
+    img.src = baseImage;
+  }, [baseImage, canvasWidth, canvasHeight]);
+
+  const canSave = !!baseImage && !!accountId && !!categoryId;
+
+  const handleDownload = () => {
+    if (!canSave) { showToast('画像とアカウント・カテゴリを設定してください'); return; }
+    const c = canvasRef.current; if (!c) return;
+    const url = c.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `${folderName}.png`;
+    link.href = url; link.click();
+  };
+  const handleShare = async () => {
+    if (!canSave) { showToast('画像とアカウント・カテゴリを設定してください'); return; }
+    if (!user || !db) { showToast('データベースに接続できません'); return; }
+    const c = canvasRef.current; if (!c) return;
+    setIsUploading(true);
+    try {
+      const url = c.toDataURL('image/jpeg', 0.75);
+      await addDoc(colRef('shared_thumbnails'), {
+        imageUrl: url, titleText: '', folderName,
+        accountId, accountName: account?.name || '',
+        categoryId, categoryName: category?.name || '',
+        date: mmdd, memo,
+        projectId: selectedProject?.id || null,
+        authorId: user.uid, createdAt: Date.now(),
+        width: canvasWidth, height: canvasHeight,
+      });
+      showToast('チームギャラリーに保存しました');
+    } catch (e) {
+      console.error(e);
+      showToast('保存に失敗しました。画像が大きすぎる可能性があります。');
+    } finally { setIsUploading(false); }
+  };
+
+  return (
+    <main className="flex-1 overflow-hidden flex flex-col md:flex-row relative">
+      <div className="w-full md:w-[400px] bg-white border-r border-slate-200 overflow-y-auto shrink-0">
+        <div className="p-6 space-y-6">
+          {selectedProject && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+              <div className="font-medium">📁 プロジェクト適用中</div>
+              <div className="mt-1">「{selectedProject.name}」のアカウント・カテゴリが自動入力されます</div>
+            </div>
+          )}
+
+          <section className="space-y-3">
+            <div className="flex items-center space-x-2 border-b pb-2">
+              <ImageIcon className="w-5 h-5 text-blue-600" />
+              <h2 className="text-base font-semibold">1. ベース画像</h2>
+            </div>
+            <label
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
+            >
+              <Upload className={`w-8 h-8 mb-2 ${dragOver ? 'text-blue-500' : 'text-slate-400'}`} />
+              <p className="text-sm font-medium text-slate-600">{dragOver ? 'ここにドロップ' : 'クリックまたはドラッグ&ドロップ'}</p>
+              <p className="text-xs text-slate-400 mt-1">PNG / JPG / WEBP</p>
+              <input type="file" className="hidden" accept="image/*" onChange={onFileInput} />
+            </label>
+            {baseImage && (
+              <button onClick={() => setBaseImage(null)} className="text-xs text-slate-500 hover:text-red-500 underline">画像を外す</button>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center space-x-2 border-b pb-2">
+              <Folder className="w-5 h-5 text-blue-600" />
+              <h2 className="text-base font-semibold">2. 保存フォルダ名</h2>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-500">運用アカウント</label>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={accountLocked} className="w-full p-2 border rounded text-sm disabled:bg-slate-100">
+                <option value="">選択してください</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-500">画像カテゴリ</label>
+              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={accountLocked || !accountId} className="w-full p-2 border rounded text-sm disabled:bg-slate-100">
+                <option value="">選択してください</option>
+                {catsForAcc.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-500">日付</label>
+              <input type="date" value={dateISO} onChange={(e) => setDateISO(e.target.value)} className="w-full p-2 border rounded text-sm" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-500">任意テキスト（省略可）</label>
+              <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="例：夏キャンペーン" className="w-full p-2 border rounded text-sm" />
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs">
+              <div className="text-slate-500 mb-1">プレビュー</div>
+              <div className="font-mono break-all text-slate-800">{folderName}</div>
+            </div>
+          </section>
+
+          <section className="space-y-3 pb-6">
+            <div className="flex items-center space-x-2 border-b pb-2">
+              <Settings className="w-5 h-5 text-blue-600" />
+              <h2 className="text-base font-semibold">3. 画像サイズ</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">幅</label>
+                <input type="number" value={canvasWidth} onChange={(e) => setCanvasWidth(Number(e.target.value))} className="w-full p-2 border rounded text-sm" />
+              </div>
+              <div className="text-slate-400 mt-4">×</div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">高さ</label>
+                <input type="number" value={canvasHeight} onChange={(e) => setCanvasHeight(Number(e.target.value))} className="w-full p-2 border rounded text-sm" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setCanvasWidth(1200); setCanvasHeight(900); }} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded font-medium">1200×900</button>
+              <button onClick={() => { setCanvasWidth(1080); setCanvasHeight(1080); }} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded font-medium">1080×1080</button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div className="flex-1 bg-slate-200/50 p-4 md:p-6 flex flex-col overflow-auto">
+        <div className="flex items-center justify-end gap-2 mb-4">
+          <button onClick={openGallery} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium text-sm shadow-sm">
+            <Library className="w-4 h-4 text-blue-600" />チームギャラリー
+          </button>
+          <button onClick={handleShare} disabled={isUploading || !canSave} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white px-4 py-2 rounded-lg font-medium text-sm shadow">
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}保存Boxへ共有
+          </button>
+          <button onClick={handleDownload} disabled={!canSave} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-4 py-2 rounded-lg font-medium text-sm shadow">
+            <Download className="w-4 h-4" />PCに保存
+          </button>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="relative shadow-2xl bg-white rounded-md overflow-hidden ring-1 ring-slate-900/5" style={{ maxWidth: '100%', maxHeight: '100%', aspectRatio: `${canvasWidth} / ${canvasHeight}` }}>
+            <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} className="w-full h-full object-contain" />
+          </div>
+          <p className="mt-4 text-sm text-slate-500 font-medium">書き出しサイズ: {canvasWidth} × {canvasHeight} px</p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ============ GalleryModal ============
+function GalleryModal({ onClose, images, accounts, categories, showToast }) {
+  const [filterMode, setFilterMode] = useState('all'); // all|account|category|both
+  const [filterAccountId, setFilterAccountId] = useState('');
+  const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [searchMode, setSearchMode] = useState('AND'); // AND|OR
+  const [editing, setEditing] = useState(null); // 分類変更モーダル用
+  const [confirm, setConfirm] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [expandedAcc, setExpandedAcc] = useState({});
+
+  // フィルタ
+  const filtered = useMemo(() => {
+    let list = images;
+    if (filterMode === 'account' && filterAccountId) list = list.filter(i => i.accountId === filterAccountId);
+    else if (filterMode === 'category' && filterCategoryId) list = list.filter(i => i.categoryId === filterCategoryId);
+    else if (filterMode === 'both') {
+      if (filterAccountId) list = list.filter(i => i.accountId === filterAccountId);
+      if (filterCategoryId) list = list.filter(i => i.categoryId === filterCategoryId);
+    }
+    const kw = searchText.trim().split(/\s+/).filter(Boolean);
+    if (kw.length) {
+      list = list.filter(i => {
+        const hay = [i.folderName, i.titleText, i.accountName, i.categoryName, i.memo].filter(Boolean).join(' ').toLowerCase();
+        return searchMode === 'AND' ? kw.every(k => hay.includes(k.toLowerCase())) : kw.some(k => hay.includes(k.toLowerCase()));
+      });
+    }
+    return list;
+  }, [images, filterMode, filterAccountId, filterCategoryId, searchText, searchMode]);
+
+  // アカウント別 矢印切替
+  const cycleAccount = (dir) => {
+    const ids = accounts.map(a => a.id);
+    if (!ids.length) return;
+    const cur = ids.indexOf(filterAccountId);
+    const next = (cur + dir + ids.length) % ids.length;
+    setFilterAccountId(ids[next]);
+  };
+  const cycleCategory = (dir) => {
+    const list = (filterMode === 'both' && filterAccountId) ? categories.filter(c => c.accountId === filterAccountId) : categories;
+    const ids = list.map(c => c.id);
+    if (!ids.length) return;
+    const cur = ids.indexOf(filterCategoryId);
+    const next = (cur + dir + ids.length) % ids.length;
+    setFilterCategoryId(ids[next]);
+  };
+
+  const catsForFilter = (filterMode === 'both' && filterAccountId) ? categories.filter(c => c.accountId === filterAccountId) : categories;
+
+  const handleCopyLink = async (id) => {
+    const base = location.origin + location.pathname;
+    await copyToClipboard(`${base}?id=${id}`);
+    showToast('リンクをコピーしました');
+  };
+  const handleDelete = (img) => {
+    setConfirm({
+      title: '画像を削除しますか？', body: '元に戻せません。',
+      onConfirm: async () => {
+        await deleteDoc(docRefFn('shared_thumbnails', img.id));
+        showToast('削除しました');
+        setConfirm(null);
+      },
+      onCancel: () => setConfirm(null),
+    });
+  };
+
+  // DnD
+  const [draggingId, setDraggingId] = useState(null);
+  const onDragStart = (e, id) => { setDraggingId(id); e.dataTransfer.effectAllowed = 'move'; };
+  const onDragEnd = () => setDraggingId(null);
+  const moveImage = async (img, newAccountId, newCategoryId) => {
+    const a = accounts.find(x => x.id === newAccountId);
+    const c = newCategoryId ? categories.find(x => x.id === newCategoryId) : null;
+    const newFolder = buildFolderName({
+      accountName: a?.name || '', categoryName: c?.name || '',
+      date: img.date || '', memo: img.memo || ''
+    });
+    await updateDoc(docRefFn('shared_thumbnails', img.id), {
+      accountId: newAccountId, accountName: a?.name || '',
+      categoryId: newCategoryId || null, categoryName: c?.name || '',
+      folderName: newFolder,
+    });
+    showToast('分類を変更しました');
+  };
+  const dropToAccount = async (accId) => {
+    if (!draggingId) return;
+    const img = images.find(i => i.id === draggingId);
+    if (img) await moveImage(img, accId, null);
+    setDraggingId(null);
+  };
+  const dropToCategory = async (cat) => {
+    if (!draggingId) return;
+    const img = images.find(i => i.id === draggingId);
+    if (img) await moveImage(img, cat.accountId, cat.id);
+    setDraggingId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex justify-center items-center p-2 md:p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-full max-h-[95vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b bg-slate-50 shrink-0">
+          <div className="flex items-center space-x-3">
+            <div className="bg-blue-100 p-2 rounded-xl text-blue-600"><Library className="w-5 h-5" /></div>
+            <div>
+              <h2 className="text-base md:text-lg font-bold text-slate-800">チームギャラリー</h2>
+              <p className="text-xs text-slate-500">{filtered.length} / {images.length} 件</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full"><X className="w-5 h-5" /></button>
+        </div>
+
+        {/* フィルタ・検索 */}
+        <div className="p-3 border-b bg-white space-y-2 shrink-0">
+          <div className="flex flex-wrap gap-1">
+            {[
+              { k: 'all', l: '全一覧' }, { k: 'account', l: 'アカウント別' },
+              { k: 'category', l: 'カテゴリ別' }, { k: 'both', l: 'アカウント×カテゴリ' }
+            ].map(t => (
+              <button key={t.k} onClick={() => setFilterMode(t.k)} className={`px-3 py-1.5 rounded-md text-xs font-medium ${filterMode === t.k ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>{t.l}</button>
+            ))}
+          </div>
+          {filterMode === 'account' && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => cycleAccount(-1)} className="p-1 rounded hover:bg-slate-100"><ChevronLeft className="w-4 h-4" /></button>
+              <select value={filterAccountId} onChange={(e) => setFilterAccountId(e.target.value)} className="flex-1 p-2 border rounded text-sm">
+                <option value="">すべて</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <button onClick={() => cycleAccount(1)} className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-4 h-4" /></button>
+            </div>
+          )}
+          {filterMode === 'category' && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => cycleCategory(-1)} className="p-1 rounded hover:bg-slate-100"><ChevronLeft className="w-4 h-4" /></button>
+              <select value={filterCategoryId} onChange={(e) => setFilterCategoryId(e.target.value)} className="flex-1 p-2 border rounded text-sm">
+                <option value="">すべて</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}（{accounts.find(a => a.id === c.accountId)?.name || '?'}）</option>)}
+              </select>
+              <button onClick={() => cycleCategory(1)} className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-4 h-4" /></button>
+            </div>
+          )}
+          {filterMode === 'both' && (
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select value={filterAccountId} onChange={(e) => { setFilterAccountId(e.target.value); setFilterCategoryId(''); }} className="flex-1 p-2 border rounded text-sm">
+                <option value="">アカウント選択</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <select value={filterCategoryId} onChange={(e) => setFilterCategoryId(e.target.value)} disabled={!filterAccountId} className="flex-1 p-2 border rounded text-sm">
+                <option value="">カテゴリ選択</option>
+                {catsForFilter.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+              <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="タイトル/アカウント/カテゴリ/メモ 検索（スペース区切り）" className="w-full pl-8 pr-2 py-2 border rounded text-sm" />
+            </div>
+            <button onClick={() => setSearchMode(searchMode === 'AND' ? 'OR' : 'AND')} className="px-3 py-2 border rounded text-xs font-bold bg-slate-50 hover:bg-slate-100">{searchMode}</button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          {/* サイドバー */}
+          <aside className={`bg-slate-50 border-r overflow-y-auto shrink-0 transition-all ${sidebarOpen ? 'w-56' : 'w-10'}`}>
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-full p-2 text-xs text-slate-500 hover:bg-slate-100 flex items-center justify-between">
+              {sidebarOpen && <span>ドラッグで分類変更</span>}
+              {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            {sidebarOpen && (
+              <div className="p-2 space-y-1">
+                {accounts.map(a => {
+                  const cats = categories.filter(c => c.accountId === a.id);
+                  const expanded = expandedAcc[a.id] ?? true;
+                  return (
+                    <div key={a.id}>
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dnd-hi'); }}
+                        onDragLeave={(e) => e.currentTarget.classList.remove('dnd-hi')}
+                        onDrop={(e) => { e.currentTarget.classList.remove('dnd-hi'); dropToAccount(a.id); }}
+                        className="flex items-center gap-1 p-1.5 rounded bg-white border border-slate-200 text-xs font-medium"
+                      >
+                        <button onClick={() => setExpandedAcc(prev => ({...prev, [a.id]: !expanded}))} className="p-0.5">
+                          {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRightSmall className="w-3 h-3" />}
+                        </button>
+                        <Users className="w-3 h-3 text-blue-500" />
+                        <span className="truncate flex-1">{a.name}</span>
+                      </div>
+                      {expanded && cats.map(c => (
+                        <div
+                          key={c.id}
+                          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dnd-hi'); }}
+                          onDragLeave={(e) => e.currentTarget.classList.remove('dnd-hi')}
+                          onDrop={(e) => { e.currentTarget.classList.remove('dnd-hi'); dropToCategory(c); }}
+                          className="ml-4 flex items-center gap-1 p-1.5 rounded hover:bg-white border border-transparent text-xs"
+                        >
+                          <Tag className="w-3 h-3 text-slate-400" />
+                          <span className="truncate">{c.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </aside>
+
+          {/* 一覧 */}
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-100/50">
+            {filtered.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-3">
+                <Library className="w-14 h-14 opacity-30" />
+                <p className="font-medium text-slate-500">該当する画像はありません</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filtered.map(img => (
+                  <div
+                    key={img.id}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, img.id)}
+                    onDragEnd={onDragEnd}
+                    className={`bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col hover:shadow-md transition-shadow ${draggingId === img.id ? 'opacity-40' : ''}`}
+                  >
+                    <div className="aspect-[4/3] bg-slate-200 relative overflow-hidden group cursor-move">
+                      <img src={img.imageUrl} alt={img.folderName || img.titleText} className="w-full h-full object-cover" draggable={false} />
+                      <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button title="ダウンロード" onClick={() => { const a = document.createElement('a'); a.download = `${img.folderName || 'image'}.jpg`; a.href = img.imageUrl; a.click(); }} className="bg-white/90 text-slate-800 hover:bg-white p-2 rounded-full shadow-lg"><Download className="w-4 h-4" /></button>
+                        <button title="リンク発行" onClick={() => handleCopyLink(img.id)} className="bg-white/90 text-blue-700 hover:bg-white p-2 rounded-full shadow-lg"><Link2 className="w-4 h-4" /></button>
+                        <button title="分類変更" onClick={() => setEditing(img)} className="bg-white/90 text-indigo-700 hover:bg-white p-2 rounded-full shadow-lg"><Edit3 className="w-4 h-4" /></button>
+                        <button title="削除" onClick={() => handleDelete(img)} className="bg-white/90 text-red-600 hover:bg-red-50 p-2 rounded-full shadow-lg"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-xs font-bold text-slate-800 line-clamp-2 leading-snug mb-1 break-all">{img.folderName || img.titleText || '（未分類）'}</p>
+                      <p className="text-[10px] text-slate-400">{fmtDateTime(img.createdAt)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {editing && (
+        <EditImageModal img={editing} accounts={accounts} categories={categories}
+          onSave={async (patch) => { await moveImage(editing, patch.accountId, patch.categoryId); setEditing(null); }}
+          onSaveMeta={async (patch) => {
+            const a = accounts.find(x => x.id === patch.accountId);
+            const c = patch.categoryId ? categories.find(x => x.id === patch.categoryId) : null;
+            const newFolder = buildFolderName({ accountName: a?.name || '', categoryName: c?.name || '', date: patch.date, memo: patch.memo });
+            await updateDoc(docRefFn('shared_thumbnails', editing.id), {
+              accountId: patch.accountId, accountName: a?.name || '',
+              categoryId: patch.categoryId || null, categoryName: c?.name || '',
+              date: patch.date, memo: patch.memo, folderName: newFolder,
+            });
+            showToast('保存しました');
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {confirm && <ConfirmModal {...confirm} />}
+    </div>
+  );
+}
+
+function EditImageModal({ img, accounts, categories, onSaveMeta, onClose }) {
+  const [accountId, setAccountId] = useState(img.accountId || '');
+  const [categoryId, setCategoryId] = useState(img.categoryId || '');
+  const [dateVal, setDateVal] = useState(img.date || '');
+  const [memo, setMemo] = useState(img.memo || '');
+  const cats = categories.filter(c => c.accountId === accountId);
+  useEffect(() => { if (!cats.find(c => c.id === categoryId)) setCategoryId(''); }, [accountId]);
+  const a = accounts.find(x => x.id === accountId);
+  const c = categories.find(x => x.id === categoryId);
+  const preview = buildFolderName({ accountName: a?.name || '', categoryName: c?.name || '', date: dateVal, memo });
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 z-[110] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-5 max-w-md w-full space-y-3">
+        <h3 className="font-bold text-slate-800">分類を変更</h3>
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-slate-500">運用アカウント</label>
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="w-full p-2 border rounded text-sm">
+            <option value="">選択</option>
+            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-slate-500">画像カテゴリ</label>
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={!accountId} className="w-full p-2 border rounded text-sm">
+            <option value="">選択</option>
+            {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-medium text-slate-500">日付 (MM-DD)</label>
+            <input value={dateVal} onChange={(e) => setDateVal(e.target.value)} placeholder="07-08" className="w-full p-2 border rounded text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">任意テキスト</label>
+            <input value={memo} onChange={(e) => setMemo(e.target.value)} className="w-full p-2 border rounded text-sm" />
+          </div>
+        </div>
+        <div className="bg-slate-50 border rounded p-2 text-xs">
+          <div className="text-slate-500 mb-1">新しいフォルダ名</div>
+          <div className="font-mono break-all">{preview}</div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium">キャンセル</button>
+          <button onClick={() => onSaveMeta({ accountId, categoryId, date: dateVal, memo })} disabled={!accountId} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-sm font-medium">保存</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ LinksTab ============
+function LinksTab({ teamLinks, personalLinks, setPersonalLinks, showToast }) {
+  const [sub, setSub] = useState('team');
+  const [editing, setEditing] = useState(null);
+  const addTeam = async (name, url) => { await addDoc(colRef('links'), { name, url, createdAt: Date.now() }); showToast('リンクを追加しました'); };
+  const updateTeam = async (id, name, url) => { await updateDoc(docRefFn('links', id), { name, url }); showToast('更新しました'); };
+  const deleteTeam = async (id) => { await deleteDoc(docRefFn('links', id)); showToast('削除しました'); };
+  const addPersonal = (name, url) => { setPersonalLinks(prev => [{ id: Date.now().toString(), name, url }, ...prev]); showToast('リンクを追加しました'); };
+  const updatePersonal = (id, name, url) => { setPersonalLinks(prev => prev.map(l => l.id === id ? { ...l, name, url } : l)); showToast('更新しました'); };
+  const deletePersonal = (id) => { setPersonalLinks(prev => prev.filter(l => l.id !== id)); showToast('削除しました'); };
+  const items = sub === 'team' ? teamLinks : personalLinks;
+  return (
+    <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50">
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1">
+            <button onClick={() => setSub('team')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${sub === 'team' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>チーム共有</button>
+            <button onClick={() => setSub('personal')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${sub === 'personal' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>個人ローカル</button>
+          </div>
+          <button onClick={() => setEditing({ mode: 'add', kind: sub })} className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium shadow"><Plus className="w-4 h-4" />追加</button>
+        </div>
+        {sub === 'personal' && <p className="text-xs text-slate-500">※ 個人ローカルはこの端末・このブラウザにのみ保存されます</p>}
+        {items.length === 0 ? (
+          <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-400">
+            <Link2 className="w-10 h-10 mx-auto mb-3 opacity-40" />
+            <p className="text-sm">まだリンクが登録されていません</p>
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {items.map(l => (
+              <li key={l.id} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-2 shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-800 truncate">{l.name}</div>
+                  <div className="text-xs text-slate-500 truncate">{l.url}</div>
+                </div>
+                <a href={l.url} target="_blank" rel="noopener noreferrer" className="p-2 rounded hover:bg-blue-50 text-blue-600" title="開く"><ExternalLink className="w-4 h-4" /></a>
+                <button onClick={() => setEditing({ mode: 'edit', target: l, kind: sub })} className="p-2 rounded hover:bg-slate-100 text-slate-500" title="編集"><Edit3 className="w-4 h-4" /></button>
+                <button onClick={() => sub === 'team' ? deleteTeam(l.id) : deletePersonal(l.id)} className="p-2 rounded hover:bg-red-50 text-red-500" title="削除"><Trash2 className="w-4 h-4" /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {editing && (
+        <LinkEditModal
+          initial={editing.target}
+          onClose={() => setEditing(null)}
+          onSubmit={(name, url) => {
+            if (editing.mode === 'add') { editing.kind === 'team' ? addTeam(name, url) : addPersonal(name, url); }
+            else { editing.kind === 'team' ? updateTeam(editing.target.id, name, url) : updatePersonal(editing.target.id, name, url); }
+            setEditing(null);
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+function LinkEditModal({ initial, onClose, onSubmit }) {
+  const [name, setName] = useState(initial?.name || '');
+  const [url, setUrl] = useState(initial?.url || '');
+  const submit = (e) => { e.preventDefault(); if (!name.trim() || !url.trim()) return; onSubmit(name.trim(), url.trim()); };
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 z-[110] flex items-center justify-center p-4">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-2xl p-5 max-w-md w-full space-y-3">
+        <h3 className="font-bold text-slate-800">{initial ? 'リンクを編集' : 'リンクを追加'}</h3>
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-slate-500">名称</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="例：Notion 運用DB" className="w-full p-2 border rounded text-sm" />
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-slate-500">URL</label>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." className="w-full p-2 border rounded text-sm" />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium">キャンセル</button>
+          <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">保存</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ============ ViewerMode（?id=xxx 単独閲覧） ============
+function ViewerMode({ id, showToast }) {
+  const [data, setData] = useState(null);
+  const [notFound, setNotFound] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getDoc(docRefFn('shared_thumbnails', id));
+        if (!s.exists()) { setNotFound(true); return; }
+        setData({ id: s.id, ...s.data() });
+      } catch (e) { console.error(e); setNotFound(true); }
+    })();
+  }, [id]);
+  if (notFound) return (
+    <div className="h-screen flex flex-col items-center justify-center text-slate-500 space-y-3">
+      <ImageIcon className="w-14 h-14 opacity-40" />
+      <p>画像が見つかりません（削除された可能性があります）</p>
+      <a href={location.pathname} className="text-blue-600 underline text-sm">ツールを開く</a>
+    </div>
+  );
+  if (!data) return <div className="h-screen flex items-center justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin mr-2" />読み込み中…</div>;
+  return (
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col">
+      <header className="p-4 flex items-center justify-between border-b border-slate-700">
+        <a href={location.pathname} className="text-sm text-slate-300 hover:text-white flex items-center gap-1"><ChevronLeft className="w-4 h-4" />ツールへ戻る</a>
+        <div className="text-xs text-slate-400">{fmtDateTime(data.createdAt)}</div>
+      </header>
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <img src={data.imageUrl} alt={data.folderName} className="max-w-full max-h-[70vh] rounded shadow-2xl bg-white" />
+        <p className="mt-4 font-mono break-all text-center text-sm text-slate-200">{data.folderName || data.titleText || '（未分類）'}</p>
+        <div className="mt-4 flex gap-2">
+          <button onClick={() => { const a = document.createElement('a'); a.download = `${data.folderName || 'image'}.jpg`; a.href = data.imageUrl; a.click(); }} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Download className="w-4 h-4" />画像をダウンロード</button>
+          <button onClick={async () => { await copyToClipboard(location.href); showToast('リンクをコピーしました'); }} className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Copy className="w-4 h-4" />リンクをコピー</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ Main App ============
+function App() {
+  const viewerId = new URLSearchParams(location.search).get('id');
+  const [user, setUser] = useState(null);
+  const [accounts, setAccounts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [teamLinks, setTeamLinks] = useState([]);
+  const [images, setImages] = useState([]);
+  const [personalLinks, setPersonalLinks] = useLocalStorage('personal_links', []);
+  const [selectedProjectId, setSelectedProjectId] = useLocalStorage('selected_project_id', null);
+  const [tab, setTab] = useState('create');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const showToast = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(''), 3000); };
+
+  useEffect(() => {
+    if (!auth) return;
+    signInAnonymously(auth).catch(e => console.error("Auth error", e));
+    const unsub = onAuthStateChanged(auth, setUser);
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    const subs = [
+      onSnapshot(colRef('accounts'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setAccounts(arr); }),
+      onSnapshot(colRef('categories'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setCategories(arr); }),
+      onSnapshot(colRef('projects'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setProjects(arr); }),
+      onSnapshot(colRef('links'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); setTeamLinks(arr); }),
+      onSnapshot(colRef('shared_thumbnails'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); setImages(arr); }),
+    ];
+    return () => subs.forEach(u => u());
+  }, [user]);
+
+  if (viewerId) return (<><Toast msg={toastMsg} /><ViewerMode id={viewerId} showToast={showToast} /></>);
+  const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
+  return (
+    <div className="flex flex-col h-screen bg-slate-50 text-slate-800">
+      <Toast msg={toastMsg} />
+      <Header tab={tab} onTabChange={setTab} onMenu={() => setMenuOpen(true)} />
+      {tab === 'create' && (
+        <CreateTab user={user} accounts={accounts} categories={categories} projects={projects}
+          selectedProject={selectedProject} showToast={showToast} openGallery={() => setGalleryOpen(true)} />
+      )}
+      {tab === 'links' && (
+        <LinksTab teamLinks={teamLinks} personalLinks={personalLinks} setPersonalLinks={setPersonalLinks} showToast={showToast} />
+      )}
+      {menuOpen && (
+        <HamburgerMenu onClose={() => setMenuOpen(false)}
+          accounts={accounts} categories={categories} projects={projects}
+          selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId}
+          showToast={showToast} />
+      )}
+      {galleryOpen && (
+        <GalleryModal onClose={() => setGalleryOpen(false)}
+          images={images} accounts={accounts} categories={categories} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
 function Root() {
   const [unlocked, setUnlocked] = useState(localStorage.getItem('meo_unlocked') === '1');
-  if (!unlocked) {
-    return <PassphraseGate onUnlock={() => setUnlocked(true)} />;
-  }
-  return <ThumbnailApp />;
+  if (!unlocked) return <PassphraseGate onUnlock={() => setUnlocked(true)} />;
+  return <App />;
 }
 
 createRoot(document.getElementById('root')).render(<Root />);
