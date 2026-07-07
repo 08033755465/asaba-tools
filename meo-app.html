@@ -180,6 +180,15 @@
   .lkcopy{border:0;background:transparent;cursor:pointer;font-size:13px;padding:2px 3px;opacity:.55;line-height:1}
   .lkcopy:hover{opacity:1}
   .lkcopy:disabled{opacity:.25;cursor:default}
+  /* リンク集：オフ状態・まとめて選択・並び替え */
+  .lk.off{opacity:.5;text-decoration:line-through;color:#888;background:#f2f4f7;padding:2px 6px;border-radius:6px}
+  .lksel{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;margin:4px 8px 4px 0}
+  .lksel input{margin:0}
+  .lksel.on{background:#eaf1ff;border-color:var(--accent)}
+  .lktoolbar{position:sticky;top:0;background:#fff;z-index:5;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .lktoolbar .sw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--sub)}
+  .movebtn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 7px;font-size:12px;cursor:pointer;line-height:1.2}
+  .movebtn:disabled{opacity:.3;cursor:default}
   /* ダッシュ：取込ドロワー（上から引き出し）＋店舗バー固定 */
   .drawer{padding:0!important;overflow:hidden}
   .dhandle{display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;padding:11px 14px;font-weight:800;font-size:14px;user-select:none}
@@ -2845,6 +2854,88 @@ let PLINKS=[]; const PLINKS_KEY='meo_plinks_v1';
 function plinksLoad(){ try{const r=localStorage.getItem(PLINKS_KEY); PLINKS=r?JSON.parse(r):[];}catch(e){PLINKS=[];} }
 function plinksSave(){ try{ localStorage.setItem(PLINKS_KEY, JSON.stringify(PLINKS)); }catch(e){} }
 plinksLoad();
+/* リンク集：この端末だけの並び順・表示設定・オフ状態・選択モード（同期対象外） */
+const LINK_ORDER_KEY='meo_link_store_order_v1';
+const LINK_DBL_KEY='meo_link_dbl_v1';
+const LINK_OFF_KEY='meo_link_off_v1';
+let LINK_STORE_ORDER={};
+let LINK_DBL_ENABLED=true;
+let LINK_OFF=new Set();
+let LINK_SEL=new Set();
+let LINK_SEL_MODE=false;
+const LINK_DISP_GROUPS=[{label:"整骨院・整体院",members:["整骨院","整体院"]},{label:"Peace",members:["Peace"]}];
+(function loadLinkPrefs(){
+  try{ const r=localStorage.getItem(LINK_ORDER_KEY); if(r) LINK_STORE_ORDER=JSON.parse(r)||{}; }catch(e){}
+  LINK_DBL_ENABLED=(localStorage.getItem(LINK_DBL_KEY)!=='0');
+  try{ const r=localStorage.getItem(LINK_OFF_KEY); if(r) LINK_OFF=new Set(JSON.parse(r)); }catch(e){}
+})();
+function saveLinkOrder(){ try{ localStorage.setItem(LINK_ORDER_KEY, JSON.stringify(LINK_STORE_ORDER)); }catch(e){} }
+function saveLinkDbl(){ try{ localStorage.setItem(LINK_DBL_KEY, LINK_DBL_ENABLED?'1':'0'); }catch(e){} }
+function saveLinkOff(){ try{ localStorage.setItem(LINK_OFF_KEY, JSON.stringify(Array.from(LINK_OFF))); }catch(e){} }
+function toggleLinkDbl(){ LINK_DBL_ENABLED=!LINK_DBL_ENABLED; saveLinkDbl(); renderLinks(); toast(LINK_DBL_ENABLED?'ダブルタップで開く：オン':'ダブルタップで開く：オフ'); }
+function toggleLinkSelMode(){ LINK_SEL_MODE=!LINK_SEL_MODE; if(!LINK_SEL_MODE) LINK_SEL.clear(); renderLinks(); }
+function toggleLkSel(id){ if(LINK_SEL.has(id)) LINK_SEL.delete(id); else LINK_SEL.add(id); renderLinks(); }
+function clearLkSel(){ LINK_SEL.clear(); renderLinks(); }
+/* 店舗の並び順（この端末だけ） */
+function orderedStoresFor(dgLabel, stores){
+  const order=(LINK_STORE_ORDER[dgLabel]||[]);
+  const map={}; stores.forEach(s=>{ map[s.code]=s; });
+  const out=[]; const seen=new Set();
+  order.forEach(c=>{ if(map[c]){ out.push(map[c]); seen.add(c); } });
+  stores.forEach(s=>{ if(!seen.has(s.code)) out.push(s); });
+  return out;
+}
+function moveStore(dgLabel, code, dir){
+  const dg=LINK_DISP_GROUPS.find(x=>x.label===dgLabel); if(!dg) return;
+  const stores=DATA.stores.filter(s=>dg.members.includes(s.group));
+  const cur=orderedStoresFor(dgLabel, stores).map(s=>s.code);
+  const i=cur.indexOf(code); if(i<0) return;
+  const j=i+dir; if(j<0||j>=cur.length) return;
+  const t=cur[i]; cur[i]=cur[j]; cur[j]=t;
+  LINK_STORE_ORDER[dgLabel]=cur; saveLinkOrder(); renderLinks();
+}
+/* まとめて編集 */
+function _selSplit(){
+  const sh=Array.from(LINK_SEL).map(id=>LINKS.find(x=>x.id===id)).filter(Boolean);
+  const pe=Array.from(LINK_SEL).map(id=>PLINKS.find(x=>x.id===id)).filter(Boolean);
+  return {sh, pe};
+}
+function bulkRename(){
+  if(!LINK_SEL.size){ toast('リンクを選んでください'); return; }
+  const t=prompt('選んだ '+LINK_SEL.size+' 件のリンクにつけるタイトル',''); if(t===null) return;
+  const label=(t||'').trim(); if(!label){ toast('タイトルを入力してください'); return; }
+  const {sh,pe}=_selSplit();
+  sh.forEach(l=>l.label=label); pe.forEach(l=>l.label=label);
+  if(sh.length) linksSave(); if(pe.length) plinksSave();
+  toast('✏️ タイトルを一括変更しました'); LINK_SEL.clear(); renderLinks();
+}
+function bulkDelete(){
+  if(!LINK_SEL.size){ toast('リンクを選んでください'); return; }
+  if(!confirm('選んだ '+LINK_SEL.size+' 件を削除しますか？')) return;
+  LINKS=LINKS.filter(x=>!LINK_SEL.has(x.id));
+  PLINKS=PLINKS.filter(x=>!LINK_SEL.has(x.id));
+  linksSave(); plinksSave();
+  LINK_SEL.forEach(id=>LINK_OFF.delete(id)); saveLinkOff();
+  toast('🗑️ 削除しました'); LINK_SEL.clear(); renderLinks();
+}
+function bulkToggleOff(){
+  if(!LINK_SEL.size){ toast('リンクを選んでください'); return; }
+  const anyOn=Array.from(LINK_SEL).some(id=>!LINK_OFF.has(id));
+  LINK_SEL.forEach(id=>{ if(anyOn) LINK_OFF.add(id); else LINK_OFF.delete(id); });
+  saveLinkOff(); toast(anyOn?'⏻ オフにしました（灰色・タップ不可）':'⏻ オンにしました'); renderLinks();
+}
+function bulkAddToStores(){
+  const {sh}=_selSplit();
+  const stores=Array.from(new Set(sh.filter(l=>l.scope==='store').map(l=>l.key)));
+  if(!stores.length){ toast('店舗別のリンクを1つ以上選んでください（その店舗へ一括で追加します）'); return; }
+  const t=prompt('追加するリンクのタイトル（'+stores.length+'店舗に同じタイトルで追加）',''); if(t===null) return;
+  const label=(t||'').trim(); if(!label){ toast('タイトルを入力してください'); return; }
+  const u=prompt('URL（空でもOK・あとで各店ごとに設定できます）','https://'); if(u===null) return;
+  const url=(u||'').trim().replace(/^https:\/\/$/,'');
+  stores.forEach(code=>{ LINKS.push({id:luid(),label,url,scope:'store',key:code,cat:'その他'}); });
+  linksSave();
+  toast('＋ '+stores.length+'店舗に「'+label+'」を追加しました'); LINK_SEL.clear(); renderLinks();
+}
 /* リンク操作: タップ=編集 / ダブルタップ=ひらく / 長押し=削除 / 📋=コピー */
 function lkFind(id){ return LINKS.find(x=>x.id===id) || PLINKS.find(x=>x.id===id) || null; }
 function lkIsPersonal(id){ return PLINKS.some(x=>x.id===id); }
@@ -2919,27 +3010,42 @@ function linksExportCSV(){
 }
 function linkChip(l){
   const ok=!!l.url;
+  const off=LINK_OFF.has(l.id);
+  if(LINK_SEL_MODE){
+    const on=LINK_SEL.has(l.id);
+    return `<label class="lksel${on?' on':''}"><input type="checkbox" ${on?'checked':''} onchange="toggleLkSel('${l.id}')">${off?'⏻ ':(ok?'':'⚠️ ')}${esc(l.label)}</label>`;
+  }
+  if(off){
+    return `<span class="lkitem">
+      <span class="lk off" title="このリンクはオフです（設定で戻せます）">⏻ ${esc(l.label)}</span>
+    </span>`;
+  }
+  const dbl = LINK_DBL_ENABLED ? `ondblclick="lkDbl('${l.id}')"` : '';
+  const tip = LINK_DBL_ENABLED ? 'タップ=編集／ダブルタップ=ひらく／長押し=削除' : 'タップ=編集／長押し=削除（ダブルタップで開くはオフ）';
   return `<span class="lkitem">
     <span class="lk${ok?'':' warn'}" role="link" tabindex="0"
-      onclick="lkTap('${l.id}')" ondblclick="lkDbl('${l.id}')"
+      onclick="lkTap('${l.id}')" ${dbl}
       onmousedown="lkDown('${l.id}')" onmouseup="lkUp()" onmouseleave="lkUp()"
       ontouchstart="lkDown('${l.id}')" ontouchend="lkUp()"
-      title="${ok?esc(l.url):'URL未登録'}｜タップ=編集／ダブルタップ=ひらく／長押し=削除">${ok?'':'⚠️ '}${esc(l.label)}</span>
+      title="${ok?esc(l.url):'URL未登録'}｜${tip}">${ok?'':'⚠️ '}${esc(l.label)}</span>
     <button class="lkcopy" onclick="lkCopy('${l.id}')" title="URLをコピー"${ok?'':' disabled'}>📋</button>
   </span>`;
 }
-function linkBlock(title, code, links, scope, key){
+function linkBlock(title, code, links, scope, key, moveInfo){
   const chips=links.length? links.map(linkChip).join('') : '<span class="sub">未登録</span>';
+  let mv='';
+  if(moveInfo){
+    mv=`<button class="movebtn" onclick="moveStore('${esc(moveInfo.dgLabel)}','${esc(code)}',-1)" ${moveInfo.first?'disabled':''} title="上へ">▲</button>
+        <button class="movebtn" onclick="moveStore('${esc(moveInfo.dgLabel)}','${esc(code)}',1)" ${moveInfo.last?'disabled':''} title="下へ">▼</button> `;
+  }
   return `<div style="border-top:1px solid var(--line);padding:8px 0">
-    <div style="font-weight:600;font-size:13px;margin-bottom:4px">${esc(title)}${code?` <code style="font-size:10px">${esc(code)}</code>`:''}</div>
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">${mv}${esc(title)}${code?` <code style="font-size:10px">${esc(code)}</code>`:''}</div>
     <div style="display:flex;flex-wrap:wrap;align-items:center">${chips}
       <button class="btn ghost sm" onclick="linkAdd('${scope}','${esc(key||'')}','その他')">＋追加</button></div>
   </div>`;
 }
 function renderLinks(){
   const wrap=el('page-links'); if(!wrap)return;
-  // グループ別リンク: 整骨院＋整体院をまとめて1ブロック、Peaceは独立
-  const LINK_DISP_GROUPS=[{label:"整骨院・整体院",members:["整骨院","整体院"]},{label:"Peace",members:["Peace"]}];
   const groupBlocks=LINK_DISP_GROUPS.map(dg=>{
     const chips=dg.members.flatMap(g=>linksFor('group',g)).map(linkChip).join('');
     const addBtns=dg.members.map(g=>`<button class="btn ghost sm" onclick="linkAdd('group','${esc(g)}','その他')">＋追加（${esc(g)}）</button>`).join('');
@@ -2950,9 +3056,22 @@ function renderLinks(){
   }).join('');
   const storeBlocks=LINK_DISP_GROUPS.map(dg=>{
     const stores=DATA.stores.filter(s=>dg.members.includes(s.group));
+    const ordered=orderedStoresFor(dg.label, stores);
+    const n=ordered.length;
     return `<div style="margin-top:6px"><div class="pill" style="margin:6px 0">${esc(dg.label)}</div>`
-      + stores.map(s=>linkBlock(s.name,s.code,linksFor('store',s.code),'store',s.code)).join('') + `</div>`;
+      + ordered.map((s,i)=>linkBlock(s.name,s.code,linksFor('store',s.code),'store',s.code,{dgLabel:dg.label,first:i===0,last:i===n-1})).join('') + `</div>`;
   }).join('');
+  const toolbar=`
+    <div class="lktoolbar">
+      <label class="sw"><input type="checkbox" ${LINK_DBL_ENABLED?'checked':''} onchange="toggleLinkDbl()"> 🔗 ダブルタップで開く</label>
+      <label class="sw"><input type="checkbox" ${LINK_SEL_MODE?'checked':''} onchange="toggleLinkSelMode()"> ☑️ まとめて選択</label>
+      ${LINK_SEL_MODE?`<span class="sub">選択中: ${LINK_SEL.size}件</span>
+        <button class="btn ghost sm" onclick="bulkRename()">✏️ タイトル変更</button>
+        <button class="btn ghost sm" onclick="bulkAddToStores()">＋店舗に一括追加</button>
+        <button class="btn ghost sm" onclick="bulkToggleOff()">⏻ オン/オフ</button>
+        <button class="btn ghost sm" onclick="bulkDelete()">🗑️ 削除</button>
+        <button class="btn ghost sm" onclick="clearLkSel()">選択解除</button>`:''}
+    </div>`;
   const personalItems = PLINKS.length
     ? `<div style="display:flex;flex-wrap:wrap;align-items:center">${PLINKS.map(linkChip).join('')}</div>`
     : '<p class="sub">まだありません。「＋追加」から自分用のリンクを登録できます。</p>';
@@ -2991,6 +3110,7 @@ function renderLinks(){
         <button class="${LINK_TAB==='shared'?'on':''}" onclick="setLinkTab('shared')">👥 共有管理</button>
         <button class="${LINK_TAB==='personal'?'on':''}" onclick="setLinkTab('personal')">🙋 個人管理</button>
       </div>
+      ${toolbar}
     </div>
     ${LINK_TAB==='shared'?sharedView:personalView}`;
 }
