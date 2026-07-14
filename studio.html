@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>MEO投稿 統合ツール</title>
+<style>
+  :root { --ink:#0f172a; --line:#e2e8f0; --muted:#64748b; --bg:#f1f5f9; --brand:#0f172a; --ok:#059669; --warn:#d97706; --ng:#dc2626; --blue:#2563eb; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
+  .wrap { max-width:720px; margin:0 auto; padding:14px 14px 96px; }
+  h1 { font-size:19px; margin:6px 0 2px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  .sub { color:var(--muted); font-size:12px; margin:0 0 14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:15px; margin-bottom:12px; }
+  label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:5px; }
+  input, select, textarea { width:100%; border:1px solid #cbd5e1; border-radius:10px; padding:11px 12px; font-size:15px; font-family:inherit; background:#fff; }
+  textarea { min-height:120px; line-height:1.7; resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .mt { margin-top:12px; }
+  .seg { display:grid; grid-auto-flow:column; gap:4px; background:#e2e8f0; border-radius:12px; padding:4px; }
+  .seg button { border:0; background:transparent; padding:9px; border-radius:9px; font-size:14px; font-weight:600; color:var(--muted); cursor:pointer; }
+  .seg button.on { background:#fff; color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .btn { border:0; border-radius:13px; padding:14px; font-size:15px; font-weight:700; cursor:pointer; width:100%; }
+  .btn-primary { background:var(--brand); color:#fff; }
+  .btn-primary:disabled { opacity:.4; }
+  .btn-ghost { background:#fff; border:1px solid #cbd5e1; color:var(--ink); }
+  .btn-blue { background:var(--blue); color:#fff; }
+  .btn-row { display:flex; gap:10px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chip { font-size:11px; border-radius:999px; padding:3px 9px; }
+  .chip.ok { background:#d1fae5; color:#065f46; }
+  .chip.warn { background:#fef3c7; color:#92400e; }
+  .chip.ng { background:#fee2e2; color:#991b1b; font-weight:700; }
+  .ngbox { font-size:12px; color:var(--ng); background:#fef2f2; border-radius:8px; padding:8px; margin-top:6px; }
+  .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  .note { font-size:12px; color:#1e40af; background:#eff6ff; border-radius:10px; padding:10px 12px; margin-top:10px; line-height:1.7; }
+  .err { color:var(--ng); font-size:13px; white-space:pre-wrap; background:#fef2f2; border-radius:10px; padding:10px; margin-top:10px; }
+  .nav { position:fixed; left:0; right:0; bottom:0; z-index:40; background:rgba(255,255,255,.97); backdrop-filter:blur(8px); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+  .nav-in { max-width:720px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); }
+  .nav button { border:0; background:transparent; padding:9px 0; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--muted); cursor:pointer; }
+  .nav button.on { color:var(--ink); font-weight:700; }
+  .nav .ic { font-size:19px; line-height:1; }
+  .listitem { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:12px 0; border-bottom:1px solid #f1f5f9; }
+  .listitem:last-child { border-bottom:0; }
+  .pill { font-size:10px; border-radius:999px; padding:2px 8px; background:#e2e8f0; color:#475569; white-space:nowrap; }
+  .linkbtn { display:flex; align-items:center; gap:10px; padding:13px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; text-decoration:none; color:var(--ink); font-size:14px; font-weight:600; margin-bottom:8px; }
+  .linkbtn .ic { font-size:18px; }
+  .linkbtn .arr { margin-left:auto; color:#cbd5e1; }
+  .gallery { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:320px; overflow-y:auto; }
+  .gitem { border:2px solid transparent; border-radius:10px; overflow:hidden; cursor:pointer; background:#f8fafc; }
+  .gitem.sel { border-color:var(--blue); }
+  .gitem img { width:100%; aspect-ratio:1; object-fit:cover; display:block; }
+  .gitem .cap { font-size:9px; padding:3px 4px; word-break:break-all; line-height:1.3; color:#475569; }
+  .step { display:flex; gap:5px; margin-bottom:14px; }
+  .step > div { flex:1; }
+  .step .bar { height:5px; border-radius:99px; background:#cbd5e1; }
+  .step .bar.on { background:var(--brand); }
+  .step .lb { font-size:9px; text-align:center; margin-top:3px; color:var(--muted); }
+  .step .lb.on { color:var(--ink); font-weight:700; }
+  .storename { font-weight:700; font-size:14px; margin-bottom:8px; }
+  .copybox { position:relative; }
+  .small { font-size:12px; }
+  .muted { color:var(--muted); }
+  .badge-done { background:#d1fae5; color:#065f46; }
+  details summary { font-size:13px; color:var(--muted); cursor:pointer; margin-top:8px; }
+  .fbstatus { font-size:11px; color:var(--muted); }
+  .center { text-align:center; }
+  .toast { position:fixed; left:50%; bottom:80px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 18px; border-radius:999px; font-size:13px; z-index:60; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ============ ホーム ============ -->
+  <section data-view="home">
+    <h1>MEO投稿 統合ツール</h1>
+    <p class="sub">スケジュール → 指示文 → 貼り付け → CSV → 投稿 まで1画面で</p>
+
+    <div class="card">
+      <h2>🔗 リンク集</h2>
+      <div id="linkList"></div>
+      <div class="fbstatus" id="fbLinkStatus">サムネイルツールのチーム共有リンクを読み込み中…</div>
+    </div>
+
+    <div class="card">
+      <h2>📅 近日の投稿予定</h2>
+      <div id="homeSchedule"></div>
+    </div>
+
+    <button class="btn btn-primary" onclick="go('create')">✍️ 投稿を作る</button>
+  </section>
+
+  <!-- ============ スケジュール ============ -->
+  <section data-view="schedule" hidden>
+    <h1>スケジュール</h1>
+    <p class="sub">タイトルと投稿予定日を管理。手入力で追加・編集できます</p>
+    <button class="btn btn-primary" onclick="openSchedEdit()">＋ 予定を追加</button>
+    <div class="card mt" id="schedList"></div>
+    <details>
+      <summary>まとめて貼り付けで取り込む</summary>
+      <div class="mt">
+        <p class="hint">1行1件「投稿予定日[タブ or カンマ]タイトル」で貼り付け（例：2026/07/13,深呼吸と自律神経）</p>
+        <textarea id="schedBulk" placeholder="2026/07/13, 深呼吸と自律神経&#10;2026/07/16, 夏バテと胃腸の疲れ"></textarea>
+        <button class="btn btn-ghost mt" onclick="importSchedBulk()">取り込む</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============ 作成 ============ -->
+  <section data-view="create" hidden>
+    <div class="step" id="stepBar"></div>
+    <div id="createBody"></div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section data-view="settings" hidden>
+    <h1>設定</h1>
+    <div class="card">
+      <h2>🔗 リンクを追加（この端末に保存）</h2>
+      <label>表示名</label>
+      <input id="myLinkName" placeholder="例：GMO MEOツール（アップロード）">
+      <label class="mt">URL</label>
+      <input id="myLinkUrl" placeholder="https://...">
+      <button class="btn btn-ghost mt" onclick="addMyLink()">追加</button>
+      <div id="myLinkList" class="mt"></div>
+      <p class="hint">※サムネイルツールのチーム共有リンクは自動で表示されます。ここは自分用の追加分です</p>
+    </div>
+    <div class="card">
+      <h2>データ</h2>
+      <button class="btn btn-ghost" onclick="exportBackup()">📥 全データをバックアップ保存</button>
+      <label class="mt">復元（バックアップJSONを選択）</label>
+      <input type="file" id="restoreFile" accept=".json" onchange="importBackup(this.files[0])">
+    </div>
+    <p class="sub center">MEO投稿 統合ツール v1 ／ ログイン不要・データはこの端末に保存</p>
+  </section>
+</div>
+
+<!-- スケジュール編集モーダル -->
+<div id="schedModal" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
+    <h2 id="schedModalTitle">予定を追加</h2>
+    <label>タイトル（テーマ）</label>
+    <input id="sm_title" placeholder="例：深呼吸と自律神経">
+    <div class="row mt">
+      <div><label>投稿予定日</label><input type="date" id="sm_date"></div>
+      <div><label>投稿時間</label><input type="time" id="sm_time"></div>
+    </div>
+    <div class="row mt">
+      <div>
+        <label>A/B区分</label>
+        <select id="sm_ab"><option value="A">A メイン</option><option value="B">B サブ</option></select>
+        <p class="hint">A=金曜16:00 / B=月曜7:00 が既定</p>
+      </div>
+      <div>
+        <label>投稿タイプ</label>
+        <select id="sm_postType"><option>最新情報</option><option>イベント</option><option>クーポン</option></select>
+      </div>
+    </div>
+    <label class="mt">タイミング</label>
+    <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
+    <label class="mt">キーワード（症状・訴求KW／指示文に反映）</label>
+    <input id="sm_kw" placeholder="例：肩こり・首こり・手足の冷え">
+    <label class="mt">画像メモ（サムネの場面イメージ）</label>
+    <input id="sm_imgmemo" placeholder="例：冷房の中でカーディガンを羽織る女性→リラックス">
+    <label class="mt">対象</label>
+    <div class="seg" id="sm_scope">
+      <button data-scope="category_common" class="on">カテゴリ共通</button>
+      <button data-scope="per_store">店舗別</button>
+    </div>
+    <div id="sm_storeWrap" style="display:none;" class="mt">
+      <label>対象店舗</label>
+      <div id="sm_stores" style="max-height:200px; overflow-y:auto; border:1px solid var(--line); border-radius:10px; padding:8px;"></div>
+    </div>
+    <div class="btn-row mt">
+      <button class="btn btn-ghost" onclick="closeSchedEdit()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveSchedEdit()">保存</button>
+    </div>
+    <button class="btn btn-ghost mt" id="sm_delete" onclick="deleteSched()" style="color:var(--ng); border-color:#fecaca;">この予定を削除</button>
+  </div>
+</div>
+
+<!-- 画像プロンプト生成モーダル -->
+<div id="imgModal" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:92dvh; overflow-y:auto; padding:18px;">
+    <h2>🎨 サムネイル画像プロンプト（ChatGPT用）</h2>
+    <p class="hint" style="margin-top:0;">下の項目を確認して「コピー」→ ChatGPTに貼るだけで画像が作れます</p>
+    <label class="mt">シーン</label>
+    <textarea id="im_scene" style="min-height:64px;" oninput="buildImgPrompt()"></textarea>
+    <label class="mt">人物</label>
+    <textarea id="im_person" style="min-height:64px;" oninput="buildImgPrompt()"></textarea>
+    <label class="mt">タイトル（画像に入れる文字）</label>
+    <input id="im_title" oninput="buildImgPrompt()">
+    <div class="row mt">
+      <div>
+        <label>季節</label>
+        <select id="im_season" onchange="buildImgPrompt()"><option>春</option><option>夏</option><option>秋</option><option>冬</option></select>
+      </div>
+      <div>
+        <label>家族を登場させる</label>
+        <select id="im_family" onchange="applyFamily()"><option value="no">女性1人（基本）</option><option value="yes">3人家族</option></select>
+      </div>
+    </div>
+    <label class="mt">雰囲気</label>
+    <input id="im_mood" value="明るい・爽やか・安心感・自然・健康的" oninput="buildImgPrompt()">
+    <label class="mt">できあがったプロンプト</label>
+    <textarea id="im_output" readonly style="min-height:140px; font-size:12px; background:#f8fafc;"></textarea>
+    <div class="btn-row mt">
+      <button class="btn btn-blue" onclick="copyText('im_output')">📋 全文コピー（ChatGPTへ）</button>
+    </div>
+    <button class="btn btn-ghost mt" onclick="copyImgInputOnly()">入力部分だけコピー（ルール登録済みのGPT用）</button>
+    <button class="btn btn-ghost mt" onclick="document.getElementById('imgModal').style.display='none'">閉じる</button>
+  </div>
+</div>
+
+<!-- 下部ナビ -->
+<nav class="nav">
+  <div class="nav-in">
+    <button data-tab="home" class="on" onclick="go('home')"><span class="ic">🏠</span>ホーム</button>
+    <button data-tab="schedule" onclick="go('schedule')"><span class="ic">📅</span>予定</button>
+    <button data-tab="create" onclick="go('create')"><span class="ic">✍️</span>作成</button>
+    <button data-tab="settings" onclick="go('settings')"><span class="ic">⚙️</span>設定</button>
+  </div>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ===== サムネイルツールと同一のFirebase（既存の本番プロジェクトを共有） =====
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBPIHl3RIZD4YA1RGdYJ4f_4E5PyPORw8E",
+  authDomain: "thumbnail-tool-e3de6.firebaseapp.com",
+  projectId: "thumbnail-tool-e3de6",
+  storageBucket: "thumbnail-tool-e3de6.firebasestorage.app",
+  messagingSenderId: "584050933013",
+  appId: "1:584050933013:web:16fa831f62facd8249bd1c"
+};
+const APP_ID = "asaba-thumbnail";
+const basePath = (name) => ['artifacts', APP_ID, 'public', 'data', name];
+
+window.__gallery = [];
+window.__teamLinks = [];
+
+try {
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+  await signInAnonymously(auth);
+  // ギャラリー画像
+  onSnapshot(collection(db, ...basePath('shared_thumbnails')), (s) => {
+    const arr = [];
+    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, folderName:v.folderName||'', titleText:v.titleText||'', imageUrl:v.imageUrl||'', createdAt:v.createdAt||0 }); });
+    arr.sort((a,b)=> b.createdAt - a.createdAt);
+    window.__gallery = arr;
+    window.dispatchEvent(new Event('gallery-ready'));
+  }, (e)=>{ console.warn('gallery read error', e); window.dispatchEvent(new CustomEvent('gallery-error',{detail:e.message})); });
+  // チーム共有リンク
+  onSnapshot(collection(db, ...basePath('links')), (s) => {
+    const arr = [];
+    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, name:v.name||'', url:v.url||'', createdAt:v.createdAt||0 }); });
+    arr.sort((a,b)=> b.createdAt - a.createdAt);
+    window.__teamLinks = arr;
+    window.dispatchEvent(new Event('links-ready'));
+  }, (e)=>{ console.warn('links read error', e); window.dispatchEvent(new CustomEvent('links-error',{detail:e.message})); });
+} catch (e) {
+  console.warn('Firebase init failed', e);
+  window.dispatchEvent(new CustomEvent('links-error',{detail:e.message}));
+  window.dispatchEvent(new CustomEvent('gallery-error',{detail:e.message}));
+}
+</script>
+
+<script>
+// ============ 16店舗 ============
+const STORES = [
+  {gmo:"117528",name:"あさば整骨院_江戸川台店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"無料託児×62種検査法",area:"江戸川台",url:"https://line-scenario-builder.vercel.app/t/m7v98hof"},
+  {gmo:"117413",name:"あさば整骨院_南流山店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"駅近×駐車場×通いやすさ",area:"南流山",url:"https://line-scenario-builder.vercel.app/t/EWlINgOJ"},
+  {gmo:"117411",name:"あさば整骨院_柏の葉店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"Peace併設×KOIL立地",area:"柏の葉",url:"https://line-scenario-builder.vercel.app/t/SI1mfLlP"},
+  {gmo:"117529",name:"あさば整骨院_新松戸店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"新松戸駅徒歩7分・地域密着",area:"新松戸",url:"https://line-scenario-builder.vercel.app/t/pzJc8How"},
+  {gmo:"117530",name:"あさば整骨院_八潮店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"神経整体×鍼灸複合",area:"八潮",url:"https://line-scenario-builder.vercel.app/t/tUo1DUFc"},
+  {gmo:"117533",name:"あさば整体院_三郷中央",cat:"seitai_seikotsu",gyotai:"整体院",usp:"AI分析×整形外科医監修",area:"三郷中央",url:"https://line-scenario-builder.vercel.app/t/hOp1epHj"},
+  {gmo:"117532",name:"あさば整体院_三ノ輪店",cat:"seitai_seikotsu",gyotai:"整体院",usp:"通勤帰り×完全予約制個室",area:"三ノ輪",url:"https://line-scenario-builder.vercel.app/t/qqD90RQ7"},
+  {gmo:"117534",name:"あさば整体院_守谷店",cat:"seitai_seikotsu",gyotai:"整体院",usp:"駐車場5台完備",area:"守谷",url:"https://line-scenario-builder.vercel.app/t/MCfvjLZX"},
+  {gmo:"117531",name:"あさば整体院_我孫子店",cat:"seitai_seikotsu",gyotai:"整体院",usp:"卒業型×セルフケア指導",area:"我孫子",url:"https://line-scenario-builder.vercel.app/t/EeyLGgiW"},
+  {gmo:"117600",name:"マシンピラティスPeace 柏の葉店",cat:"pilates",gyotai:"ピラティス",usp:"整骨院一体×医療系スタジオ",area:"柏の葉",url:"https://line-scenario-builder.vercel.app/t/sfXD4DVw"},
+  {gmo:"117599",name:"マシンピラティスPeace 南流山店",cat:"pilates",gyotai:"ピラティス",usp:"通いやすさ×無料託児",area:"南流山",url:"https://line-scenario-builder.vercel.app/t/WSMtQqyp"},
+  {gmo:"117601",name:"マシンピラティスPeace 八潮店",cat:"pilates",gyotai:"ピラティス",usp:"女性専用×栄養カウンセリング",area:"八潮",url:"https://line-scenario-builder.vercel.app/t/fkgcu1GW"},
+  {gmo:"117595",name:"マシンピラティスPeace 三郷中央店",cat:"pilates",gyotai:"ピラティス",usp:"個別指導×駐車場完備",area:"三郷中央",url:"https://line-scenario-builder.vercel.app/t/liCxjkPu"},
+  {gmo:"117537",name:"マシンピラティスPeace 我孫子店",cat:"pilates",gyotai:"ピラティス",usp:"外見・自己肯定感訴求",area:"我孫子",url:"https://line-scenario-builder.vercel.app/t/J42Hfri1"},
+  {gmo:"117597",name:"マシンピラティスPeace 守谷店",cat:"pilates",gyotai:"ピラティス",usp:"駐車場5台完備",area:"守谷",url:"https://line-scenario-builder.vercel.app/t/GpbcAahC"},
+  {gmo:"117598",name:"マシンピラティス Peace 新松戸店",cat:"pilates",gyotai:"ピラティス",usp:"整骨院併設スタジオ",area:"新松戸",url:"https://line-scenario-builder.vercel.app/t/GmX3WUGw"},
+];
+const CAT_LABEL = { seitai_seikotsu:"整体整骨グループ", pilates:"マシンピラティス（Peace）" };
+const storeByName = (name) => STORES.find(s => s.name === name) || STORES.find(s => name && (name.includes(s.name) || s.name.includes(name)));
+
+// ============ NGワード ============
+const NG = [["治す","整える"],["治る","変わる"],["治療","施術・アプローチ"],["完治","卒業"],["根治","根本にアプローチ"],["改善する","整えていく"],["改善します","サポートします"],["効きます","働きかけます"],["必ず","（削除）"],["絶対に良くなる","（削除）"],["診断","チェック・分析"],["医学的効果","（削除）"]];
+
+// ============ 48列ヘッダー ============
+const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","掲載期間の設定（Yahoo!記載欄）の予約投稿日","掲載期間の設定（Yahoo!記載欄）の予約投稿時間","掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
+const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:23,CONTENT:24,IMAGE:26,BTYPE:30,BURL:31 };
+
+// ============ 生成ルール（§8） ============
+const RULES = `【文体・トーン】
+・結論を冒頭に出さない。「だからこそ」を多用しない。
+・「〜んです／〜なんです／〜ないんです」は使わない。
+・横棒（——／ーー／──）で間を表現しない。間・余韻はその一文を『』で囲む。
+・です・ます調ベース＋時々くだけた表現（〜ですよね／〜ってありませんか）。共感優先・温かめ。段落は短く。
+・冒頭の入り口は毎回変える（悩みの状況描写／季節の情景／問いかけ／共感のひと言／意外な気づき）。
+
+【法令（薬機法・あはき法）】効果の断定はNG。
+・「治す・治療・改善する・完治・根治・必ず・診断・医学的効果」等は使わない。
+・言い換え例：整える／アプローチする／サポートする／働きかける／変わる。
+・セルフケア提案は「体の使い方・日常習慣」の範囲に留める。
+
+【業態別の言葉（混同しない）】
+・整骨院＝骨格・骨盤矯正、AI姿勢分析、国家資格、整形外科医療連携
+・整体院＝体のバランス、卒業型セルフケア、体の使い方の指導
+・Peace（ピラティス）＝インナーマッスル、体幹、呼吸、マシンピラティスで習慣化
+
+【構成・分量】
+・①悩みの状況描写 ②なぜ起きるかの視点 ③今日からのセルフケア1つ ④業態別ベネフィット ⑤店舗の強みをさりげなく ⑥来院ハードルを下げる情報 ⑦自然なCTA
+・各250〜400字。絵文字は1投稿2〜3個。
+・「初めての方には特別価格の初回体験あり」の趣旨を毎回自然に織り込む（末尾に唐突はNG）。
+・CTAは毎回パターンを変える。電話番号（数字）は本文に書かない。LINE予約を主軸の導線にする。
+・地名は文脈に自然に。共通投稿は無理に入れない/代表数店に留める。`;
+
+// ============ 状態 ============
+const LS = { sched:"meo_studio_schedule", mylinks:"meo_studio_mylinks", draft:"meo_studio_draft", seed:"meo_studio_seed_v1" };
+let schedule = load(LS.sched, []);
+let myLinks = load(LS.mylinks, []);
+
+// ===== 年間スケジュール初期データ（2026年7〜8月）=====
+// 8月はA=金曜16:00 / B=月曜7:00 に割り当て（7月の実績パターンに準拠）
+const SEED_SCHED = [
+  { date:"2026-07-17", time:"16:00", abType:"A", title:"夏の冷房冷え・肩こり", kw:"肩こり・首こり・手足の冷え・冷房・内外温度差", imageMemo:"冷房の中でカーディガンを羽織る女性→リラックスした表情" },
+  { date:"2026-07-21", time:"07:00", abType:"B", title:"夕方の過ごし方の話", kw:"夕方ルーティン・疲労回復・体のリセット・夜の準備", imageMemo:"夕方・肩を回してほっとする女性" },
+  { date:"2026-07-24", time:"16:00", abType:"A", title:"お盆前の疲れ・スポーツ", kw:"筋肉疲労・腰痛・打撲・体のリセット・夏の蓄積疲労", imageMemo:"夏のアウトドア後・芝生で足を伸ばしてほっとする女性" },
+  { date:"2026-07-27", time:"07:00", abType:"B", title:"左右差と体のバランスの話", kw:"左右差・体のゆがみ・バランス・日常習慣", imageMemo:"鏡の前で姿勢を確認する女性・気づきの表情" },
+  { date:"2026-08-03", time:"07:00", abType:"B", title:"体の回復力の話", kw:"回復力・疲労・睡眠・栄養・自律神経", imageMemo:"朝・すっきり目覚めた女性" },
+  { date:"2026-08-07", time:"16:00", abType:"A", title:"お盆明け・夏疲れ", kw:"全身の倦怠感・肩こり・むくみ・夏の蓄積・秋への準備", imageMemo:"お盆後・リフレッシュした表情の女性" },
+  { date:"2026-08-10", time:"07:00", abType:"B", title:"姿勢と気分の関係の話", kw:"姿勢・気分・メンタル・自己肯定感・立ち方", imageMemo:"背筋を伸ばして清々しい表情の女性" },
+  { date:"2026-08-14", time:"16:00", abType:"A", title:"紫外線・冷房ダブルダメージ", kw:"肌の疲れ・頭痛・冷え・インナーケア・夏特有のダメージ", imageMemo:"日差しと冷房の両方にさらされた女性→ケア後に安堵" },
+  { date:"2026-08-17", time:"07:00", abType:"B", title:"体のサインを読む話", kw:"体のサイン・疲労サイン・セルフチェック・気づき", imageMemo:"鏡を見て体の状態に気づく女性" },
+  { date:"2026-08-21", time:"16:00", abType:"A", title:"夏の睡眠不足", kw:"不眠・自律神経の乱れ・集中力低下・睡眠の質・夏の夜", imageMemo:"寝苦しい夜→ぐっすり眠れた朝の女性" },
+  { date:"2026-08-24", time:"07:00", abType:"B", title:"継続の話", kw:"継続・習慣・モチベーション・小さな一歩", imageMemo:"ノートに目標を書く女性・前向きな表情" },
+  { date:"2026-08-28", time:"16:00", abType:"A", title:"スポーツ・夏祭り疲れ", kw:"足腰の疲れ・筋肉痛・捻挫予防・体力回復・夏のダメージ", imageMemo:"夏祭り後・足を伸ばしてほっとしている女性" },
+];
+if(!load(LS.seed, false)){
+  SEED_SCHED.forEach(s=> schedule.push({ id:uid(), postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], done:false, ...s }));
+  save(LS.sched, schedule); save(LS.seed, true);
+}
+function load(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch(e){ return def; } }
+function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1600); }
+
+// ============ ナビ ============
+function go(view){
+  document.querySelectorAll("[data-view]").forEach(s=> s.hidden = s.dataset.view!==view);
+  document.querySelectorAll(".nav button").forEach(b=> b.classList.toggle("on", b.dataset.tab===view));
+  window.scrollTo(0,0);
+  if(view==="home"){ renderLinks(); renderHomeSchedule(); }
+  if(view==="schedule") renderSchedList();
+  if(view==="create") renderCreate();
+  if(view==="settings") renderMyLinks();
+}
+window.go = go;
+
+// ============ リンク集（Firebase team links + 自分の追加分 + 既定） ============
+const BUILTIN_LINKS = [
+  {name:"🖼️ サムネイル合成ツール", url:"../thumbnail/"},
+];
+function renderLinks(){
+  const box = document.getElementById("linkList");
+  const team = window.__teamLinks || [];
+  const all = [...team.map(l=>({name:l.name, url:l.url})), ...myLinks, ...BUILTIN_LINKS]
+    .filter(l=>l.url);
+  box.innerHTML = all.length ? all.map(l=>`
+    <a class="linkbtn" href="${esc(l.url)}" target="_blank" rel="noopener">
+      <span class="ic">🔗</span><span>${esc(l.name||l.url)}</span><span class="arr">›</span>
+    </a>`).join("") : `<p class="hint">リンクはまだありません。設定タブから追加できます。</p>`;
+}
+window.addEventListener("links-ready", ()=>{ document.getElementById("fbLinkStatus").textContent=""; renderLinks(); });
+window.addEventListener("links-error", (e)=>{ document.getElementById("fbLinkStatus").textContent="共有リンクの読み込みに失敗（設定タブから自分用リンクを追加できます）"; renderLinks(); });
+
+function renderMyLinks(){
+  const box = document.getElementById("myLinkList");
+  box.innerHTML = myLinks.length ? myLinks.map((l,i)=>`
+    <div class="listitem"><div class="small"><b>${esc(l.name)}</b><br><span class="muted">${esc(l.url)}</span></div>
+    <button class="pill" onclick="delMyLink(${i})">削除</button></div>`).join("") : `<p class="hint">まだありません</p>`;
+}
+window.addMyLink = ()=>{
+  const name = document.getElementById("myLinkName").value.trim();
+  const url = document.getElementById("myLinkUrl").value.trim();
+  if(!name || !url) return toast("表示名とURLを入力してください");
+  myLinks.push({name,url}); save(LS.mylinks,myLinks);
+  document.getElementById("myLinkName").value=""; document.getElementById("myLinkUrl").value="";
+  renderMyLinks(); toast("追加しました");
+};
+window.delMyLink = (i)=>{ myLinks.splice(i,1); save(LS.mylinks,myLinks); renderMyLinks(); };
+
+// ============ スケジュール ============
+function fmtJp(d){ return d ? d.replace(/-/g,"/") : "（日付未定）"; }
+function scopeLabel(s){ return s.scope==="per_store" ? `店舗別(${(s.storeIds||[]).length})` : "カテゴリ共通"; }
+function sortedSched(){ return [...schedule].sort((a,b)=> (a.date||"9999").localeCompare(b.date||"9999")); }
+
+function abBadge(s){ return s.abType ? `<span class="pill" style="background:${s.abType==="A"?"#dbeafe":"#fce7f3"}; color:${s.abType==="A"?"#1d4ed8":"#be185d"};">${s.abType}</span> ` : ""; }
+function dowJp(date){ if(!date) return ""; const d=new Date(date+"T00:00:00"); return ["日","月","火","水","木","金","土"][d.getDay()]; }
+function schedWhen(s){ return `${fmtJp(s.date)}${s.date?`(${dowJp(s.date)})`:""} ${s.time||""}`; }
+
+function renderHomeSchedule(){
+  const box = document.getElementById("homeSchedule");
+  const today = new Date().toISOString().slice(0,10);
+  const up = sortedSched().filter(s=> !s.done && (!s.date || s.date>=today)).slice(0,5);
+  box.innerHTML = up.length ? up.map(s=>`
+    <div class="listitem">
+      <div>${abBadge(s)}<b class="small">${esc(s.title)}</b><br><span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
+      <div style="display:flex; gap:6px;">
+        <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
+        <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
+      </div>
+    </div>`).join("") : `<p class="hint">予定がありません。予定タブから追加、または「投稿を作る」で今すぐ作成できます。</p>`;
+}
+function renderSchedList(){
+  const box = document.getElementById("schedList");
+  const list = sortedSched();
+  box.innerHTML = list.length ? list.map(s=>`
+    <div class="listitem">
+      <div>${abBadge(s)}<b class="small">${esc(s.title)}</b> ${s.done?'<span class="pill badge-done">出力済</span>':''}<br>
+      <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+        <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
+        <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
+        <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
+      </div>
+    </div>`).join("") : `<p class="hint">まだ予定がありません</p>`;
+}
+
+let editingSchedId = null;
+const defaultTime = (ab)=> ab==="B" ? "07:00" : "16:00"; // A=金曜16:00 / B=月曜7:00
+window.openSchedEdit = (id)=>{
+  editingSchedId = id || null;
+  const s = id ? schedule.find(x=>x.id===id) : null;
+  document.getElementById("schedModalTitle").textContent = s ? "予定を編集" : "予定を追加";
+  document.getElementById("sm_title").value = s?.title || "";
+  document.getElementById("sm_date").value = s?.date || "";
+  document.getElementById("sm_ab").value = s?.abType || "A";
+  document.getElementById("sm_time").value = s?.time || defaultTime(s?.abType || "A");
+  document.getElementById("sm_kw").value = s?.kw || "";
+  document.getElementById("sm_imgmemo").value = s?.imageMemo || "";
+  document.getElementById("sm_postType").value = s?.postType || "最新情報";
+  document.getElementById("sm_timing").value = s?.timing || "scheduled";
+  const scope = s?.scope || "category_common";
+  document.querySelectorAll("#sm_scope button").forEach(b=> b.classList.toggle("on", b.dataset.scope===scope));
+  document.getElementById("sm_storeWrap").style.display = scope==="per_store" ? "block" : "none";
+  renderSmStores(s?.storeIds || []);
+  document.getElementById("sm_delete").style.display = s ? "block" : "none";
+  document.getElementById("schedModal").style.display = "flex";
+};
+// A/B切替時、時間が既定のままなら連動して切替
+document.getElementById("sm_ab").addEventListener("change", (e)=>{
+  const t = document.getElementById("sm_time");
+  if(t.value==="07:00" || t.value==="16:00" || !t.value) t.value = defaultTime(e.target.value);
+});
+window.closeSchedEdit = ()=> document.getElementById("schedModal").style.display="none";
+function renderSmStores(selected){
+  document.getElementById("sm_stores").innerHTML = STORES.map(s=>`
+    <label style="display:flex; gap:8px; align-items:center; padding:4px 0; font-weight:400;">
+      <input type="checkbox" value="${s.gmo}" ${selected.includes(s.gmo)?"checked":""}> <span class="small">${esc(s.name)}</span>
+    </label>`).join("");
+}
+document.getElementById("sm_scope").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#sm_scope button").forEach(x=> x.classList.toggle("on", x===b));
+  document.getElementById("sm_storeWrap").style.display = b.dataset.scope==="per_store" ? "block" : "none";
+});
+window.saveSchedEdit = ()=>{
+  const title = document.getElementById("sm_title").value.trim();
+  if(!title) return toast("タイトルを入力してください");
+  const scope = document.querySelector("#sm_scope button.on").dataset.scope;
+  const storeIds = [...document.querySelectorAll("#sm_stores input:checked")].map(i=>i.value);
+  const ab = document.getElementById("sm_ab").value;
+  const rec = {
+    id: editingSchedId || uid(),
+    title, date: document.getElementById("sm_date").value,
+    time: document.getElementById("sm_time").value || defaultTime(ab),
+    abType: ab,
+    kw: document.getElementById("sm_kw").value.trim(),
+    imageMemo: document.getElementById("sm_imgmemo").value.trim(),
+    postType: document.getElementById("sm_postType").value,
+    timing: document.getElementById("sm_timing").value,
+    scope, storeIds, done:false,
+  };
+  if(editingSchedId){ const i=schedule.findIndex(x=>x.id===editingSchedId); schedule[i]={...schedule[i],...rec}; }
+  else schedule.push(rec);
+  save(LS.sched, schedule); closeSchedEdit(); renderSchedList(); toast("保存しました");
+};
+window.deleteSched = ()=>{
+  if(!editingSchedId) return;
+  if(!confirm("この予定を削除しますか？")) return;
+  schedule = schedule.filter(x=>x.id!==editingSchedId); save(LS.sched,schedule);
+  closeSchedEdit(); renderSchedList();
+};
+window.importSchedBulk = ()=>{
+  const raw = document.getElementById("schedBulk").value.trim();
+  if(!raw) return;
+  let n=0;
+  raw.split(/\r?\n/).forEach(line=>{
+    const parts = line.split(/[\t,、]/).map(x=>x.trim()).filter(Boolean);
+    if(parts.length<2) return;
+    let date = parts[0].replace(/\//g,"-");
+    const m = date.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(m) date = `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+    schedule.push({ id:uid(), title:parts.slice(1).join(" "), date, postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], done:false });
+    n++;
+  });
+  save(LS.sched,schedule); document.getElementById("schedBulk").value=""; renderSchedList();
+  toast(`${n}件を取り込みました`);
+};
+
+// ============ 作成フロー ============
+const STEPS = ["対象","指示文","貼付け","画像","出力"];
+const cur = {};
+function setCur(o){ for(const k in cur) delete cur[k]; Object.assign(cur, o); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, title:"", date:"", time:"16:00", abType:"A", kw:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, imagePrompt:"", imageTitle:"" }, over||{})); }
+freshCur();
+
+window.startFromSched = (id)=>{
+  const s = schedule.find(x=>x.id===id); if(!s) return;
+  freshCur({ schedId:id, title:s.title, date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
+             kw:s.kw||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", timing:s.timing||"scheduled",
+             scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice() });
+  go("create");
+};
+function targets(){
+  return cur.scope==="category_common"
+    ? [{key:"seitai_seikotsu",label:CAT_LABEL.seitai_seikotsu+" 共通"},{key:"pilates",label:CAT_LABEL.pilates+" 共通"}]
+    : STORES.filter(s=> cur.storeIds.includes(s.gmo)).map(s=>({key:s.gmo,label:s.name}));
+}
+function renderStepBar(){
+  document.getElementById("stepBar").innerHTML = STEPS.map((l,i)=>`
+    <div><div class="bar ${i<=cur.step?'on':''}"></div><div class="lb ${i===cur.step?'on':''}">${l}</div></div>`).join("");
+}
+function renderCreate(){
+  renderStepBar();
+  const b = document.getElementById("createBody");
+  if(cur.step===0) b.innerHTML = viewTarget();
+  else if(cur.step===1) b.innerHTML = viewInstruction();
+  else if(cur.step===2) b.innerHTML = viewPaste();
+  else if(cur.step===3) { b.innerHTML = viewImage(); renderGallery(); }
+  else if(cur.step===4) b.innerHTML = viewExport();
+  bindCreate();
+}
+function nav(back, next, nextLabel, nextDisabled){
+  return `<div class="btn-row mt">
+    ${back!==null?`<button class="btn btn-ghost" onclick="setStep(${back})">← 戻る</button>`:""}
+    ${next!==null?`<button class="btn btn-primary" id="nextBtn" ${nextDisabled?"disabled":""} onclick="setStep(${next})">${nextLabel||"次へ →"}</button>`:""}
+  </div>`;
+}
+window.setStep = (n)=>{ cur.step=n; renderCreate(); window.scrollTo(0,0); };
+
+// --- Step0: 対象 ---
+function viewTarget(){
+  return `<h1>1. 対象を決める</h1>
+  <div class="card">
+    <label>タイトル（テーマ）</label>
+    <input id="c_title" value="${esc(cur.title)}" placeholder="例：深呼吸と自律神経">
+    <div class="row mt">
+      <div><label>投稿予定日</label><input type="date" id="c_date" value="${esc(cur.date)}"></div>
+      <div><label>投稿時間</label><input type="time" id="c_time" value="${esc(cur.time||"16:00")}"></div>
+    </div>
+    <div class="row mt">
+      <div><label>投稿タイプ</label><select id="c_postType">${["最新情報","イベント","クーポン"].map(t=>`<option ${cur.postType===t?"selected":""}>${t}</option>`).join("")}</select></div>
+      <div><label>タイミング</label><select id="c_timing"><option value="scheduled" ${cur.timing==="scheduled"?"selected":""}>予約投稿</option><option value="immediate" ${cur.timing==="immediate"?"selected":""}>即時投稿</option></select></div>
+    </div>
+    <label class="mt">キーワード（症状・訴求KW／指示文に反映・任意）</label>
+    <input id="c_kw" value="${esc(cur.kw||"")}" placeholder="例：肩こり・首こり・手足の冷え">
+    <label class="mt">対象</label>
+    <div class="seg" id="c_scope">
+      <button data-scope="category_common" class="${cur.scope==="category_common"?"on":""}">カテゴリ共通</button>
+      <button data-scope="per_store" class="${cur.scope==="per_store"?"on":""}">店舗別</button>
+    </div>
+    <div id="c_storeWrap" style="display:${cur.scope==="per_store"?"block":"none"};" class="mt">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <label style="margin:0;">対象店舗</label>
+        <button class="pill" onclick="allStores()">全選択/解除</button>
+      </div>
+      <div id="c_stores" style="max-height:230px; overflow-y:auto; border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;"></div>
+    </div>
+    <p class="hint">カテゴリ共通＝整体整骨とPeaceで各1本、全16店舗に自動展開。店舗別＝選んだ店舗ごとに1本。</p>
+  </div>
+  ${nav(null, 1, "次へ →")}`;
+}
+window.allStores = ()=>{
+  const all = cur.storeIds.length===STORES.length;
+  cur.storeIds = all ? [] : STORES.map(s=>s.gmo);
+  renderCStores();
+};
+function renderCStores(){
+  const box = document.getElementById("c_stores"); if(!box) return;
+  box.innerHTML = STORES.map(s=>`
+    <label style="display:flex; gap:8px; align-items:center; padding:4px 0; font-weight:400;">
+      <input type="checkbox" value="${s.gmo}" ${cur.storeIds.includes(s.gmo)?"checked":""} onchange="toggleStore('${s.gmo}',this.checked)">
+      <span class="small">${esc(s.name)}</span></label>`).join("");
+}
+window.toggleStore = (gmo,ch)=>{ cur.storeIds = ch ? [...cur.storeIds,gmo] : cur.storeIds.filter(x=>x!==gmo); };
+
+// --- Step1: 指示文 ---
+function buildInstruction(){
+  const tgts = targets();
+  const dateStr = cur.timing==="immediate" ? "即時投稿" : (cur.date?fmtJp(cur.date):"（日付未定）");
+  let fmt = `====タイトル====\n（15字前後の共通タイトル）\n====画像====\n（画像生成プロンプト。形式：「場面・構図15〜25字」「タイトル」＋上の共通タイトル＋「文字はタイトルのみにしてください」）\n`;
+  let targetDesc;
+  if(cur.scope==="category_common"){
+    targetDesc = `カテゴリ共通（整体整骨グループ 共通1本 ＋ マシンピラティスPeace 共通1本）`;
+    fmt += `====整体整骨====\n（整体整骨グループ共通の本文）\n====Peace====\n（Peaceグループ共通の本文）`;
+  } else {
+    targetDesc = `店舗別（下記${tgts.length}店舗をそれぞれ1本ずつ）`;
+    fmt += tgts.map(t=>{ const s=STORES.find(x=>x.gmo===t.key); return `====店舗:${s.name}====\n（${s.gyotai}／${s.usp}／${s.area}を反映した本文）`; }).join("\n");
+  }
+  return `# あさばグループ MEO投稿 作成依頼
+
+## テーマ / 共通タイトルの軸
+${cur.title || "（テーマ未入力）"}${cur.kw ? `
+盛り込みたいキーワード：${cur.kw}` : ""}
+
+## 作成対象
+${targetDesc}
+投稿タイプ：${cur.postType} ／ 投稿予定：${dateStr}
+
+## 厳守ルール
+${RULES}
+
+## 出力フォーマット（この形を厳守。前後に説明文を書かない）
+${fmt}`;
+}
+function viewInstruction(){
+  const text = buildInstruction();
+  cur._instruction = text;
+  return `<h1>2. 指示文をコピー</h1>
+  <div class="card">
+    <p class="small muted">下の指示文をコピーして、スマホのClaude（プロジェクト）に貼り付けてください。返ってきた文章を次のステップで貼り付けます。</p>
+    <textarea id="c_instruction" style="min-height:220px;" readonly>${esc(text)}</textarea>
+    <button class="btn btn-blue mt" onclick="copyText('c_instruction')">📋 指示文をコピー</button>
+  </div>
+  ${nav(0, 2, "貼り付けへ →")}`;
+}
+
+// --- Step2: 貼り付け解析 ---
+function viewPaste(){
+  return `<h1>3. Claudeの返信を貼り付け</h1>
+  <div class="card">
+    <p class="small muted">Claudeの返信を全部コピーして、ここに貼り付けて「流し込む」を押すと、全店舗分に自動で入ります。</p>
+    <textarea id="c_paste" placeholder="ここにClaudeの返信を貼り付け（====タイトル==== … の形式）" style="min-height:200px;">${esc(cur._rawPaste||"")}</textarea>
+    <button class="btn btn-primary mt" onclick="parsePaste()">⬇️ 流し込む</button>
+    <div id="parseResult"></div>
+  </div>
+  ${cur._parsed ? renderPasteEditors() : ""}
+  ${nav(1, cur._parsed?3:null, "画像へ →", !cur._parsed)}`;
+}
+window.parsePaste = ()=>{
+  const raw = document.getElementById("c_paste").value;
+  cur._rawPaste = raw;
+  const res = parseClaude(raw);
+  const box = document.getElementById("parseResult");
+  if(res.error){ box.innerHTML = `<div class="err">${esc(res.error)}</div>`; cur._parsed=false; return; }
+  cur.title = res.title || cur.title;
+  cur.imagePrompt = res.imagePrompt || "";
+  cur.contents = res.contents;
+  cur._parsed = true;
+  const filled = Object.keys(res.contents).length;
+  box.innerHTML = `<div class="note">✅ 取り込み成功：${filled}件の本文を流し込みました。下で内容を確認・編集できます。</div>`;
+  renderCreate();
+};
+function parseClaude(raw){
+  if(!raw || !raw.trim()) return {error:"貼り付けが空です"};
+  const norm = raw.replace(/\r\n/g,"\n");
+  // ==== マーカー ==== で分割
+  const re = /^=+\s*(.+?)\s*=+\s*$/gm;
+  const marks = []; let m;
+  while((m = re.exec(norm))){ marks.push({label:m[1].trim(), start:m.index, end:re.lastIndex}); }
+  if(marks.length===0) return {error:"フォーマットが見つかりません。指示文の形式（====タイトル==== など）のままコピーできているか確認してください。"};
+  const sections = {};
+  for(let i=0;i<marks.length;i++){
+    const body = norm.slice(marks[i].end, i+1<marks.length ? marks[i+1].start : undefined).trim();
+    sections[marks[i].label] = body;
+  }
+  const out = { title:"", imagePrompt:"", contents:{} };
+  for(const [label, body] of Object.entries(sections)){
+    if(/タイトル/.test(label)) out.title = body.split("\n")[0].trim();
+    else if(/画像/.test(label)) out.imagePrompt = body.trim();
+    else if(/整体整骨|整骨|整体(?!.*Peace)/.test(label) && cur.scope==="category_common") out.contents["seitai_seikotsu"] = body;
+    else if(/Peace|ピラティス/.test(label) && cur.scope==="category_common") out.contents["pilates"] = body;
+    else if(/店舗[:：]/.test(label)){
+      const nm = label.replace(/^店舗[:：]/,"").trim();
+      const st = storeByName(nm);
+      if(st) out.contents[st.gmo] = body;
+    }
+  }
+  if(Object.keys(out.contents).length===0)
+    return {error:"本文セクションを認識できませんでした。区切り（====整体整骨==== / ====Peace==== / ====店舗:店名====）が残っているか確認してください。"};
+  return out;
+}
+function renderPasteEditors(){
+  return `<div class="card"><label>共通タイトル</label>
+    <input id="c_title2" value="${esc(cur.title)}" oninput="cur.title=this.value">
+  </div>` + targets().map(t=>{
+    const val = cur.contents[t.key] || "";
+    return `<div class="card">
+      <div class="storename">${esc(t.label)}</div>
+      <textarea data-ck="${t.key}" oninput="onEditContent('${t.key}',this.value)">${esc(val)}</textarea>
+      <div class="chips" data-chips="${t.key}"></div><div data-ngbox="${t.key}"></div>
+    </div>`;
+  }).join("");
+}
+window.onEditContent = (key,val)=>{ cur.contents[key]=val; updateChips(key); };
+
+// --- 検証 ---
+const EMOJI_RE=/\p{Extended_Pictographic}/gu, DASH_RE=/――|——|--|ーー|─/g, PHONE_RE=/0\d{1,4}-\d{1,4}-\d{3,4}/;
+function validate(t){ t=t||"";
+  const chars=Array.from(t.replace(/\n/g,"")).length, emoji=(t.match(EMOJI_RE)||[]).length,
+    ng=NG.filter(n=>t.includes(n[0])), dash=[...new Set(t.match(DASH_RE)||[])], phone=PHONE_RE.test(t);
+  return {chars,emoji,ng,dash,phone,charOk:chars>=250&&chars<=400,emojiOk:emoji>=2&&emoji<=3,ok:!ng.length&&!dash.length&&!phone};
+}
+function updateChips(key){
+  const v=validate(cur.contents[key]||""); const c=document.querySelector(`[data-chips="${key}"]`); if(!c)return;
+  c.innerHTML = `<span class="chip ${v.charOk?'ok':'warn'}">${v.chars}字</span><span class="chip ${v.emojiOk?'ok':'warn'}">絵文字${v.emoji}</span>`+
+    (v.ng.length?`<span class="chip ng">NG${v.ng.length}</span>`:`<span class="chip ok">NGなし</span>`)+
+    (v.dash.length?`<span class="chip ng">横棒</span>`:``)+(v.phone?`<span class="chip ng">電話番号</span>`:``);
+  const nb=document.querySelector(`[data-ngbox="${key}"]`);
+  nb.innerHTML = v.ng.length?`<div class="ngbox">${v.ng.map(n=>`「${n[0]}」→「${n[1]}」`).join("<br>")}</div>`:(v.dash.length?`<div class="ngbox">横棒は『』で表現を</div>`:"");
+}
+
+// --- Step3: 画像タイトル選択（Firebaseギャラリー） ---
+function viewImage(){
+  return `<h1>4. サムネイル画像を選ぶ</h1>
+  <div class="card">
+    <button class="btn btn-blue" onclick="openImgPrompt()">🎨 ChatGPT用の画像プロンプトを作る</button>
+    <p class="hint">画像がまだ無いときは、ここでプロンプトをコピー→ChatGPTで生成→サムネイルツールで文字入れ→ギャラリー保存、の流れです</p>
+  </div>
+  <div class="card">
+    <p class="small muted">サムネイルツールのチームギャラリーから選ぶと、CSVの画像列に「◯◯.jpg」が入ります。</p>
+    <input id="gsearch" placeholder="🔍 名前で絞り込み" oninput="renderGallery(this.value)">
+    <div id="gallery" class="gallery mt"></div>
+    <div id="gstatus" class="fbstatus mt"></div>
+    <label class="mt">選択中の画像タイトル（手入力も可）</label>
+    <input id="c_imageTitle" value="${esc(cur.imageTitle)}" placeholder="例：深呼吸_07-13.jpg" oninput="cur.imageTitle=this.value">
+    <details><summary>参考：AIが作った画像プロンプト</summary>
+      <textarea class="mt" oninput="cur.imagePrompt=this.value">${esc(cur.imagePrompt)}</textarea>
+    </details>
+  </div>
+  ${nav(2, 4, "確認へ →")}`;
+}
+window.renderGallery = (q="")=>{
+  const box=document.getElementById("gallery"); if(!box)return;
+  const g = window.__gallery||[];
+  const st = document.getElementById("gstatus");
+  if(g.length===0){ box.innerHTML=""; if(st) st.textContent="ギャラリー読み込み中…（画像がまだ無い場合は下の欄に手入力してください）"; return; }
+  const ql = q.toLowerCase();
+  const items = g.filter(i=> !ql || (i.folderName+i.titleText).toLowerCase().includes(ql)).slice(0,60);
+  if(st) st.textContent = `${g.length}件中 ${items.length}件を表示`;
+  box.innerHTML = items.map(i=>{
+    const name=(i.folderName||i.titleText||"画像"); const jpg=name+".jpg";
+    const sel = cur.imageTitle===jpg?"sel":"";
+    return `<div class="gitem ${sel}" onclick="pickImage('${esc(jpg).replace(/'/g,"\\'")}')">
+      <img src="${esc(i.imageUrl)}" loading="lazy" alt="">
+      <div class="cap">${esc(name)}</div></div>`;
+  }).join("");
+};
+window.pickImage = (jpg)=>{ cur.imageTitle=jpg; document.getElementById("c_imageTitle").value=jpg; renderGallery(document.getElementById("gsearch").value); toast("画像を選択："+jpg); };
+window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data-view="create"]').hidden && cur.step===3) renderGallery(document.getElementById("gsearch")?.value||""); });
+
+// --- Step4: 出力 ---
+function viewExport(){
+  const errs = validateExport();
+  return `<h1>5. 確認して出力</h1>
+  <div class="card small">
+    <div><span class="muted">タイトル：</span>${esc(cur.title)||"（未設定）"}</div>
+    <div><span class="muted">対象：</span>${cur.scope==="category_common"?"カテゴリ共通（全16店舗）":`店舗別（${cur.storeIds.length}店舗）`}</div>
+    <div><span class="muted">日時：</span>${cur.timing==="immediate"?"即時投稿":`${fmtJp(cur.date)} ${esc(cur.time||"")}（予約）`}</div>
+    <div><span class="muted">投稿タイプ：</span>${esc(cur.postType)}</div>
+    <div><span class="muted">画像：</span>${esc(cur.imageTitle)||"（なし）"}</div>
+  </div>
+  ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>`
+    :`<div class="note">✅ チェックOK。CSVを出力できます。</div>`}
+  <button class="btn btn-primary mt" ${errs.length?"disabled":""} onclick="downloadCsv()">📄 CSVダウンロード</button>
+  <div class="note">取込：GMOツールの既存シートに、Googleスプレッドシートの「ファイル→インポート→アップロード→<b>データを置換</b>」で取り込むとプルダウンが壊れません。</div>
+  <a class="linkbtn mt" id="gmoLink" href="#" onclick="return openGmo()"><span class="ic">🚀</span><span>GMOツールを開いて投稿する</span><span class="arr">›</span></a>
+  <p class="hint">※GMOのURLは設定タブ、またはリンク集に登録したものを開きます</p>
+  ${nav(3, null)}`;
+}
+function contentFor(store){ return cur.scope==="category_common" ? (cur.contents[store.cat]||"") : (cur.contents[store.gmo]||""); }
+function exportStores(){ return cur.scope==="category_common" ? STORES : STORES.filter(s=>cur.storeIds.includes(s.gmo)); }
+function validateExport(){
+  const errs=[];
+  if(!cur.title.trim()) errs.push("共通タイトルが未入力です");
+  if(cur.timing!=="immediate" && !cur.date) errs.push("予約投稿日が未確定です");
+  if(cur.timing!=="immediate" && !cur.time) errs.push("投稿時間が未確定です");
+  exportStores().forEach(s=>{
+    const c=contentFor(s);
+    if(!c.trim()){ errs.push(`${s.name}：本文が空です`); return; }
+    const v=validate(c);
+    if(v.ng.length) errs.push(`${s.name}：NGワード（${v.ng.map(n=>n[0]).join("、")}）`);
+    if(v.dash.length) errs.push(`${s.name}：横棒あり`);
+    if(v.phone) errs.push(`${s.name}：電話番号あり`);
+  });
+  if(exportStores().length===0) errs.push("対象店舗がありません");
+  return errs;
+}
+function fmtDate(d){ const[y,m,dd]=d.split("-"); return `${y}/${m}/${dd}`; }
+function fmtTime(t){ const[h,m]=t.split(":"); return `${parseInt(h,10)}:${m}`; }
+function q(v){ return `"${String(v==null?"":v).replace(/"/g,'""')}"`; }
+window.downloadCsv = ()=>{
+  const lines=[HEADERS.map(q).join(",")];
+  const immediate = cur.timing==="immediate";
+  exportStores().forEach(s=>{
+    const c=new Array(48).fill("");
+    c[COL.STORE_ID]=s.gmo; c[COL.STORE_NAME]=s.name; c[COL.POST_TYPE]=cur.postType;
+    if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=cur.date?fmtDate(cur.date):""; c[COL.STIME]=cur.time?fmtTime(cur.time):""; }
+    c[COL.TITLE]=cur.title; c[COL.CONTENT]=contentFor(s); c[COL.IMAGE]=cur.imageTitle||"";
+    c[COL.BTYPE]="予約"; c[COL.BURL]=s.url;
+    lines.push(c.map(q).join(","));
+  });
+  const csv="\uFEFF"+lines.join("\r\n")+"\r\n";
+  let mmdd; if(cur.date){const[,m,d]=cur.date.split("-");mmdd=`${m}-${d}`;} else {const n=new Date();mmdd=`${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;}
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${mmdd}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  if(cur.schedId){ const i=schedule.findIndex(x=>x.id===cur.schedId); if(i>=0){ schedule[i].done=true; save(LS.sched,schedule); } }
+  toast("CSVをダウンロードしました");
+};
+window.openGmo = ()=>{
+  const links=[...(window.__teamLinks||[]), ...myLinks];
+  const gmo = links.find(l=> /GMO|gmo|meo|アップロード|投稿/.test((l.name||"")+(l.url||"")));
+  if(gmo){ window.open(gmo.url,"_blank"); } else { toast("GMOのURLを設定タブで登録してください"); go("settings"); }
+  return false;
+};
+
+function bindCreate(){
+  const t=document.getElementById("c_title"); if(t) t.oninput=e=>cur.title=e.target.value;
+  const d=document.getElementById("c_date"); if(d) d.oninput=e=>cur.date=e.target.value;
+  const ti=document.getElementById("c_time"); if(ti) ti.oninput=e=>cur.time=e.target.value;
+  const kw=document.getElementById("c_kw"); if(kw) kw.oninput=e=>cur.kw=e.target.value;
+  const pt=document.getElementById("c_postType"); if(pt) pt.onchange=e=>cur.postType=e.target.value;
+  const tm=document.getElementById("c_timing"); if(tm) tm.onchange=e=>cur.timing=e.target.value;
+  const sc=document.getElementById("c_scope");
+  if(sc){ sc.onclick=e=>{ const b=e.target.closest("button"); if(!b)return;
+    cur.scope=b.dataset.scope; sc.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+    document.getElementById("c_storeWrap").style.display = cur.scope==="per_store"?"block":"none"; }; }
+  if(document.getElementById("c_stores")) renderCStores();
+  // 貼付けエディタの検証チップ初期化
+  if(cur.step===2 && cur._parsed) targets().forEach(t=>updateChips(t.key));
+}
+
+// ============ サムネイル画像プロンプト（ChatGPT用） ============
+const IMG_RULES = `Googleビジネスプロフィール（MEO）投稿用のサムネイルを制作してください。
+
+【サイズ】
+横向き・4:3・高解像度
+
+【デザインテイスト】
+日本人向け／ナチュラル／明るい／清潔感／水彩イラスト／やさしい色合い／手描き風／女性向け／リラクゼーション・整体院・整骨院向け／季節感を自然に取り入れる／広告っぽくしない／写真ではなく高品質な水彩イラスト
+※水彩タッチを使用するのは「背景」「人物」のみ。文字・アイコン・装飾は水彩ではなく、読みやすいデザインにしてください。
+
+【人物】
+日本人女性・35〜45歳。毎回髪型・服装・表情を変える（ほっとする／悩む／つらそう／考える／笑顔／目を閉じる／目を開ける／安心した表情 など）。生活感を大切に。
+家族が登場する場合：3人家族（お父さん・お母さん・子ども4〜7歳くらい）。全員日本人。服の色は必ず全員違う色に。
+
+【背景】
+生活のワンシーン（公園／家／リビング／キッチン／お風呂／車／外出先／オフィス／散歩／雨の日／夏の日差し／秋の公園 など）。背景と人物の色が同化しないように。
+
+【構図】
+人物を右側に配置。タイトルを左上。タイトルが読みやすいように左側は余白を十分確保。画像下部はSNSで見切れる可能性があるため、重要な要素を配置しない。
+
+【タイトル】
+画像内の文字はタイトルのみ。それ以外の文章・説明・吹き出し・アイコン・英語・ロゴ・透かしは禁止。太字・読みやすい・シンプル・白背景でも読める配色。
+
+【色】
+毎回背景色を変える。人物の服と背景が同化しない。毎回異なる配色を使用。
+
+【雰囲気】
+見ただけで「自分にもありそう」と思える日常感を重視。整体院・整骨院・リラクゼーション施設らしい安心感・優しさ・健康感。
+
+毎回同じデザインにならないよう、構図・服装・髪型・背景・配色・季節表現に変化をつけながらも、全体のトンマナ（世界観・水彩の質感・清潔感・やさしい印象）は統一してください。`;
+
+const PERSON_DEFAULT = "35〜45歳の日本人女性。髪型・服装・表情は毎回変える。";
+const PERSON_FAMILY = "3人家族（お父さん・お母さん・子ども4〜7歳）。全員日本人。服の色は全員違う色。母親を中心に。";
+
+function seasonOf(date){
+  const m = date ? parseInt(date.split("-")[1],10) : (new Date().getMonth()+1);
+  return m>=3&&m<=5?"春":m>=6&&m<=8?"夏":m>=9&&m<=11?"秋":"冬";
+}
+function imgInputBlock(){
+  return `―― 今回の内容 ――
+シーン：${document.getElementById("im_scene").value.trim()}
+人物：${document.getElementById("im_person").value.trim()}
+タイトル：${document.getElementById("im_title").value.trim()}
+季節：${document.getElementById("im_season").value}
+雰囲気：${document.getElementById("im_mood").value.trim()}`;
+}
+window.buildImgPrompt = ()=>{
+  document.getElementById("im_output").value = IMG_RULES + "\n\n" + imgInputBlock();
+};
+window.applyFamily = ()=>{
+  const fam = document.getElementById("im_family").value==="yes";
+  document.getElementById("im_person").value = fam ? PERSON_FAMILY : PERSON_DEFAULT;
+  buildImgPrompt();
+};
+window.openImgPrompt = (schedId)=>{
+  // schedId指定→予定から / 未指定→作成中(cur)から
+  const s = schedId ? schedule.find(x=>x.id===schedId) : null;
+  const memo = s ? (s.imageMemo||"") : (cur.imageMemo||"");
+  const title = s ? s.title : (cur.title||"");
+  const date = s ? s.date : cur.date;
+  document.getElementById("im_scene").value = memo || "（場面を入力：例 夏の公園の木陰で水を飲む）";
+  document.getElementById("im_family").value = /家族|親子|子ども/.test(memo) ? "yes" : "no";
+  document.getElementById("im_person").value = /家族|親子|子ども/.test(memo) ? PERSON_FAMILY : PERSON_DEFAULT;
+  document.getElementById("im_title").value = title;
+  document.getElementById("im_season").value = seasonOf(date);
+  document.getElementById("im_mood").value = "明るい・爽やか・安心感・自然・健康的";
+  buildImgPrompt();
+  document.getElementById("imgModal").style.display = "flex";
+};
+window.copyImgInputOnly = ()=>{
+  navigator.clipboard.writeText(imgInputBlock()).then(()=>toast("入力部分をコピーしました"));
+};
+
+// ============ コピー ============
+window.copyText = (id)=>{
+  const el=document.getElementById(id); el.select();
+  navigator.clipboard.writeText(el.value).then(()=>toast("コピーしました")).catch(()=>{ document.execCommand("copy"); toast("コピーしました"); });
+};
+
+// ============ バックアップ ============
+window.exportBackup = ()=>{
+  const data = { app:"meo-studio", schedule, myLinks, exported:new Date().toISOString() };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="MEO統合ツール_バックアップ.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+window.importBackup = async (file)=>{
+  if(!file) return;
+  try{ const d=JSON.parse(await file.text());
+    if(d.schedule){ schedule=d.schedule; save(LS.sched,schedule); }
+    if(d.myLinks){ myLinks=d.myLinks; save(LS.mylinks,myLinks); }
+    toast("復元しました"); renderMyLinks();
+  }catch(e){ toast("読み込みに失敗しました"); }
+};
+
+// ============ util ============
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+window.cur = cur; // デバッグ用
+
+// 初期表示
+go("home");
+</script>
+
+<!-- 合言葉ロック（サムネイルツールと共通。同一ドメインなら解除状態も共有） -->
+<div id="lockGate" style="display:none; position:fixed; inset:0; z-index:999; background:#f8fafc; flex-direction:column; align-items:center; justify-content:center; padding:24px;">
+  <div style="background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:28px 22px; width:100%; max-width:340px; text-align:center;">
+    <div style="font-size:34px;">🔒</div>
+    <h2 style="margin:10px 0 4px; font-size:17px;">MEO投稿 統合ツール</h2>
+    <p style="color:#64748b; font-size:13px; margin:0 0 16px;">合言葉を入力してください</p>
+    <input id="lockInput" type="password" placeholder="合言葉" autocomplete="off"
+      style="width:100%; border:1px solid #cbd5e1; border-radius:10px; padding:12px; font-size:16px; text-align:center;">
+    <p id="lockErr" style="display:none; color:#dc2626; font-size:12px; margin:8px 0 0;">合言葉が違います</p>
+    <button onclick="tryUnlock()" style="margin-top:14px; width:100%; border:0; border-radius:12px; padding:13px; background:#0f172a; color:#fff; font-size:15px; font-weight:700; cursor:pointer;">開く</button>
+  </div>
+</div>
+<script>
+(function(){
+  const APP_PASSPHRASE = "haruharu"; // サムネイルツールと共通
+  const gate = document.getElementById("lockGate");
+  if(localStorage.getItem("meo_unlocked") !== "1"){
+    gate.style.display = "flex";
+    setTimeout(()=>document.getElementById("lockInput").focus(), 100);
+  }
+  window.tryUnlock = function(){
+    if(document.getElementById("lockInput").value === APP_PASSPHRASE){
+      localStorage.setItem("meo_unlocked","1");
+      gate.style.display = "none";
+    } else {
+      document.getElementById("lockErr").style.display = "block";
+    }
+  };
+  document.getElementById("lockInput").addEventListener("keydown", e=>{ if(e.key==="Enter") tryUnlock(); });
+})();
+</script>
+</body>
+</html>
