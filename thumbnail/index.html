@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="robots" content="noindex,nofollow" />
 <title>あさばグループ専用 サムネイル合成ツール</title>
+<link rel="icon" type="image/png" href="/app-icon.png" />
+<link rel="apple-touch-icon" href="/app-icon.png" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script type="importmap">
 {
@@ -193,7 +195,7 @@ function EditableRow({ item, onSave, onDelete, extraFields = null }) {
 }
 
 // ============ Header ============
-function Header({ tab, onTabChange, onMenu }) {
+function Header({ tab, onTabChange, onMenu, onGallery }) {
   return (
     <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between shrink-0 gap-2">
       <a href={window.APP_TOP_URL} className="flex items-center space-x-2 hover:opacity-80" title="あさばツールのトップへ戻る">
@@ -211,7 +213,10 @@ function Header({ tab, onTabChange, onMenu }) {
           <span className="inline-flex items-center gap-1"><Link2 className="w-4 h-4" />リンク集</span>
         </button>
       </div>
-      <button onClick={onMenu} className="p-2 rounded-lg hover:bg-slate-100" title="メニュー"><Menu className="w-6 h-6 text-slate-700" /></button>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button onClick={onGallery} className="p-2 rounded-lg hover:bg-slate-100" title="チームギャラリー"><Library className="w-6 h-6 text-blue-600" /></button>
+        <button onClick={onMenu} className="p-2 rounded-lg hover:bg-slate-100" title="メニュー"><Menu className="w-6 h-6 text-slate-700" /></button>
+      </div>
     </header>
   );
 }
@@ -540,8 +545,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   };
 
   return (
-    <main className="flex-1 overflow-hidden flex flex-col md:flex-row relative">
-      <div className="w-full md:w-[400px] bg-white border-r border-slate-200 overflow-y-auto shrink-0">
+    <main className="flex-1 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row relative">
+      <div className="w-full md:w-[400px] bg-white border-r border-slate-200 md:overflow-y-auto shrink-0">
         <div className="p-6 space-y-6">
           {selectedProject && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
@@ -1137,7 +1142,7 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-800">
       <Toast msg={toastMsg} />
-      <Header tab={tab} onTabChange={setTab} onMenu={() => setMenuOpen(true)} />
+      <Header tab={tab} onTabChange={setTab} onMenu={() => setMenuOpen(true)} onGallery={() => setGalleryOpen(true)} />
       {tab === 'create' && (
         <CreateTab user={user} accounts={accounts} categories={categories} projects={projects}
           selectedProject={selectedProject} showToast={showToast} openGallery={() => setGalleryOpen(true)} />
@@ -1167,445 +1172,5 @@ function Root() {
 
 createRoot(document.getElementById('root')).render(<Root />);
 </script>
-<!-- ICON-PICKER-BEGIN v1 -->
-<script>window.__ICON_PICKER_CFG__ = {
-  toolName: 'あさばグループ サムネイル合成ツール',
-  notionPageId: '38c53633cb20814e9cb5f565670ae239',
-  proxyUrl: 'https://asaba-tools.vercel.app/api/notion',
-  appSecret: '', size: 48
-};</script>
-<script>
-/*!
- * icon-picker.js — 全ツール共通のアプリアイコン設定部品
- *
- * 使い方（HTMLに<script>で読み込むか、そのままインラインで貼り付け）:
- *   IconPicker.init({
- *     toolName: '楽天買いだめ・在庫管理',      // ローカル保存キーになる
- *     notionPageId: '38c53633cb20813dab92e68f83f2b8c2', // Notion台帳のpage id（任意）
- *     proxyUrl: 'https://asaba-tools.vercel.app/api/notion', // Vercelプロキシ(任意)
- *     appSecret: '',                          // APP_SECRET (任意)
- *     mount: '#appIconMount',                 // アイコン表示先セレクタ(任意)
- *     size: 64                                // 表示サイズ(任意, px)
- *   });
- *
- * 提供機能:
- * - 画像アップロード＋正方形トリミング
- * - 絵文字/短いテキスト → PNGレンダリング（背景色選択）
- * - 「なし」も選べる
- * - localStorage に保存、次回自動表示
- * - PNGダウンロード
- * - 任意でNotion「アプリアイコン」列にアップロード（プロキシ経由）
- */
-(function (global) {
-  'use strict';
-
-  const LS_PREFIX = 'iconPicker:v1:';
-  let config = {
-    toolName: 'unknown',
-    notionPageId: '',
-    proxyUrl: '',
-    appSecret: '',
-    mount: null,
-    size: 64,
-  };
-
-  // ---- ローカル保存 --------------------------------------------------------
-  function lsKey() { return LS_PREFIX + config.toolName; }
-  function load() {
-    try { return JSON.parse(localStorage.getItem(lsKey()) || 'null'); }
-    catch (e) { return null; }
-  }
-  function save(dataUrl) {
-    try {
-      if (dataUrl) localStorage.setItem(lsKey(), JSON.stringify({ dataUrl, updatedAt: new Date().toISOString() }));
-      else localStorage.removeItem(lsKey());
-    } catch (e) {}
-  }
-
-  // ---- 表示 ---------------------------------------------------------------
-  function ensureAutoMount() {
-    let mount = document.getElementById('appIconMount');
-    if (mount) return mount;
-    mount = document.createElement('div');
-    mount.id = 'appIconMount';
-    mount.style.position = 'fixed';
-    mount.style.top = 'max(8px, env(safe-area-inset-top))';
-    mount.style.right = '8px';
-    mount.style.zIndex = '9998';
-    document.body.appendChild(mount);
-    return mount;
-  }
-  function renderMount() {
-    let mount = null;
-    if (config.mount) mount = document.querySelector(config.mount);
-    if (!mount) mount = ensureAutoMount();
-    if (!mount) return;
-    const saved = load();
-    const size = config.size;
-    mount.innerHTML = '';
-    mount.style.display = 'inline-flex';
-    mount.style.alignItems = 'center';
-    mount.style.justifyContent = 'center';
-    mount.style.width = size + 'px';
-    mount.style.height = size + 'px';
-    mount.style.borderRadius = Math.round(size * 0.22) + 'px';
-    mount.style.overflow = 'hidden';
-    mount.style.cursor = 'pointer';
-    mount.style.userSelect = 'none';
-    mount.title = 'クリックしてアイコンを設定';
-    mount.onclick = openModal;
-    if (saved && saved.dataUrl) {
-      const img = document.createElement('img');
-      img.src = saved.dataUrl;
-      img.alt = 'アプリアイコン';
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.objectFit = 'cover';
-      img.style.display = 'block';
-      mount.appendChild(img);
-      mount.style.background = '#fff';
-      mount.style.border = '1px solid #e5e7eb';
-    } else {
-      // 未設定プレースホルダ
-      mount.style.background = '#f3f4f6';
-      mount.style.border = '1px dashed #cbd5e1';
-      mount.style.color = '#94a3b8';
-      mount.style.fontSize = Math.round(size * 0.25) + 'px';
-      mount.style.fontWeight = '600';
-      mount.textContent = '+アイコン';
-    }
-  }
-
-  // ---- モーダルUI ---------------------------------------------------------
-  function el(tag, attrs, children) {
-    const n = document.createElement(tag);
-    if (attrs) Object.keys(attrs).forEach(k => {
-      if (k === 'style' && typeof attrs[k] === 'object') Object.assign(n.style, attrs[k]);
-      else if (k.startsWith('on') && typeof attrs[k] === 'function') n.addEventListener(k.slice(2), attrs[k]);
-      else n.setAttribute(k, attrs[k]);
-    });
-    (children || []).forEach(c => {
-      if (c == null) return;
-      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-    });
-    return n;
-  }
-
-  function openModal() {
-    // 既に開いていれば無視
-    if (document.getElementById('ipModal')) return;
-
-    const overlay = el('div', { id: 'ipModal', style: {
-      position: 'fixed', inset: '0', background: 'rgba(0,0,0,.5)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: '99999', padding: '16px', boxSizing: 'border-box'
-    }});
-
-    const box = el('div', { style: {
-      background: '#fff', borderRadius: '12px', width: '100%', maxWidth: '440px',
-      padding: '18px', boxShadow: '0 20px 60px rgba(0,0,0,.3)', fontFamily: 'system-ui,sans-serif',
-      maxHeight: '92vh', overflowY: 'auto', boxSizing: 'border-box'
-    }});
-
-    box.appendChild(el('h3', { style: { margin: '0 0 12px', fontSize: '17px' }}, ['アプリアイコン設定']));
-
-    // タブ切替
-    const tabs = el('div', { style: { display: 'flex', gap: '4px', marginBottom: '12px', borderBottom: '1px solid #e5e7eb' }});
-    const contents = {};
-    const tabDefs = [
-      { key: 'image', label: '画像' },
-      { key: 'text', label: '文字・絵文字' },
-      { key: 'none', label: 'なし' },
-    ];
-    let currentTab = 'image';
-    tabDefs.forEach(t => {
-      const btn = el('button', { type: 'button', style: {
-        padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer',
-        fontSize: '14px', borderBottom: '2px solid transparent', color: '#64748b'
-      }, onclick: () => switchTab(t.key) }, [t.label]);
-      btn.dataset.key = t.key;
-      tabs.appendChild(btn);
-    });
-    box.appendChild(tabs);
-
-    function switchTab(k) {
-      currentTab = k;
-      tabs.querySelectorAll('button').forEach(b => {
-        const on = b.dataset.key === k;
-        b.style.borderBottomColor = on ? '#3b82f6' : 'transparent';
-        b.style.color = on ? '#0f172a' : '#64748b';
-        b.style.fontWeight = on ? '600' : '400';
-      });
-      Object.keys(contents).forEach(key => {
-        contents[key].style.display = key === k ? 'block' : 'none';
-      });
-    }
-
-    // ---- 画像タブ ---------------------------------------------------------
-    contents.image = buildImageTab();
-    box.appendChild(contents.image);
-
-    // ---- 文字・絵文字タブ -------------------------------------------------
-    contents.text = buildTextTab();
-    box.appendChild(contents.text);
-
-    // ---- なしタブ ---------------------------------------------------------
-    contents.none = buildNoneTab();
-    box.appendChild(contents.none);
-
-    switchTab('image');
-
-    // フッタボタン
-    const footer = el('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }});
-    const cancelBtn = el('button', { type: 'button', style: {
-      padding: '9px 16px', border: '1px solid #cbd5e1', background: '#fff', borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
-    }, onclick: () => document.body.removeChild(overlay) }, ['キャンセル']);
-    const saveBtn = el('button', { type: 'button', id: 'ipSaveBtn', style: {
-      padding: '9px 16px', border: 'none', background: '#3b82f6', color: '#fff', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
-    }, onclick: () => onSave(overlay) }, ['保存']);
-    footer.appendChild(cancelBtn);
-    footer.appendChild(saveBtn);
-    box.appendChild(footer);
-
-    // 現在の状態表示
-    const status = el('div', { id: 'ipStatus', style: { marginTop: '10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }});
-    box.appendChild(status);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) document.body.removeChild(overlay); });
-
-    // ---------------- タブ実装 ----------------
-    function buildImageTab() {
-      const wrap = el('div');
-      const input = el('input', { type: 'file', accept: 'image/*', style: { display: 'block', marginBottom: '10px', fontSize: '14px' }});
-      const canvas = el('canvas', { width: '256', height: '256', style: {
-        display: 'block', width: '256px', height: '256px', border: '1px solid #e5e7eb', borderRadius: '8px', background: '#f8fafc', margin: '0 auto'
-      }});
-      const help = el('div', { style: { fontSize: '12px', color: '#64748b', marginTop: '6px', textAlign: 'center' }}, ['マウス/指でドラッグ移動、下のスライダーで拡大縮小']);
-      const zoom = el('input', { type: 'range', min: '1', max: '4', step: '0.01', value: '1', style: { display: 'block', width: '100%', marginTop: '8px' }});
-      wrap.appendChild(input);
-      wrap.appendChild(canvas);
-      wrap.appendChild(help);
-      wrap.appendChild(zoom);
-
-      const state = { img: null, scale: 1, minScale: 1, offX: 0, offY: 0, dragging: false, lastX: 0, lastY: 0 };
-      wrap._state = state;
-      wrap._canvas = canvas;
-
-      function draw() {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, 256, 256);
-        if (!state.img) return;
-        const iw = state.img.naturalWidth, ih = state.img.naturalHeight;
-        const s = state.scale;
-        const drawW = iw * s, drawH = ih * s;
-        ctx.drawImage(state.img, state.offX, state.offY, drawW, drawH);
-      }
-      function clampOffsets() {
-        if (!state.img) return;
-        const iw = state.img.naturalWidth, ih = state.img.naturalHeight;
-        const drawW = iw * state.scale, drawH = ih * state.scale;
-        state.offX = Math.min(0, Math.max(256 - drawW, state.offX));
-        state.offY = Math.min(0, Math.max(256 - drawH, state.offY));
-      }
-      input.addEventListener('change', (e) => {
-        const f = e.target.files && e.target.files[0]; if (!f) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const img = new Image();
-          img.onload = () => {
-            state.img = img;
-            const iw = img.naturalWidth, ih = img.naturalHeight;
-            state.minScale = Math.max(256 / iw, 256 / ih);
-            state.scale = state.minScale;
-            zoom.min = String(state.minScale);
-            zoom.max = String(state.minScale * 4);
-            zoom.value = String(state.minScale);
-            state.offX = (256 - iw * state.scale) / 2;
-            state.offY = (256 - ih * state.scale) / 2;
-            draw();
-          };
-          img.src = reader.result;
-        };
-        reader.readAsDataURL(f);
-      });
-      zoom.addEventListener('input', () => {
-        if (!state.img) return;
-        const cx = 128 - state.offX, cy = 128 - state.offY;
-        const oldScale = state.scale;
-        state.scale = parseFloat(zoom.value);
-        const ratio = state.scale / oldScale;
-        state.offX = 128 - cx * ratio;
-        state.offY = 128 - cy * ratio;
-        clampOffsets(); draw();
-      });
-      function down(e) {
-        if (!state.img) return;
-        state.dragging = true;
-        const p = e.touches ? e.touches[0] : e;
-        state.lastX = p.clientX; state.lastY = p.clientY;
-        e.preventDefault();
-      }
-      function move(e) {
-        if (!state.dragging) return;
-        const p = e.touches ? e.touches[0] : e;
-        state.offX += p.clientX - state.lastX;
-        state.offY += p.clientY - state.lastY;
-        state.lastX = p.clientX; state.lastY = p.clientY;
-        clampOffsets(); draw();
-        e.preventDefault();
-      }
-      function up() { state.dragging = false; }
-      canvas.addEventListener('mousedown', down);
-      canvas.addEventListener('mousemove', move);
-      window.addEventListener('mouseup', up);
-      canvas.addEventListener('touchstart', down, { passive: false });
-      canvas.addEventListener('touchmove', move, { passive: false });
-      canvas.addEventListener('touchend', up);
-
-      return wrap;
-    }
-
-    function buildTextTab() {
-      const wrap = el('div');
-      const row = el('div', { style: { display: 'flex', gap: '8px', marginBottom: '10px' }});
-      const txt = el('input', { type: 'text', placeholder: '文字 or 絵文字（例: 楽 / 🛒）', maxlength: '4', style: {
-        flex: '1', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '18px'
-      }});
-      row.appendChild(txt);
-      wrap.appendChild(row);
-
-      const colorRow = el('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }});
-      const palette = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#0f172a', '#64748b', '#ffffff'];
-      let bg = palette[0];
-      palette.forEach(c => {
-        const sw = el('div', { style: {
-          width: '28px', height: '28px', borderRadius: '50%', background: c, cursor: 'pointer',
-          border: c === '#ffffff' ? '1px solid #cbd5e1' : '2px solid transparent'
-        }, onclick: () => { bg = c; colorRow.querySelectorAll('div').forEach(d => d.style.borderColor = d.style.background === c ? '#0f172a' : 'transparent'); redraw(); }});
-        colorRow.appendChild(sw);
-      });
-      wrap.appendChild(colorRow);
-
-      const canvas = el('canvas', { width: '256', height: '256', style: {
-        display: 'block', width: '256px', height: '256px', borderRadius: '8px', margin: '0 auto', border: '1px solid #e5e7eb'
-      }});
-      wrap.appendChild(canvas);
-      wrap._canvas = canvas;
-      wrap._getBg = () => bg;
-      wrap._getText = () => txt.value;
-
-      function redraw() {
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, 256, 256);
-        const t = (txt.value || '').trim();
-        if (!t) return;
-        const fg = bg === '#ffffff' ? '#0f172a' : '#ffffff';
-        ctx.fillStyle = fg;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        // 文字数で自動サイズ調整
-        const len = Array.from(t).length;
-        const size = len === 1 ? 160 : len === 2 ? 110 : len === 3 ? 80 : 62;
-        ctx.font = '700 ' + size + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji", system-ui, sans-serif';
-        ctx.fillText(t, 128, 138);
-      }
-      txt.addEventListener('input', redraw);
-      redraw();
-
-      return wrap;
-    }
-
-    function buildNoneTab() {
-      const wrap = el('div', { style: { textAlign: 'center', padding: '20px 10px', color: '#64748b', fontSize: '14px' }});
-      wrap.appendChild(el('div', {}, ['アイコンを設定しない（削除）状態にします。']));
-      wrap.appendChild(el('div', { style: { marginTop: '8px', fontSize: '12px' }}, ['保存を押すと現在のアイコンが消えます。']));
-      return wrap;
-    }
-
-    async function onSave(overlayEl) {
-      const status = document.getElementById('ipStatus');
-      const btn = document.getElementById('ipSaveBtn');
-      btn.disabled = true; btn.textContent = '保存中…';
-      status.style.color = '#64748b'; status.textContent = '';
-      try {
-        let dataUrl = null;
-        if (currentTab === 'image') {
-          const st = contents.image._state;
-          if (st.img) dataUrl = contents.image._canvas.toDataURL('image/png');
-          else { status.style.color = '#ef4444'; status.textContent = '画像を選んでください'; return; }
-        } else if (currentTab === 'text') {
-          const t = contents.text._getText().trim();
-          if (!t) { status.style.color = '#ef4444'; status.textContent = '文字を入力してください'; return; }
-          dataUrl = contents.text._canvas.toDataURL('image/png');
-        } else {
-          dataUrl = null;
-        }
-        save(dataUrl);
-        renderMount();
-
-        // Notionアップロード（任意）
-        if (dataUrl && config.notionPageId && config.proxyUrl) {
-          status.textContent = 'Notionに送信中…';
-          try {
-            await uploadToNotion(dataUrl);
-            status.style.color = '#10b981'; status.textContent = 'Notionにも保存しました';
-          } catch (e) {
-            status.style.color = '#f59e0b'; status.textContent = 'ローカル保存OK / Notion送信失敗: ' + (e.message || e);
-          }
-        } else {
-          status.style.color = '#10b981'; status.textContent = '保存しました';
-        }
-        setTimeout(() => { if (overlayEl.parentNode) document.body.removeChild(overlayEl); }, 800);
-      } finally {
-        btn.disabled = false; btn.textContent = '保存';
-      }
-    }
-  }
-
-  // ---- Notion アップロード -----------------------------------------------
-  async function uploadToNotion(dataUrl) {
-    // Vercelプロキシに op:'icon_upload' を投げる。プロキシ側で file_upload → page 更新まで行う。
-    const headers = { 'Content-Type': 'application/json' };
-    if (config.appSecret) headers['x-app-secret'] = config.appSecret;
-    const res = await fetch(config.proxyUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        op: 'icon_upload',
-        pageId: config.notionPageId,
-        propertyName: 'アプリアイコン',
-        filename: (config.toolName || 'icon') + '.png',
-        dataUrl,
-      })
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((j && j.error) || ('HTTP ' + res.status));
-    return j;
-  }
-
-  // ---- 初期化 --------------------------------------------------------------
-  function init(opts) {
-    Object.assign(config, opts || {});
-    if (!config.toolName) throw new Error('IconPicker.init: toolName は必須です');
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', renderMount);
-    } else {
-      renderMount();
-    }
-  }
-
-  function open() { openModal(); }
-  function get() { return load(); }
-  function clear() { save(null); renderMount(); }
-
-  global.IconPicker = { init, open, get, clear };
-})(typeof window !== 'undefined' ? window : this);
-
-</script>
-<script>(function(){function go(){try{IconPicker.init(window.__ICON_PICKER_CFG__);}catch(e){console.warn('IconPicker init failed', e);}}if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',go);}else{go();}})();</script>
-<!-- ICON-PICKER-END v1 -->
 </body>
 </html>

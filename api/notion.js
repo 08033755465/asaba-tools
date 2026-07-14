@@ -11,6 +11,7 @@
 //   { op:'create', ds:'<data_source_id>', properties:{...} } → ページ作成
 //   { op:'update', pageId:'<page_id>',    properties:{...} } → ページ更新
 //   { op:'ping' }                                            → 疎通確認
+//   { op:'icon_upload', pageId, propertyName, filename, dataUrl } → 画像をNotionへアップロードしFilesプロパティに設定
 
 const NOTION_API = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2025-09-03'; // data_source エンドポイント対応バージョン
@@ -79,6 +80,63 @@ module.exports = async (req, res) => {
     if (p.op === 'update') {
       if (!p.pageId) { res.status(400).json({ error: 'pageId が必要です' }); return; }
       const out = await notion('/pages/' + p.pageId, 'PATCH', { properties: p.properties || {} });
+      res.status(out.status).json(out.data);
+      return;
+    }
+    if (p.op === 'icon_upload') {
+      if (!p.pageId) { res.status(400).json({ error: 'pageId が必要です' }); return; }
+      if (!p.dataUrl) { res.status(400).json({ error: 'dataUrl が必要です' }); return; }
+      const propName = p.propertyName || 'アプリアイコン';
+      // dataUrl → Buffer
+      const m = /^data:(image\/(png|jpeg));base64,(.+)$/.exec(p.dataUrl);
+      if (!m) { res.status(400).json({ error: 'dataUrl は image/png または image/jpeg の base64 で指定してください' }); return; }
+      const mime = m[1];
+      const ext = m[2] === 'jpeg' ? 'jpg' : 'png';
+      const buf = Buffer.from(m[3], 'base64');
+      const filename = (p.filename && String(p.filename).replace(/[^\w\-. ぁ-んァ-ヶ一-龠]/g, '_')) || ('icon.' + ext);
+
+      // 1) file_upload を作成（single_part 前提。5MB以内）
+      const create = await notion('/file_uploads', 'POST', { mode: 'single_part', filename, content_type: mime });
+      if (create.status >= 300) { res.status(create.status).json({ error: 'file_upload作成失敗', detail: create.data }); return; }
+      const uploadId = create.data.id;
+      const uploadUrl = create.data.upload_url;
+
+      // 2) upload_url にファイルを multipart で送信
+      const boundary = '----NotionUpload' + Math.random().toString(16).slice(2);
+      const pre = Buffer.from(
+        '--' + boundary + '\r\n' +
+        'Content-Disposition: form-data; name="file"; filename="' + filename + '"\r\n' +
+        'Content-Type: ' + mime + '\r\n\r\n', 'utf8');
+      const post = Buffer.from('\r\n--' + boundary + '--\r\n', 'utf8');
+      const body = Buffer.concat([pre, buf, post]);
+      const up = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + process.env.NOTION_TOKEN,
+          'Notion-Version': NOTION_VERSION,
+          'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        },
+        body,
+      });
+      const upText = await up.text();
+      let upJson; try { upJson = JSON.parse(upText); } catch (e) { upJson = { raw: upText }; }
+      if (!up.ok) { res.status(up.status).json({ error: 'アップロード失敗', detail: upJson }); return; }
+
+      // 3) ページのプロパティを更新（既存のファイル配列は置き換え）
+      const patch = {
+        properties: {
+          [propName]: {
+            files: [
+              {
+                type: 'file_upload',
+                name: filename,
+                file_upload: { id: uploadId },
+              }
+            ]
+          }
+        }
+      };
+      const out = await notion('/pages/' + p.pageId, 'PATCH', patch);
       res.status(out.status).json(out.data);
       return;
     }

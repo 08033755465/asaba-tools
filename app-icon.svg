@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><clipPath id="r"><rect width="512" height="512" rx="96"/></clipPath></defs>
+  <g clip-path="url(#r)">
+    <rect width="512" height="512" fill="#f3efe6"/>
+    <path d="M-30 40 L200 -30 L260 -30 L-30 80 Z" fill="#e7e2d6"/>
+    <path d="M300 -30 L560 150 L560 200 L280 -30 Z" fill="#ffffff"/>
+    <path d="M-30 150 C 120 130, 300 170, 540 120 L 540 180 C 300 230, 120 190, -30 210 Z" fill="#dcefd2"/>
+    <path d="M-30 230 C 120 210, 300 250, 540 200 L 540 300 C 300 350, 120 310, -30 330 Z" fill="#a9d9ee"/>
+    <path d="M-30 275 C 120 255, 300 295, 540 245" stroke="#c3e6f4" stroke-width="10" fill="none" stroke-dasharray="26 20"/>
+    <path d="M-30 360 C 150 340, 330 380, 540 330 L 540 350 C 330 400, 150 360, -30 380 Z" fill="#e7e2d6"/>
+    <path d="M60 -30 L110 512" stroke="#ffffff" stroke-width="14"/>
+    <path d="M380 -30 L430 120" stroke="#ffffff" stroke-width="12"/>
+    <circle cx="256" cy="216" r="86" fill="#4b4b4d" stroke="#ffffff" stroke-width="10"/>
+    <path d="M256 302 L226 288 L286 288 Z" fill="#4b4b4d"/>
+    <path d="M256 160 c -26 0 -46 20 -46 46 c 0 34 46 76 46 76 c 0 0 46 -42 46 -76 c 0 -26 -20 -46 -46 -46 Z M256 226 a 20 20 0 1 1 0 -40 a 20 20 0 1 1 0 40 Z" fill="#ffffff"/>
+  </g>
+</svg>
