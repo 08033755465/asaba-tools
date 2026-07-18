@@ -13,7 +13,8 @@
   "imports": {
     "react": "https://esm.sh/react@18.3.1",
     "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.400.0?external=react"
+    "lucide-react": "https://esm.sh/lucide-react@0.400.0?external=react",
+    "jszip": "https://esm.sh/jszip@3.10.1"
   }
 }
 </script>
@@ -45,6 +46,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Upload, Download, Image as ImageIcon, Settings, X, Share2, Library, Trash2, Loader2, CheckCircle2, Lock, Menu, Link2, Home, ChevronLeft, ChevronRight, Search, Edit3, Plus, Folder, Users, Tag, FileText, Mail, Sparkles, Copy, ExternalLink, ChevronDown, ChevronRight as ChevronRightSmall } from 'lucide-react';
+import JSZip from 'jszip';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -62,6 +64,38 @@ try {
 const basePath = (name) => ['artifacts', appId, 'public', 'data', name];
 const colRef = (name) => collection(db, ...basePath(name));
 const docRefFn = (name, id) => doc(db, ...basePath(name), id);
+
+// ============ 画像圧縮（チーム共有設定） ============
+// 設定はFirestore settings/compress: { maxSize: 長辺px(0=原寸), quality: 0.5〜0.9 }
+const COMPRESS_DEFAULT = { maxSize: 1200, quality: 0.7 };
+async function getCompressSettings() {
+  try {
+    if (db) {
+      const s = await getDoc(docRefFn('settings', 'compress'));
+      if (s.exists()) return { ...COMPRESS_DEFAULT, ...s.data() };
+    }
+  } catch (e) { console.warn('compress settings', e); }
+  return { ...COMPRESS_DEFAULT };
+}
+// dataURL → 長辺maxSizeに縮小し、JPEG(quality)で再圧縮したdataURLを返す
+function compressDataUrl(srcUrl, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const long = Math.max(w, h);
+      if (maxSize && long > maxSize) { const r = maxSize / long; w = Math.round(w * r); h = Math.round(h * r); }
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); // 透過PNG対策で白背景
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+    img.src = srcUrl;
+  });
+}
+function dataUrlKb(u) { return Math.round((u.length - u.indexOf(',') - 1) * 3 / 4 / 1024); }
 
 // ============ メール通知（GAS Webhook経由・クライアント別設定） ============
 // 設定はFirestoreの settings/notify にチーム共有で保存:
@@ -330,6 +364,123 @@ function NotifySettings({ accounts, showToast }) {
   );
 }
 
+// ============ CompressSection（画質設定＋一括圧縮） ============
+function CompressSection({ showToast }) {
+  const [cfg, setCfg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
+  const fileRef = useRef(null);
+
+  useEffect(() => { (async () => setCfg(await getCompressSettings()))(); }, []);
+
+  if (!cfg) return <p className="text-sm text-slate-400">読み込み中...</p>;
+
+  const saveCfg = async () => {
+    try {
+      await setDoc(docRefFn('settings', 'compress'), cfg);
+      showToast('圧縮設定を保存しました（チーム共有）');
+    } catch (e) { console.error(e); showToast('保存に失敗しました'); }
+  };
+
+  const readAsDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = (ev) => res(ev.target.result); r.onerror = rej; r.readAsDataURL(blob); });
+  const extOk = (name) => /\.(png|jpe?g|webp|gif|bmp)$/i.test(name);
+
+  const runBulk = async (files) => {
+    if (!files || !files.length) return;
+    setBusy(true); setProgress('準備中...');
+    try {
+      // 入力を集める（画像ファイル＋ZIPの中身）
+      const items = []; // {name, blob}
+      for (const f of files) {
+        if (/\.zip$/i.test(f.name)) {
+          const zin = await JSZip.loadAsync(f);
+          const entries = Object.values(zin.files).filter(e => !e.dir && extOk(e.name) && !e.name.startsWith('__MACOSX'));
+          for (const e of entries) items.push({ name: e.name.split('/').pop(), blob: await e.async('blob') });
+        } else if (f.type.startsWith('image/') || extOk(f.name)) {
+          items.push({ name: f.name, blob: f });
+        }
+      }
+      if (!items.length) { showToast('画像が見つかりませんでした'); setBusy(false); setProgress(''); return; }
+
+      const zout = new JSZip();
+      let done = 0, before = 0, after = 0, failed = 0;
+      for (const item of items) {
+        setProgress(`圧縮中... ${done + 1} / ${items.length}`);
+        try {
+          const src = await readAsDataUrl(item.blob);
+          const out = await compressDataUrl(src, cfg.maxSize, cfg.quality);
+          before += Math.round(item.blob.size / 1024); after += dataUrlKb(out);
+          const outName = item.name.replace(/\.\w+$/, '') + '.jpg';
+          zout.file(outName, out.split(',')[1], { base64: true });
+        } catch (e) { console.warn('skip', item.name, e); failed++; }
+        done++;
+      }
+      setProgress('ZIPを作成中...');
+      const blob = await zout.generateAsync({ type: 'blob' });
+      const d = new Date();
+      const stamp = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `圧縮画像_${stamp}.zip`;
+      a.click(); URL.revokeObjectURL(a.href);
+      setProgress(`✅ 完了：${done - failed}枚を圧縮（${before}KB → ${after}KB）${failed ? ` ／ ${failed}枚は読み込めずスキップ` : ''}`);
+    } catch (e) {
+      console.error(e); setProgress('❌ 失敗しました：' + e.message);
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <section className="space-y-3">
+        <h3 className="text-sm font-bold text-slate-700">保存時の画質（チーム共有）</h3>
+        <p className="text-xs text-slate-500 leading-relaxed bg-blue-50 text-blue-900 p-3 rounded-lg">
+          「PCに保存」「ギャラリー保存」の画像は、ここで設定したサイズ・画質の軽量JPGになります（MEOの表示速度対策）。
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">長辺サイズ（px）</label>
+            <select value={cfg.maxSize} onChange={(e) => setCfg({ ...cfg, maxSize: Number(e.target.value) })} className="w-full p-2 border rounded text-sm bg-white">
+              <option value={800}>800px（最軽量）</option>
+              <option value={1000}>1000px</option>
+              <option value={1200}>1200px（推奨）</option>
+              <option value={1600}>1600px（高精細）</option>
+              <option value={0}>縮小しない（原寸）</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">画質</label>
+            <select value={cfg.quality} onChange={(e) => setCfg({ ...cfg, quality: Number(e.target.value) })} className="w-full p-2 border rounded text-sm bg-white">
+              <option value={0.5}>50%（最軽量）</option>
+              <option value={0.6}>60%</option>
+              <option value={0.7}>70%（推奨）</option>
+              <option value={0.8}>80%</option>
+              <option value={0.9}>90%（高画質）</option>
+            </select>
+          </div>
+        </div>
+        <button onClick={saveCfg} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium text-sm">設定を保存</button>
+      </section>
+
+      <section className="space-y-3 border-t pt-4">
+        <h3 className="text-sm font-bold text-slate-700">過去画像の一括圧縮</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          画像を複数選択（またはZIPごと）でアップロードすると、上の設定で一括圧縮して<b>ZIPでダウンロード</b>できます。差し替え用にどうぞ。
+        </p>
+        <label className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+          <Upload className="w-6 h-6 mb-1 text-slate-400" />
+          <p className="text-sm font-medium text-slate-600">{busy ? '処理中...' : '画像（複数可）またはZIPを選択'}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">PNG / JPG / WEBP / ZIP</p>
+          <input ref={fileRef} type="file" className="hidden" multiple accept="image/*,.zip" onChange={(e) => runBulk([...e.target.files])} />
+        </label>
+        {progress && <p className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 whitespace-pre-wrap">{progress}</p>}
+      </section>
+    </div>
+  );
+}
+
 // ============ HamburgerMenu ============
 function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjectId, setSelectedProjectId, showToast }) {
   const [section, setSection] = useState('main');
@@ -415,7 +566,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
             {section !== 'main' && (
               <button onClick={() => setSection('main')} className="text-slate-500 hover:text-slate-800"><ChevronLeft className="w-5 h-5" /></button>
             )}
-            {section === 'main' ? 'メニュー' : section === 'accounts' ? '運用アカウント管理' : section === 'categories' ? '画像カテゴリ管理' : section === 'projects' ? 'プロジェクト管理' : section === 'release' ? 'リリース情報' : section === 'notify' ? 'メール通知設定' : '改善・問合せ'}
+            {section === 'main' ? 'メニュー' : section === 'accounts' ? '運用アカウント管理' : section === 'categories' ? '画像カテゴリ管理' : section === 'projects' ? 'プロジェクト管理' : section === 'release' ? 'リリース情報' : section === 'notify' ? 'メール通知設定' : section === 'compress' ? '画質・一括圧縮' : '改善・問合せ'}
           </h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded"><X className="w-5 h-5" /></button>
         </div>
@@ -429,6 +580,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
               <MenuBtn icon={Tag} label="画像カテゴリ管理" onClick={() => setSection('categories')} sub={`${categories.length}件`} />
               <MenuBtn icon={Folder} label="プロジェクト管理" onClick={() => setSection('projects')} sub={`${projects.length}件`} />
               <MenuBtn icon={Mail} label="メール通知設定" onClick={() => setSection('notify')} sub="ギャラリー保存時" />
+              <MenuBtn icon={Settings} label="画質・一括圧縮" onClick={() => setSection('compress')} sub="保存画質の設定／過去画像の一括圧縮" />
             </>
           )}
           {section === 'release' && <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 p-4 rounded-lg">{RELEASE_NOTES}</div>}
@@ -440,6 +592,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
             </div>
           )}
           {section === 'notify' && <NotifySettings accounts={accounts} showToast={showToast} />}
+          {section === 'compress' && <CompressSection showToast={showToast} />}
           {section === 'accounts' && <AccountManager accounts={accounts} onAdd={addAccount} onRename={renameAccount} onDelete={deleteAccount} />}
           {section === 'categories' && <CategoryManager accounts={accounts} categories={categories} onAdd={addCategory} onRename={renameCategory} onDelete={deleteCategory} />}
           {section === 'projects' && <ProjectManager accounts={accounts} categories={categories} projects={projects} selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId} onAdd={addProject} onDelete={deleteProject} />}
@@ -624,13 +777,15 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
 
   const canSave = !!baseImage && !!accountId && !!categoryId;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!canSave) { showToast('画像とアカウント・カテゴリを設定してください'); return; }
     const c = canvasRef.current; if (!c) return;
-    const url = c.toDataURL('image/png');
+    const cfg = await getCompressSettings();
+    const url = await compressDataUrl(c.toDataURL('image/png'), cfg.maxSize, cfg.quality);
     const link = document.createElement('a');
-    link.download = `${folderName}.png`;
+    link.download = `${folderName}.jpg`;
     link.href = url; link.click();
+    showToast(`保存しました（${dataUrlKb(url)}KB・軽量JPG）`);
   };
   const handleShare = async () => {
     if (!canSave) { showToast('画像とアカウント・カテゴリを設定してください'); return; }
@@ -638,7 +793,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
     const c = canvasRef.current; if (!c) return;
     setIsUploading(true);
     try {
-      const url = c.toDataURL('image/jpeg', 0.75);
+      const cfg = await getCompressSettings();
+      const url = await compressDataUrl(c.toDataURL('image/png'), cfg.maxSize, cfg.quality);
       await addDoc(colRef('shared_thumbnails'), {
         imageUrl: url, titleText: '', folderName,
         accountId, accountName: account?.name || '',
