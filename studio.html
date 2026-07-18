@@ -39,7 +39,7 @@
   .note { font-size:12px; color:#1e40af; background:#eff6ff; border-radius:10px; padding:10px 12px; margin-top:10px; line-height:1.7; }
   .err { color:var(--ng); font-size:13px; white-space:pre-wrap; background:#fef2f2; border-radius:10px; padding:10px; margin-top:10px; }
   .nav { position:fixed; left:0; right:0; bottom:0; z-index:40; background:rgba(255,255,255,.97); backdrop-filter:blur(8px); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
-  .nav-in { max-width:720px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); }
+  .nav-in { max-width:720px; margin:0 auto; display:grid; grid-template-columns:repeat(5,1fr); }
   .nav button { border:0; background:transparent; padding:9px 0; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--muted); cursor:pointer; }
   .nav button.on { color:var(--ink); font-weight:700; }
   .nav .ic { font-size:19px; line-height:1; }
@@ -122,6 +122,8 @@
       <h2>🔗 リンクを追加（この端末に保存）</h2>
       <label>表示名</label>
       <input id="myLinkName" placeholder="例：GMO MEOツール（アップロード）">
+      <label class="mt">サブ説明（任意）</label>
+      <input id="myLinkSub" placeholder="例：あさば様のMEO投稿アップロード用">
       <label class="mt">URL</label>
       <input id="myLinkUrl" placeholder="https://...">
       <button class="btn btn-ghost mt" onclick="addMyLink()">追加</button>
@@ -145,6 +147,14 @@
       <input type="file" id="restoreFile" accept=".json" onchange="importBackup(this.files[0])">
     </div>
     <p class="sub center">MEO投稿 統合ツール v1 ／ ログイン不要・データはこの端末に保存</p>
+  </section>
+
+  <!-- ============ 投稿履歴 ============ -->
+  <section data-view="history" hidden>
+    <h1>投稿履歴</h1>
+    <p class="sub">CSVを出力した投稿文がチームで蓄積されます。過去の投稿文をコピーして再利用できます。</p>
+    <input id="histSearch" placeholder="🔍 タイトル・本文で検索" oninput="renderHistory()" style="margin-bottom:10px;">
+    <div id="histList"></div>
   </section>
 </div>
 
@@ -239,6 +249,7 @@
     <button data-tab="home" class="on" onclick="go('home')"><span class="ic">🏠</span>ホーム</button>
     <button data-tab="schedule" onclick="go('schedule')"><span class="ic">📅</span>予定</button>
     <button data-tab="create" onclick="go('create')"><span class="ic">✍️</span>作成</button>
+    <button data-tab="history" onclick="go('history')"><span class="ic">📚</span>履歴</button>
     <button data-tab="settings" onclick="go('settings')"><span class="ic">⚙️</span>設定</button>
   </div>
 </nav>
@@ -322,6 +333,16 @@ try {
     window.__rules = arr;
     window.dispatchEvent(new Event('rules-ready'));
   }, (e)=> console.warn('rules read error', e));
+
+  // ===== 投稿履歴（チーム共有・Firestore） =====
+  window.fs.delPost = (id) => deleteDoc(doc(db, ...basePath('studio_posts'), id));
+  onSnapshot(collection(db, ...basePath('studio_posts')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    arr.sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
+    window.__posts = arr;
+    window.dispatchEvent(new Event('posts-ready'));
+  }, (e)=> console.warn('posts read error', e));
 } catch (e) {
   console.warn('Firebase init failed', e);
   window.dispatchEvent(new CustomEvent('links-error',{detail:e.message}));
@@ -450,7 +471,8 @@ function go(view){
   if(view==="home"){ renderLinks(); renderHomeSchedule(); }
   if(view==="schedule") renderSchedList();
   if(view==="create") renderCreate();
-  if(view==="settings") renderMyLinks();
+  if(view==="settings"){ renderMyLinks(); renderRules(); }
+  if(view==="history") renderHistory();
 }
 window.go = go;
 
@@ -461,11 +483,17 @@ const BUILTIN_LINKS = [
 function renderLinks(){
   const box = document.getElementById("linkList");
   const team = window.__teamLinks || [];
-  const all = [...team.map(l=>({name:l.name, url:l.url})), ...myLinks, ...BUILTIN_LINKS]
+  const all = [...team.map(l=>({name:l.name, url:l.url, sub:l.sub})), ...myLinks, ...BUILTIN_LINKS]
     .filter(l=>l.url);
   box.innerHTML = all.length ? all.map(l=>`
     <a class="linkbtn" href="${esc(l.url)}" target="_blank" rel="noopener">
-      <span class="ic">🔗</span><span>${esc(l.name||l.url)}</span><span class="arr">›</span>
+      <span class="ic">🔗</span>
+      <span style="min-width:0;flex:1;">
+        <span style="display:block;">${esc(l.name||l.url)}</span>
+        ${l.sub?`<span style="display:block;font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.sub)}</span>`:""}
+        <span style="display:block;font-size:10px;font-weight:400;color:#c0c8d4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.url)}</span>
+      </span>
+      <span class="arr">›</span>
     </a>`).join("") : `<p class="hint">リンクはまだありません。設定タブから追加できます。</p>`;
 }
 window.addEventListener("links-ready", ()=>{ document.getElementById("fbLinkStatus").textContent=""; renderLinks(); });
@@ -474,15 +502,16 @@ window.addEventListener("links-error", (e)=>{ document.getElementById("fbLinkSta
 function renderMyLinks(){
   const box = document.getElementById("myLinkList");
   box.innerHTML = myLinks.length ? myLinks.map((l,i)=>`
-    <div class="listitem"><div class="small"><b>${esc(l.name)}</b><br><span class="muted">${esc(l.url)}</span></div>
+    <div class="listitem"><div class="small" style="min-width:0;"><b>${esc(l.name)}</b>${l.sub?`<br><span class="muted">${esc(l.sub)}</span>`:""}<br><span style="color:#c0c8d4;font-size:11px;">${esc(l.url)}</span></div>
     <button class="pill" onclick="delMyLink(${i})">削除</button></div>`).join("") : `<p class="hint">まだありません</p>`;
 }
 window.addMyLink = ()=>{
   const name = document.getElementById("myLinkName").value.trim();
   const url = document.getElementById("myLinkUrl").value.trim();
+  const sub = document.getElementById("myLinkSub").value.trim();
   if(!name || !url) return toast("表示名とURLを入力してください");
-  myLinks.push({name,url}); save(LS.mylinks,myLinks);
-  document.getElementById("myLinkName").value=""; document.getElementById("myLinkUrl").value="";
+  myLinks.push({name,url,sub}); save(LS.mylinks,myLinks);
+  document.getElementById("myLinkName").value=""; document.getElementById("myLinkUrl").value=""; document.getElementById("myLinkSub").value="";
   renderMyLinks(); toast("追加しました");
 };
 window.delMyLink = (i)=>{ myLinks.splice(i,1); save(LS.mylinks,myLinks); renderMyLinks(); };
@@ -1084,6 +1113,53 @@ window.delRule = (id)=>{
 window.copyText = (id)=>{
   const el=document.getElementById(id); el.select();
   navigator.clipboard.writeText(el.value).then(()=>toast("コピーしました")).catch(()=>{ document.execCommand("copy"); toast("コピーしました"); });
+};
+window.copyStr = (s)=>{ navigator.clipboard.writeText(s).then(()=>toast("コピーしました")).catch(()=>toast("コピーできませんでした")); };
+
+// ============ 投稿履歴（チーム共有・Firestore） ============
+window.addEventListener("posts-ready", ()=>{ const v=document.querySelector('[data-view="history"]'); if(v && !v.hidden) renderHistory(); });
+function contentLabel(key){
+  if(key==="seitai_seikotsu") return "整体整骨グループ 共通";
+  if(key==="pilates") return "マシンピラティス（Peace）共通";
+  const s = STORES.find(x=>x.gmo===key); return s ? s.name : key;
+}
+function renderHistory(){
+  const box = document.getElementById("histList"); if(!box) return;
+  const posts = window.__posts || [];
+  const q = (document.getElementById("histSearch")?.value || "").trim().toLowerCase();
+  const filtered = q ? posts.filter(p=>{
+    const hay = [p.title, p.themeTitle, p.catchTitle, ...Object.values(p.contents||{})].join(" ").toLowerCase();
+    return hay.includes(q);
+  }) : posts;
+  if(!posts.length){ box.innerHTML = `<p class="hint">まだ投稿履歴がありません。作成タブでCSVを出力すると、その投稿文がここに貯まります。</p>`; return; }
+  if(!filtered.length){ box.innerHTML = `<p class="hint">「${esc(q)}」に一致する投稿はありません。</p>`; return; }
+  box.innerHTML = filtered.map(p=>{
+    const entries = Object.entries(p.contents||{});
+    const dateStr = p.date ? `${p.date.replace(/-/g,"/")}${p.time?" "+p.time:""}` : "日付なし";
+    const blocks = entries.map(([k,v])=>`
+      <div style="border-top:1px solid var(--line); padding-top:8px; margin-top:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <b class="small">${esc(contentLabel(k))}</b>
+          <button class="pill" onclick='copyStr(${JSON.stringify(v)})'>本文コピー</button>
+        </div>
+        <div class="small muted" style="white-space:pre-wrap; margin-top:4px;">${esc(v)}</div>
+      </div>`).join("");
+    return `<div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+        <div style="min-width:0;">
+          <b>${esc(p.catchTitle || p.title || "（無題）")}</b>
+          <div class="small muted">${esc(dateStr)} ・ ${esc(p.abType||"")}投稿 ・ ${esc(p.postType||"")}${p.themeTitle?` ・ テーマ：${esc(p.themeTitle)}`:""}</div>
+          ${p.imageTitle?`<div class="small muted">🖼️ ${esc(p.imageTitle)}</div>`:""}
+        </div>
+        <button class="pill" style="color:var(--ng); flex-shrink:0;" onclick="delHistory('${p.id}')">削除</button>
+      </div>
+      ${blocks}
+    </div>`;
+  }).join("");
+}
+window.delHistory = (id)=>{
+  if(!confirm("この投稿履歴を削除しますか？")) return;
+  if(window.fs && window.fs.delPost) window.fs.delPost(id).then(()=>toast("削除しました")).catch(()=>toast("削除に失敗しました"));
 };
 
 // ============ バックアップ ============
