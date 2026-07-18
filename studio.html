@@ -191,6 +191,9 @@
     <input id="sm_kw" placeholder="例：肩こり・首こり・手足の冷え">
     <label class="mt">画像メモ（サムネの場面イメージ）</label>
     <input id="sm_imgmemo" placeholder="例：冷房の中でカーディガンを羽織る女性→リラックス">
+    <label class="mt">サムネイル画像（事前に紐付け）</label>
+    <div id="sm_imgLinked"></div>
+    <button class="btn btn-ghost" onclick="openGalPickForSched()">🖼️ ギャラリーから画像を選ぶ</button>
     <label class="mt">対象</label>
     <div class="seg" id="sm_scope">
       <button data-scope="category_common" class="on">カテゴリ共通</button>
@@ -205,6 +208,19 @@
       <button class="btn btn-primary" onclick="saveSchedEdit()">保存</button>
     </div>
     <button class="btn btn-ghost mt" id="sm_delete" onclick="deleteSched()" style="color:var(--ng); border-color:#fecaca;">この予定を削除</button>
+  </div>
+</div>
+
+<!-- ギャラリー画像ピッカー（予定への事前紐付け用） -->
+<div id="galPickModal" style="display:none; position:fixed; inset:0; z-index:85; background:rgba(0,0,0,.5); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
+    <h2 id="galPickTitle">🖼️ ギャラリーから画像を選ぶ</h2>
+    <p class="hint" id="galPickHint"></p>
+    <input id="galPickSearch" placeholder="🔍 名前で絞り込み" oninput="renderGalPick(this.value)">
+    <div id="galPickList" class="gallery mt"></div>
+    <div class="btn-row mt">
+      <button class="btn btn-ghost" onclick="closeGalPick()">とじる</button>
+    </div>
   </div>
 </div>
 
@@ -305,7 +321,7 @@ try {
   // ギャラリー画像
   onSnapshot(collection(db, ...basePath('shared_thumbnails')), (s) => {
     const arr = [];
-    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, folderName:v.folderName||'', titleText:v.titleText||'', imageUrl:v.imageUrl||'', createdAt:v.createdAt||0 }); });
+    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, folderName:v.folderName||'', titleText:v.titleText||'', imageUrl:v.imageUrl||'', createdAt:v.createdAt||0, linkedScheduleId:v.linkedScheduleId||'', linkedScheduleTitle:v.linkedScheduleTitle||'' }); });
     arr.sort((a,b)=> b.createdAt - a.createdAt);
     window.__gallery = arr;
     window.dispatchEvent(new Event('gallery-ready'));
@@ -327,6 +343,8 @@ try {
     setRule: (rec) => setDoc(doc(db, ...basePath('studio_rules'), rec.id), rec),
     delRule: (id) => deleteDoc(doc(db, ...basePath('studio_rules'), id)),
     addPost: (rec) => addDoc(collection(db, ...basePath('studio_posts')), rec),
+    // 画像←→予定の双方向紐付け：ギャラリー画像(shared_thumbnails)にも予定情報を書き戻す
+    linkImage: (imageId, data) => setDoc(doc(db, ...basePath('shared_thumbnails'), imageId), data, { merge: true }),
   };
   try {
     const snap = await getDocs(collection(db, ...basePath('studio_schedule')));
@@ -545,6 +563,8 @@ function sortedSched(){ return [...schedule].sort((a,b)=> (a.date||"9999").local
 function abBadge(s){ return s.abType ? `<span class="pill" style="background:${s.abType==="A"?"#dbeafe":"#fce7f3"}; color:${s.abType==="A"?"#1d4ed8":"#be185d"};">${s.abType}</span> ` : ""; }
 function dowJp(date){ if(!date) return ""; const d=new Date(date+"T00:00:00"); return ["日","月","火","水","木","金","土"][d.getDay()]; }
 function schedWhen(s){ return `${fmtJp(s.date)}${s.date?`(${dowJp(s.date)})`:""} ${s.time||""}`; }
+// 予定に紐付いた画像のサムネURLをギャラリーから解決（大きな画像データは予定に保存しない）
+function galUrlById(id){ if(!id) return ""; const g=(window.__gallery||[]).find(x=>x.id===id); return g?g.imageUrl:""; }
 
 function renderHomeSchedule(){
   const box = document.getElementById("homeSchedule");
@@ -552,7 +572,10 @@ function renderHomeSchedule(){
   const up = sortedSched().filter(s=> !s.done && (!s.date || s.date>=today)).slice(0,5);
   box.innerHTML = up.length ? up.map(s=>`
     <div class="listitem">
-      <div>${abBadge(s)}<b class="small">${esc(s.title)}</b><br><span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
+      <div style="display:flex; gap:8px; min-width:0;">
+        ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:40px;height:40px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
+        <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b>${s.imageTitle?' 🖼️':''}<br><span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
+      </div>
       <div style="display:flex; gap:6px;">
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
@@ -564,9 +587,12 @@ function renderSchedList(){
   const list = sortedSched();
   box.innerHTML = list.length ? list.map(s=>`
     <div class="listitem">
-      <div>${abBadge(s)}<b class="small">${esc(s.title)}</b> ${s.done?'<span class="pill badge-done">出力済</span>':''}<br>
-      ${s.catchTitle?`<span class="muted" style="font-size:11px;">📝 ${esc(s.catchTitle)}</span><br>`:""}
-      <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
+      <div style="display:flex; gap:8px; min-width:0;">
+        ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;" title="${esc(s.imageTitle||'')}">`:""}
+        <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b> ${s.done?'<span class="pill badge-done">出力済</span>':''}${s.imageTitle?' <span class="pill" style="background:#dcfce7;color:#166534;">🖼️紐付け済</span>':''}<br>
+        ${s.catchTitle?`<span class="muted" style="font-size:11px;">📝 ${esc(s.catchTitle)}</span><br>`:""}
+        <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
+      </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
@@ -576,6 +602,7 @@ function renderSchedList(){
 }
 
 let editingSchedId = null;
+let smImage = null; // 予定編集中に紐付けたサムネ画像 {title, id, url}
 const defaultTime = (ab)=> ab==="B" ? "07:00" : "16:00"; // A=金曜16:00 / B=月曜7:00
 window.openSchedEdit = (id)=>{
   editingSchedId = id || null;
@@ -594,8 +621,56 @@ window.openSchedEdit = (id)=>{
   document.querySelectorAll("#sm_scope button").forEach(b=> b.classList.toggle("on", b.dataset.scope===scope));
   document.getElementById("sm_storeWrap").style.display = scope==="per_store" ? "block" : "none";
   renderSmStores(s?.storeIds || []);
+  smImage = s?.imageTitle ? { title:s.imageTitle, id:s.imageId||null, url:galUrlById(s.imageId) } : null;
+  renderSmImgLinked();
   document.getElementById("sm_delete").style.display = s ? "block" : "none";
   document.getElementById("schedModal").style.display = "flex";
+};
+function renderSmImgLinked(){
+  const box = document.getElementById("sm_imgLinked"); if(!box) return;
+  if(smImage){
+    box.innerHTML = `<div class="listitem" style="align-items:center;">
+      <div style="display:flex; gap:8px; align-items:center; min-width:0;">
+        ${smImage.url?`<img src="${esc(smImage.url)}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
+        <span class="small" style="min-width:0;overflow:hidden;text-overflow:ellipsis;">${esc(smImage.title)}</span>
+      </div>
+      <button class="pill" style="color:var(--ng);flex-shrink:0;" onclick="unlinkSmImage()">解除</button>
+    </div>`;
+  } else {
+    box.innerHTML = `<p class="hint">まだ画像を紐付けていません（あとで作成時に選ぶこともできます）</p>`;
+  }
+}
+window.unlinkSmImage = ()=>{ smImage = null; renderSmImgLinked(); };
+
+// ===== ギャラリー画像ピッカー（予定への事前紐付け） =====
+window.openGalPickForSched = ()=>{
+  const g = window.__gallery||[];
+  document.getElementById("galPickHint").textContent = g.length ? `${g.length}件の画像から選べます。タップで紐付け。` : "ギャラリーに画像がまだありません。サムネイルツールで保存すると出てきます。";
+  document.getElementById("galPickSearch").value = "";
+  renderGalPick("");
+  document.getElementById("galPickModal").style.display = "flex";
+};
+window.closeGalPick = ()=> document.getElementById("galPickModal").style.display="none";
+window.renderGalPick = (q="")=>{
+  const box = document.getElementById("galPickList"); if(!box) return;
+  const g = window.__gallery||[];
+  const ql = q.toLowerCase();
+  const items = g.filter(i=> !ql || (i.folderName+i.titleText).toLowerCase().includes(ql)).slice(0,80);
+  box.innerHTML = items.map(i=>{
+    const name = i.folderName||i.titleText||"画像";
+    const linked = i.linkedScheduleTitle ? `<div style="position:absolute;top:2px;left:2px;background:#1d4ed8;color:#fff;font-size:9px;padding:1px 4px;border-radius:6px;">📅${esc(i.linkedScheduleTitle)}</div>` : "";
+    return `<div class="gitem" style="position:relative;" onclick="pickGalForSched('${i.id}')">
+      <img src="${esc(i.imageUrl)}" loading="lazy" alt="">${linked}
+      <div class="cap">${esc(name)}</div></div>`;
+  }).join("") || `<p class="hint">該当する画像がありません</p>`;
+};
+window.pickGalForSched = (id)=>{
+  const img = (window.__gallery||[]).find(x=>x.id===id); if(!img) return;
+  const name = img.folderName || img.titleText || "画像";
+  smImage = { title: name + ".jpg", id: img.id, url: img.imageUrl||"" };
+  renderSmImgLinked();
+  closeGalPick();
+  toast("画像を紐付けました：" + name);
 };
 // A/B切替時、時間が既定のままなら連動して切替
 document.getElementById("sm_ab").addEventListener("change", (e)=>{
@@ -628,12 +703,20 @@ window.saveSchedEdit = ()=>{
     abType: ab,
     kw: document.getElementById("sm_kw").value.trim(),
     imageMemo: document.getElementById("sm_imgmemo").value.trim(),
+    imageTitle: smImage ? smImage.title : "",
+    imageId: smImage ? (smImage.id||"") : "",
+    imageUrl: "", // 旧仕様で保存された重い画像データを消去（サムネはギャラリーから解決）
     postType: document.getElementById("sm_postType").value,
     timing: document.getElementById("sm_timing").value,
     scope, storeIds, done:false,
   };
+  const schedId = rec.id;
   if(editingSchedId){ const i=schedule.findIndex(x=>x.id===editingSchedId); persistSched({...schedule[i],...rec}); }
   else persistSched(rec);
+  // 双方向紐付け：ギャラリー画像側にも予定情報を書き戻す
+  if(window.fs && smImage && smImage.id){
+    window.fs.linkImage(smImage.id, { linkedScheduleId: schedId, linkedScheduleTitle: rec.catchTitle || rec.title }).catch(e=>console.warn("linkImage", e));
+  }
   closeSchedEdit(); renderSchedList(); toast("保存しました");
 };
 window.deleteSched = ()=>{
@@ -663,7 +746,7 @@ window.importSchedBulk = ()=>{
 const STEPS = ["対象","指示文","貼付け","画像","出力"];
 const cur = {};
 function setCur(o){ for(const k in cur) delete cur[k]; Object.assign(cur, o); }
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, imagePrompt:"", imageTitle:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = (id)=>{
@@ -671,7 +754,8 @@ window.startFromSched = (id)=>{
   freshCur({ schedId:id, title:s.catchTitle||s.title, themeTitle:s.title, catchTitle:s.catchTitle||"",
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
              kw:s.kw||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", timing:s.timing||"scheduled",
-             scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice() });
+             scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
+             imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
 };
 function targets(){
@@ -911,12 +995,29 @@ window.renderGallery = (q="")=>{
   box.innerHTML = items.map(i=>{
     const name=(i.folderName||i.titleText||"画像"); const jpg=name+".jpg";
     const sel = cur.imageTitle===jpg?"sel":"";
-    return `<div class="gitem ${sel}" onclick="pickImage('${esc(jpg).replace(/'/g,"\\'")}')">
-      <img src="${esc(i.imageUrl)}" loading="lazy" alt="">
+    // 予定に紐付け済みか（画像側の記録 or 予定側の記録どちらでも）
+    const linkedTitle = i.linkedScheduleTitle || (schedule.find(s=> s.imageId===i.id || s.imageTitle===jpg)?.catchTitle) || (schedule.find(s=> s.imageId===i.id || s.imageTitle===jpg)?.title) || "";
+    const badge = linkedTitle ? `<div style="position:absolute;top:2px;left:2px;background:#1d4ed8;color:#fff;font-size:9px;padding:1px 4px;border-radius:6px;max-width:90%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">📅${esc(linkedTitle)}</div>` : "";
+    return `<div class="gitem ${sel}" style="position:relative;" onclick="pickImage('${esc(jpg).replace(/'/g,"\\'")}')">
+      <img src="${esc(i.imageUrl)}" loading="lazy" alt="">${badge}
       <div class="cap">${esc(name)}</div></div>`;
   }).join("");
 };
-window.pickImage = (jpg)=>{ cur.imageTitle=jpg; document.getElementById("c_imageTitle").value=jpg; renderGallery(document.getElementById("gsearch").value); toast("画像を選択："+jpg); };
+window.pickImage = (jpg)=>{
+  cur.imageTitle=jpg;
+  const img = (window.__gallery||[]).find(i=> (i.folderName||i.titleText||"画像")+".jpg"===jpg);
+  cur.imageId = img?.id || "";
+  cur.imageUrl = img?.imageUrl || "";
+  document.getElementById("c_imageTitle").value=jpg;
+  // この投稿が予定から来ている場合、予定にも画像を紐付けて双方向に記録
+  if(cur.schedId){
+    const i = schedule.findIndex(s=>s.id===cur.schedId);
+    if(i>=0){ persistSched({ ...schedule[i], imageTitle:jpg, imageId:cur.imageId }); }
+    if(window.fs && cur.imageId){ window.fs.linkImage(cur.imageId, { linkedScheduleId:cur.schedId, linkedScheduleTitle: cur.catchTitle||cur.title }).catch(e=>console.warn("linkImage",e)); }
+  }
+  renderGallery(document.getElementById("gsearch").value);
+  toast("画像を選択："+jpg);
+};
 window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data-view="create"]').hidden && cur.step===3) renderGallery(document.getElementById("gsearch")?.value||""); });
 
 // --- Step4: 出力 ---
@@ -1217,6 +1318,7 @@ const HELP_HTML = `
   <div class="card" style="background:#eff6ff; border-color:#bfdbfe;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
     <ul style="margin:8px 0 0; padding-left:20px; font-size:13px; line-height:1.9;">
+      <li><b>予定にサムネ画像を事前に紐付け</b>できるように（予定の「編集」→ ギャラリーから選択。作成時に自動で入ります）</li>
       <li><b>画像プロンプトにタイトルの位置</b>を追加（左上／右上／左下／右下／中央上／おまかせ）</li>
       <li><b>📚履歴タブ</b>を追加：CSV出力した投稿文がチームに貯まり、検索・再利用できます</li>
       <li><b>リンク集にサブ説明</b>を追加（URLは薄く表示）</li>
