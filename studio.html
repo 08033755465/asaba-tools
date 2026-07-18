@@ -146,7 +146,11 @@
       <label class="mt">復元（バックアップJSONを選択）</label>
       <input type="file" id="restoreFile" accept=".json" onchange="importBackup(this.files[0])">
     </div>
-    <p class="sub center">MEO投稿 統合ツール v1 ／ ログイン不要・データはこの端末に保存</p>
+    <div class="card">
+      <h2>📖 使い方・お知らせ</h2>
+      <button class="btn btn-ghost" onclick="showHelp()">使い方ガイドを開く</button>
+    </div>
+    <p class="sub center">MEO投稿 統合ツール（<span id="verLabel"></span>）／ ログイン不要・チーム共有</p>
   </section>
 
   <!-- ============ 投稿履歴 ============ -->
@@ -262,6 +266,14 @@
     <button data-tab="settings" onclick="go('settings')"><span class="ic">⚙️</span>設定</button>
   </div>
 </nav>
+
+<!-- 使い方・お知らせモーダル -->
+<div id="helpModal" style="display:none; position:fixed; inset:0; z-index:80; background:rgba(0,0,0,.5); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:92dvh; overflow-y:auto; padding:20px;">
+    <div id="helpBody"></div>
+    <button class="btn btn-primary mt" style="position:sticky; bottom:0;" onclick="closeHelp()">とじる</button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -1196,12 +1208,78 @@ window.importBackup = async (file)=>{
   }catch(e){ toast("読み込みに失敗しました"); }
 };
 
+// ============ 使い方・お知らせ ============
+// バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
+const STUDIO_VERSION = "2026-07-19";
+const HELP_HTML = `
+  <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
+
+  <div class="card" style="background:#eff6ff; border-color:#bfdbfe;">
+    <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
+    <ul style="margin:8px 0 0; padding-left:20px; font-size:13px; line-height:1.9;">
+      <li><b>画像プロンプトにタイトルの位置</b>を追加（左上／右上／左下／右下／中央上／おまかせ）</li>
+      <li><b>📚履歴タブ</b>を追加：CSV出力した投稿文がチームに貯まり、検索・再利用できます</li>
+      <li><b>リンク集にサブ説明</b>を追加（URLは薄く表示）</li>
+      <li><b>定例指示</b>：毎回自動で入れたい指示を登録できます（設定タブ）</li>
+      <li>指示文・画像プロンプトを<b>手動で書き換え</b>できるようになりました</li>
+    </ul>
+  </div>
+
+  <h2 style="margin-top:18px;">🚀 かんたん4ステップ</h2>
+  <div class="card">
+    <div style="font-size:13px; line-height:2;">
+      <b>① 予定を選ぶ</b><br>
+      「📅予定」タブで投稿する回の「作成」を押します。テーマ・日時・キャッチコピーが自動で入ります。<br><br>
+      <b>② 指示文をコピー → Claudeで投稿文を作る</b><br>
+      「作成」画面の指示文を「📋コピー」→ スマホのClaude（プロジェクト）に貼り付け。返ってきた文章を全部コピーします。<br><br>
+      <b>③ 貼り付けて流し込む</b><br>
+      「貼付け」画面に貼って「⬇️流し込む」を押すと、全店舗ぶんに自動で入ります。その場で修正もできます。<br><br>
+      <b>④ 画像を選んで CSV を出す</b><br>
+      サムネギャラリーから画像を選び、「CSVダウンロード」→ リンク集のGMOツールへ。以上で完了です。
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">🎨 サムネ画像を作るとき</h2>
+  <div class="card">
+    <div style="font-size:13px; line-height:2;">
+      予定の「🎨画像」ボタンで、ChatGPT用のプロンプトが作れます。<br>
+      場面・人物・<b>タイトルの位置</b>・季節を選んで「全文コピー」→ ChatGPTに貼るだけ。<br>
+      できた画像はサムネイルツールで文字入れ→ギャラリー保存→「.jpgコピー」で戻ってこられます。
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">💡 便利機能</h2>
+  <div class="card">
+    <div style="font-size:13px; line-height:2;">
+      ・<b>定例指示</b>（設定タブ）：毎回入れたい指示を登録すると自動で追記されます<br>
+      ・<b>履歴タブ</b>：過去の投稿文をコピーして再利用できます<br>
+      ・スケジュール・履歴・定例指示は<b>チーム全員で共有</b>されます
+    </div>
+  </div>
+`;
+window.showHelp = ()=>{
+  document.getElementById("helpBody").innerHTML = HELP_HTML;
+  document.getElementById("helpModal").style.display = "flex";
+};
+{ const vl = document.getElementById("verLabel"); if(vl) vl.textContent = "v " + STUDIO_VERSION; }
+window.closeHelp = ()=>{
+  document.getElementById("helpModal").style.display = "none";
+  localStorage.setItem("meo_studio_help_seen", STUDIO_VERSION);
+};
+window.maybeAutoHelp = function(){
+  if(localStorage.getItem("meo_studio_help_seen") !== STUDIO_VERSION){
+    showHelp();
+  }
+};
+
 // ============ util ============
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 window.cur = cur; // デバッグ用
 
 // 初期表示
 go("home");
+// 合言葉ロックが解除済みならお知らせを自動表示（未解除ならロック解除後に呼ぶ）
+if(localStorage.getItem("meo_unlocked")==="1") maybeAutoHelp();
 </script>
 
 <!-- 合言葉ロック（サムネイルツールと共通。同一ドメインなら解除状態も共有） -->
@@ -1228,6 +1306,7 @@ go("home");
     if(document.getElementById("lockInput").value === APP_PASSPHRASE){
       localStorage.setItem("meo_unlocked","1");
       gate.style.display = "none";
+      if(window.maybeAutoHelp) window.maybeAutoHelp();
     } else {
       document.getElementById("lockErr").style.display = "block";
     }
