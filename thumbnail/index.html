@@ -68,16 +68,35 @@ const docRefFn = (name, id) => doc(db, ...basePath(name), id);
 // ============ 画像圧縮（チーム共有設定） ============
 // 設定はFirestore settings/compress: { maxSize: 長辺px(0=原寸), quality: 0.5〜0.9 }
 const COMPRESS_DEFAULT = { maxSize: 1200, quality: 0.7 };
+// 常に最新の圧縮設定を同期的に読めるようキャッシュ（onSnapshotで更新）
+let liveCompress = { ...COMPRESS_DEFAULT };
+if (db) {
+  try { onSnapshot(docRefFn('settings', 'compress'), (s) => { if (s.exists()) liveCompress = { ...COMPRESS_DEFAULT, ...s.data() }; }); }
+  catch (e) { console.warn('compress snapshot', e); }
+}
 async function getCompressSettings() {
   try {
     if (db) {
       const s = await getDoc(docRefFn('settings', 'compress'));
-      if (s.exists()) return { ...COMPRESS_DEFAULT, ...s.data() };
+      if (s.exists()) { liveCompress = { ...COMPRESS_DEFAULT, ...s.data() }; return liveCompress; }
     }
   } catch (e) { console.warn('compress settings', e); }
   return { ...COMPRESS_DEFAULT };
 }
-// dataURL → 長辺maxSizeに縮小し、JPEG(quality)で再圧縮したdataURLを返す
+// canvasを直接・同期的に圧縮してJPEG dataURLを返す（iOS Safariのダウンロード対策：
+// タップ直後の同期処理でないと保存が失敗し拡張子が付かないため、awaitを挟まない）
+function compressCanvasSync(srcCanvas, cfg) {
+  const c2 = cfg || liveCompress || COMPRESS_DEFAULT;
+  let w = srcCanvas.width, h = srcCanvas.height;
+  const long = Math.max(w, h);
+  if (c2.maxSize && long > c2.maxSize) { const r = c2.maxSize / long; w = Math.round(w * r); h = Math.round(h * r); }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(srcCanvas, 0, 0, w, h);
+  return c.toDataURL('image/jpeg', c2.quality);
+}
+// dataURL → 長辺maxSizeに縮小し、JPEG(quality)で再圧縮したdataURLを返す（一括圧縮用・非同期）
 function compressDataUrl(srcUrl, maxSize, quality) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -777,13 +796,14 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
 
   const canSave = !!baseImage && !!accountId && !!categoryId;
 
-  const handleDownload = async () => {
+  const handleDownload = () => {
     if (!canSave) { showToast('画像とアカウント・カテゴリを設定してください'); return; }
     const c = canvasRef.current; if (!c) return;
-    const cfg = await getCompressSettings();
-    const url = await compressDataUrl(c.toDataURL('image/png'), cfg.maxSize, cfg.quality);
+    // ★同期処理のみ（await禁止）：iOS Safariはタップ直後でないと保存できないため
+    const url = compressCanvasSync(c, liveCompress);
     const link = document.createElement('a');
     link.download = `${folderName}.jpg`;
+    link.rel = 'noopener';
     link.href = url; link.click();
     showToast(`保存しました（${dataUrlKb(url)}KB・軽量JPG）`);
   };
@@ -793,8 +813,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
     const c = canvasRef.current; if (!c) return;
     setIsUploading(true);
     try {
-      const cfg = await getCompressSettings();
-      const url = await compressDataUrl(c.toDataURL('image/png'), cfg.maxSize, cfg.quality);
+      const url = compressCanvasSync(c, liveCompress);
       await addDoc(colRef('shared_thumbnails'), {
         imageUrl: url, titleText: '', folderName,
         accountId, accountName: account?.name || '',
