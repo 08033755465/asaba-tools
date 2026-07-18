@@ -162,7 +162,9 @@ function buildFolderName({ accountName, categoryName, date, memo }) {
   const acc = sanitizePart(accountName) || '未分類';
   const cat = sanitizePart(categoryName) || '未分類';
   const m = sanitizePart(memo);
-  let s = `${acc}：${cat}_${date || ''}`;
+  // 日付が空だと「◯◯_.jpg」という照合しにくい名前になるため今日の日付で補完
+  const d = date || isoToMMDD(todayISO());
+  let s = `${acc}：${cat}_${d}`;
   if (m) s += `_${m}`;
   return s;
 }

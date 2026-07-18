@@ -1030,6 +1030,7 @@ function viewExport(){
     <div><span class="muted">日時：</span>${cur.timing==="immediate"?"即時投稿":`${fmtJp(cur.date)} ${esc(cur.time||"")}（予約）`}</div>
     <div><span class="muted">投稿タイプ：</span>${esc(cur.postType)}</div>
     <div><span class="muted">画像：</span>${esc(cur.imageTitle)||"（なし）"}</div>
+    ${cur.imageTitle?`<div class="note" style="margin-top:8px;">⚠️ <b>この画像名が、GMOにアップロードした画像のファイル名と1文字でも違うと「不正値」になります。</b><br>GMOの画像管理に表示されている名前が違う場合は、その名前をコピーして前の画面の「選択中の画像タイトル」に貼り付けてください。<button class="pill" style="margin-left:6px;" onclick='copyStr(${JSON.stringify(cur.imageTitle)})'>画像名をコピー</button></div>`:""}
   </div>
   ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>`
     :`<div class="note">✅ チェックOK。CSVを出力できます。</div>`}
@@ -1061,6 +1062,19 @@ function fmtDate(d){ const[y,m,dd]=d.split("-"); return `${y}/${m}/${dd}`; }
 function fmtTime(t){ const[h,m]=t.split(":"); return `${parseInt(h,10)}:${m}`; }
 function q(v){ return `"${String(v==null?"":v).replace(/"/g,'""')}"`; }
 window.downloadCsv = ()=>{
+  // 画像名の形式チェック（過去にGMO取込成功した形式＝「◯◯：◯◯_MM-DD.jpg」）
+  if(cur.imageTitle){
+    const proven = /_\d{2}-\d{2}\.jpg$/.test(cur.imageTitle);
+    if(!proven){
+      const ok = confirm(
+        "画像名が、過去にGMO取込に成功した形式（…_07-24.jpg のように日付で終わる形）と異なります：\n\n" +
+        cur.imageTitle + "\n\n" +
+        "GMOにアップロードした画像名と完全一致していないと「不正値」になります。\n" +
+        "このままCSVを出力しますか？"
+      );
+      if(!ok) return;
+    }
+  }
   const lines=[HEADERS.map(q).join(",")];
   const immediate = cur.timing==="immediate";
   exportStores().forEach(s=>{
