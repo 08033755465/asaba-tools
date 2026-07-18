@@ -129,6 +129,16 @@
       <p class="hint">※サムネイルツールのチーム共有リンクは自動で表示されます。ここは自分用の追加分です</p>
     </div>
     <div class="card">
+      <h2>📌 定例指示（チーム共有）</h2>
+      <p class="hint">指示文・画像プロンプトの末尾に毎回自動で追記されます。ONのものだけ適用されます。</p>
+      <div id="ruleList" class="mt"></div>
+      <label class="mt">種類</label>
+      <select id="ruleType"><option value="post">投稿文への指示</option><option value="image">画像への指示</option></select>
+      <label class="mt">内容</label>
+      <textarea id="ruleBody" style="min-height:70px;" placeholder="例：文末は必ず前向きなひと言で締める"></textarea>
+      <button class="btn btn-ghost mt" onclick="addRule()">＋ 定例指示を追加</button>
+    </div>
+    <div class="card">
       <h2>データ</h2>
       <button class="btn btn-ghost" onclick="exportBackup()">📥 全データをバックアップ保存</button>
       <label class="mt">復元（バックアップJSONを選択）</label>
@@ -213,7 +223,8 @@
     <label class="mt">雰囲気</label>
     <input id="im_mood" value="明るい・爽やか・安心感・自然・健康的" oninput="buildImgPrompt()">
     <label class="mt">できあがったプロンプト</label>
-    <textarea id="im_output" readonly style="min-height:140px; font-size:12px; background:#f8fafc;"></textarea>
+    <textarea id="im_output" style="min-height:140px; font-size:12px;"></textarea>
+    <p class="hint">✏️ 手動で書き換えOK。書き換えた内容がそのままコピーされます（上の項目を変えると自動生成に戻ります）</p>
     <div class="btn-row mt">
       <button class="btn btn-blue" onclick="copyText('im_output')">📋 全文コピー（ChatGPTへ）</button>
     </div>
@@ -237,7 +248,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ===== サムネイルツールと同一のFirebase（既存の本番プロジェクトを共有） =====
 const FIREBASE_CONFIG = {
@@ -275,6 +286,42 @@ try {
     window.__teamLinks = arr;
     window.dispatchEvent(new Event('links-ready'));
   }, (e)=>{ console.warn('links read error', e); window.dispatchEvent(new CustomEvent('links-error',{detail:e.message})); });
+
+  // ===== スケジュール（チーム共有・Firestore） =====
+  // 初回のみ：Firestoreが空なら、この端末のスケジュールを移行アップロード
+  window.fs = {
+    setSched: (rec) => setDoc(doc(db, ...basePath('studio_schedule'), rec.id), rec),
+    delSched: (id) => deleteDoc(doc(db, ...basePath('studio_schedule'), id)),
+    setRule: (rec) => setDoc(doc(db, ...basePath('studio_rules'), rec.id), rec),
+    delRule: (id) => deleteDoc(doc(db, ...basePath('studio_rules'), id)),
+    addPost: (rec) => addDoc(collection(db, ...basePath('studio_posts')), rec),
+  };
+  try {
+    const snap = await getDocs(collection(db, ...basePath('studio_schedule')));
+    if (snap.empty) {
+      const local = JSON.parse(localStorage.getItem('meo_studio_schedule') || '[]');
+      for (const r of local) {
+        if (r && r.id) await setDoc(doc(db, ...basePath('studio_schedule'), r.id), r);
+      }
+      console.log('スケジュールをFirestoreへ移行:', local.length, '件');
+    }
+  } catch (e) { console.warn('sched migration error', e); }
+
+  onSnapshot(collection(db, ...basePath('studio_schedule')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    window.__remoteSched = arr;
+    window.dispatchEvent(new Event('sched-ready'));
+  }, (e)=> console.warn('sched read error', e));
+
+  // ===== 定例指示（チーム共有・Firestore） =====
+  onSnapshot(collection(db, ...basePath('studio_rules')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    arr.sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+    window.__rules = arr;
+    window.dispatchEvent(new Event('rules-ready'));
+  }, (e)=> console.warn('rules read error', e));
 } catch (e) {
   console.warn('Firebase init failed', e);
   window.dispatchEvent(new CustomEvent('links-error',{detail:e.message}));
@@ -369,6 +416,26 @@ if(!load("meo_studio_seed_v2", false)){
     if(t && !t.catchTitle) t.catchTitle = seed.catchTitle;
   });
   save(LS.sched, schedule); save("meo_studio_seed_v2", true);
+}
+
+// ===== Firestore同期（チーム共有） =====
+// 接続後はFirestoreが正。localStorageはキャッシュ（オフライン時のフォールバック）
+window.addEventListener('sched-ready', ()=>{
+  schedule = (window.__remoteSched||[]).slice();
+  save(LS.sched, schedule);
+  if(typeof renderSchedList==="function") renderSchedList();
+  if(typeof renderHomeSchedule==="function") renderHomeSchedule();
+});
+function persistSched(rec){
+  const i = schedule.findIndex(x=>x.id===rec.id);
+  if(i>=0) schedule[i]=rec; else schedule.push(rec);
+  save(LS.sched, schedule);
+  if(window.fs) window.fs.setSched(rec).catch(e=>console.warn("sched sync", e));
+}
+function removeSchedRec(id){
+  schedule = schedule.filter(x=>x.id!==id);
+  save(LS.sched, schedule);
+  if(window.fs) window.fs.delSched(id).catch(e=>console.warn("sched del", e));
 }
 function load(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch(e){ return def; } }
 function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -515,14 +582,14 @@ window.saveSchedEdit = ()=>{
     timing: document.getElementById("sm_timing").value,
     scope, storeIds, done:false,
   };
-  if(editingSchedId){ const i=schedule.findIndex(x=>x.id===editingSchedId); schedule[i]={...schedule[i],...rec}; }
-  else schedule.push(rec);
-  save(LS.sched, schedule); closeSchedEdit(); renderSchedList(); toast("保存しました");
+  if(editingSchedId){ const i=schedule.findIndex(x=>x.id===editingSchedId); persistSched({...schedule[i],...rec}); }
+  else persistSched(rec);
+  closeSchedEdit(); renderSchedList(); toast("保存しました");
 };
 window.deleteSched = ()=>{
   if(!editingSchedId) return;
   if(!confirm("この予定を削除しますか？")) return;
-  schedule = schedule.filter(x=>x.id!==editingSchedId); save(LS.sched,schedule);
+  removeSchedRec(editingSchedId);
   closeSchedEdit(); renderSchedList();
 };
 window.importSchedBulk = ()=>{
@@ -535,10 +602,10 @@ window.importSchedBulk = ()=>{
     let date = parts[0].replace(/\//g,"-");
     const m = date.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if(m) date = `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
-    schedule.push({ id:uid(), title:parts.slice(1).join(" "), date, postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], done:false });
+    persistSched({ id:uid(), title:parts.slice(1).join(" "), date, postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], done:false });
     n++;
   });
-  save(LS.sched,schedule); document.getElementById("schedBulk").value=""; renderSchedList();
+  document.getElementById("schedBulk").value=""; renderSchedList();
   toast(`${n}件を取り込みました`);
 };
 
@@ -660,7 +727,10 @@ ${targetDesc}
 ${RULES}
 
 ## 出力フォーマット（この形を厳守。前後に説明文を書かない）
-${fmt}`;
+${fmt}${rulesOf('post').length ? `
+
+## 定例指示（毎回適用）
+${rulesOf('post').map(r=>'・'+r.body).join('\n')}` : ""}`;
 }
 function viewInstruction(){
   const text = buildInstruction();
@@ -668,7 +738,8 @@ function viewInstruction(){
   return `<h1>2. 指示文をコピー</h1>
   <div class="card">
     <p class="small muted">下の指示文をコピーして、スマホのClaude（プロジェクト）に貼り付けてください。返ってきた文章を次のステップで貼り付けます。</p>
-    <textarea id="c_instruction" style="min-height:220px;" readonly>${esc(text)}</textarea>
+    <textarea id="c_instruction" style="min-height:220px;">${esc(text)}</textarea>
+    <p class="hint">✏️ 手動で書き換えOK。書き換えた内容がそのままコピーされます（画面を移動すると自動生成に戻ります）</p>
     <button class="btn btn-blue mt" onclick="copyText('c_instruction')">📋 指示文をコピー</button>
   </div>
   ${nav(0, 2, "貼り付けへ →")}`;
@@ -853,7 +924,17 @@ window.downloadCsv = ()=>{
   let mmdd; if(cur.date){const[,m,d]=cur.date.split("-");mmdd=`${m}-${d}`;} else {const n=new Date();mmdd=`${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;}
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${mmdd}.csv`; a.click(); URL.revokeObjectURL(a.href);
-  if(cur.schedId){ const i=schedule.findIndex(x=>x.id===cur.schedId); if(i>=0){ schedule[i].done=true; save(LS.sched,schedule); } }
+  if(cur.schedId){ const i=schedule.findIndex(x=>x.id===cur.schedId); if(i>=0) persistSched({ ...schedule[i], done:true }); }
+  // 投稿履歴をFirestoreに蓄積（チーム共有・のちの参照/移行用）
+  if(window.fs){
+    window.fs.addPost({
+      title: cur.title||"", themeTitle: cur.themeTitle||"", catchTitle: cur.catchTitle||"",
+      abType: cur.abType||"", postType: cur.postType||"", scope: cur.scope||"",
+      date: cur.date||"", time: cur.time||"", timing: cur.timing||"",
+      imageTitle: cur.imageTitle||"", imagePrompt: cur.imagePrompt||"",
+      contents: cur.contents||{}, createdAt: Date.now(),
+    }).catch(e=>console.warn("post archive", e));
+  }
   toast("CSVをダウンロードしました");
 };
 window.openGmo = ()=>{
@@ -929,7 +1010,9 @@ function imgInputBlock(){
 季節：${document.getElementById("im_season").value}
 雰囲気：${document.getElementById("im_mood").value.trim()}
 
-※画像内の文字はタイトルのみにしてください（それ以外の文章・吹き出し・アイコン・英語・ロゴ・透かしは禁止）`;
+※画像内の文字はタイトルのみにしてください（それ以外の文章・吹き出し・アイコン・英語・ロゴ・透かしは禁止）${rulesOf('image').length ? `
+※定例指示：
+${rulesOf('image').map(r=>'・'+r.body).join('\n')}` : ""}`;
 }
 window.buildImgPrompt = ()=>{
   document.getElementById("im_output").value = IMG_RULES + "\n\n" + imgInputBlock();
@@ -963,6 +1046,40 @@ window.copyImgInputOnly = ()=>{
   navigator.clipboard.writeText(imgInputBlock()).then(()=>toast("入力部分をコピーしました"));
 };
 
+// ============ 定例指示（チーム共有・Firestore） ============
+window.addEventListener('rules-ready', ()=>{ renderRules(); });
+function rulesOf(type){ return (window.__rules||[]).filter(r=>r.enabled && r.type===type); }
+function renderRules(){
+  const box = document.getElementById("ruleList"); if(!box) return;
+  const rules = window.__rules||[];
+  box.innerHTML = rules.length ? rules.map(r=>`
+    <div class="listitem">
+      <div style="min-width:0;">
+        <span class="pill" style="background:${r.type==='post'?'#dbeafe':'#fce7f3'};color:${r.type==='post'?'#1d4ed8':'#be185d'};">${r.type==='post'?'投稿':'画像'}</span>
+        <span class="small" style="${r.enabled?'':'text-decoration:line-through;color:var(--muted);'}">${esc(r.body)}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="pill" onclick="toggleRule('${r.id}')">${r.enabled?'OFFに':'ONに'}</button>
+        <button class="pill" style="color:var(--ng);" onclick="delRule('${r.id}')">削除</button>
+      </div>
+    </div>`).join("") : `<p class="hint">まだ定例指示がありません</p>`;
+}
+window.addRule = ()=>{
+  const body = document.getElementById("ruleBody").value.trim();
+  if(!body) return toast("内容を入力してください");
+  if(!window.fs) return toast("サーバー接続中です。数秒待ってからもう一度どうぞ");
+  const rec = { id: uid(), type: document.getElementById("ruleType").value, body, enabled:true, createdAt: Date.now() };
+  window.fs.setRule(rec).then(()=>{ document.getElementById("ruleBody").value=""; toast("追加しました（チーム共有）"); }).catch(()=>toast("追加に失敗しました"));
+};
+window.toggleRule = (id)=>{
+  const r = (window.__rules||[]).find(x=>x.id===id); if(!r||!window.fs) return;
+  window.fs.setRule({...r, enabled: !r.enabled}).catch(()=>toast("更新に失敗しました"));
+};
+window.delRule = (id)=>{
+  if(!confirm("この定例指示を削除しますか？")) return;
+  if(window.fs) window.fs.delRule(id).catch(()=>toast("削除に失敗しました"));
+};
+
 // ============ コピー ============
 window.copyText = (id)=>{
   const el=document.getElementById(id); el.select();
@@ -978,7 +1095,7 @@ window.exportBackup = ()=>{
 window.importBackup = async (file)=>{
   if(!file) return;
   try{ const d=JSON.parse(await file.text());
-    if(d.schedule){ schedule=d.schedule; save(LS.sched,schedule); }
+    if(d.schedule){ schedule=d.schedule; save(LS.sched,schedule); if(window.fs) schedule.forEach(r=> r&&r.id&&window.fs.setSched(r).catch(()=>{})); }
     if(d.myLinks){ myLinks=d.myLinks; save(LS.mylinks,myLinks); }
     toast("復元しました"); renderMyLinks();
   }catch(e){ toast("読み込みに失敗しました"); }

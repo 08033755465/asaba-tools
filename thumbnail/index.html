@@ -678,9 +678,18 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               onDrop={onDrop}
               className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
             >
-              <Upload className={`w-8 h-8 mb-2 ${dragOver ? 'text-blue-500' : 'text-slate-400'}`} />
-              <p className="text-sm font-medium text-slate-600">{dragOver ? 'ここにドロップ' : 'クリックまたはドラッグ&ドロップ'}</p>
-              <p className="text-xs text-slate-400 mt-1">PNG / JPG / WEBP</p>
+              {baseImage ? (
+                <>
+                  <img src={baseImage} alt="アップロード画像" className="max-h-32 max-w-full object-contain rounded" />
+                  <p className="text-xs text-slate-500 mt-1.5">タップで差し替え</p>
+                </>
+              ) : (
+                <>
+                  <Upload className={`w-8 h-8 mb-2 ${dragOver ? 'text-blue-500' : 'text-slate-400'}`} />
+                  <p className="text-sm font-medium text-slate-600">{dragOver ? 'ここにドロップ' : 'クリックまたはドラッグ&ドロップ'}</p>
+                  <p className="text-xs text-slate-400 mt-1">PNG / JPG / WEBP</p>
+                </>
+              )}
               <input type="file" className="hidden" accept="image/*" onChange={onFileInput} />
             </label>
             {baseImage && (
@@ -746,8 +755,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         </div>
       </div>
 
-      <div className="flex-1 bg-slate-200/50 p-4 md:p-6 flex flex-col overflow-auto">
-        <div className="flex items-center justify-end gap-2 mb-4">
+      <div className="flex-1 bg-slate-200/50 p-4 md:p-6 pb-24 md:pb-6 flex flex-col overflow-auto">
+        <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
           <button onClick={openGallery} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium text-sm shadow-sm">
             <Library className="w-4 h-4 text-blue-600" />チームギャラリー
           </button>
