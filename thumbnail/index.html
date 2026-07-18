@@ -47,7 +47,7 @@ import { createRoot } from 'react-dom/client';
 import { Upload, Download, Image as ImageIcon, Settings, X, Share2, Library, Trash2, Loader2, CheckCircle2, Lock, Menu, Link2, Home, ChevronLeft, ChevronRight, Search, Edit3, Plus, Folder, Users, Tag, FileText, Mail, Sparkles, Copy, ExternalLink, ChevronDown, ChevronRight as ChevronRightSmall } from 'lucide-react';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ============ Firebase init ============
 let app, auth, db;
@@ -62,6 +62,30 @@ try {
 const basePath = (name) => ['artifacts', appId, 'public', 'data', name];
 const colRef = (name) => collection(db, ...basePath(name));
 const docRefFn = (name, id) => doc(db, ...basePath(name), id);
+
+// ============ メール通知（GAS Webhook経由・クライアント別設定） ============
+// 設定はFirestoreの settings/notify にチーム共有で保存:
+// { gasUrl, perAccount: { [accountId]: { enabled, emails } } }
+async function sendGalleryNotify({ accountId, accountName, categoryName, folderName }) {
+  try {
+    if (!db) return;
+    const snap = await getDoc(docRefFn('settings', 'notify'));
+    if (!snap.exists()) return;
+    const s = snap.data();
+    const acc = (s.perAccount || {})[accountId];
+    if (!s.gasUrl || !acc || !acc.enabled || !(acc.emails || '').trim()) return;
+    await fetch(s.gasUrl, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        type: 'gallery_saved',
+        emails: acc.emails,
+        account: accountName, category: categoryName, title: folderName,
+        when: new Date().toLocaleString('ja-JP'),
+      }),
+    });
+  } catch (e) { console.error('notify error', e); }
+}
 
 // ============ Constants ============
 const RELEASE_NOTES = `【v2.0 リニューアル（2026-07-07）】
@@ -221,6 +245,91 @@ function Header({ tab, onTabChange, onMenu, onGallery }) {
   );
 }
 
+// ============ NotifySettings（メール通知設定） ============
+function NotifySettings({ accounts, showToast }) {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(docRefFn('settings', 'notify'));
+        setCfg(snap.exists() ? { gasUrl: '', perAccount: {}, ...snap.data() } : { gasUrl: '', perAccount: {} });
+      } catch (e) { console.error(e); setCfg({ gasUrl: '', perAccount: {} }); }
+    })();
+  }, []);
+
+  if (!cfg) return <p className="text-sm text-slate-400">読み込み中...</p>;
+
+  const accCfg = (id) => ({ enabled: false, emails: '', ...(cfg.perAccount || {})[id] });
+  const setAcc = (id, patch) => setCfg({ ...cfg, perAccount: { ...(cfg.perAccount || {}), [id]: { ...accCfg(id), ...patch } } });
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await setDoc(docRefFn('settings', 'notify'), cfg);
+      showToast('通知設定を保存しました（チーム共有）');
+    } catch (e) { console.error(e); showToast('保存に失敗しました'); }
+    finally { setSaving(false); }
+  };
+
+  const test = async () => {
+    if (!cfg.gasUrl.trim()) { showToast('先に通知用URLを設定してください'); return; }
+    const emails = [...new Set(Object.values(cfg.perAccount || {}).filter(a => a.enabled).flatMap(a => (a.emails || '').split(/[,、\s]+/)).filter(Boolean))].join(',');
+    if (!emails) { showToast('ONのアカウントに通知先メールがありません'); return; }
+    try {
+      await fetch(cfg.gasUrl.trim(), {
+        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ type: 'test', emails, account: 'テスト', category: '-', title: 'テスト送信', when: new Date().toLocaleString('ja-JP') }),
+      });
+      showToast('テストを送信しました。メールを確認してください');
+    } catch (e) { console.error(e); showToast('送信に失敗しました'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500 leading-relaxed bg-blue-50 text-blue-900 p-3 rounded-lg">
+        チームギャラリーに画像が保存されたとき、クライアント（運用アカウント）ごとに設定したメールへ通知します。設定はチーム全体で共有されます。
+      </p>
+      <div>
+        <label className="text-xs font-medium text-slate-500 block mb-1">通知用URL（GASウェブアプリのURL）</label>
+        <input value={cfg.gasUrl} onChange={(e) => setCfg({ ...cfg, gasUrl: e.target.value })} placeholder="https://script.google.com/macros/s/…/exec" className="w-full p-2 border rounded text-sm font-mono" />
+      </div>
+      <div className="space-y-2">
+        <div className="text-xs font-medium text-slate-500">クライアントごとの通知先</div>
+        {accounts.length === 0 && <p className="text-sm text-slate-400">運用アカウントがまだありません</p>}
+        {accounts.map(a => {
+          const c = accCfg(a.id);
+          return (
+            <div key={a.id} className="border rounded-lg p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" className="w-4 h-4" checked={c.enabled} onChange={(e) => setAcc(a.id, { enabled: e.target.checked })} />
+                {a.name}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${c.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{c.enabled ? '通知ON' : 'OFF'}</span>
+              </label>
+              <input value={c.emails} onChange={(e) => setAcc(a.id, { emails: e.target.value })} placeholder="通知先Gmail（カンマ区切りで複数可）" className="w-full p-2 border rounded text-sm" disabled={!c.enabled} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={save} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium text-sm">{saving ? '保存中...' : '保存する'}</button>
+        <button onClick={test} className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2.5 rounded-lg font-medium text-sm">テスト送信</button>
+      </div>
+      <details className="text-xs text-slate-500">
+        <summary className="cursor-pointer">初回セットアップ（通知用URLの作り方）</summary>
+        <ol className="list-decimal ml-4 mt-2 space-y-1 leading-relaxed">
+          <li>script.google.com で「新しいプロジェクト」を作成</li>
+          <li>担当から受け取ったGASコードを貼り付けて保存</li>
+          <li>「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」</li>
+          <li>実行ユーザー「自分」／アクセスできるユーザー「全員」でデプロイ</li>
+          <li>表示されたURL（…/exec）を上の欄に貼って保存</li>
+        </ol>
+      </details>
+    </div>
+  );
+}
+
 // ============ HamburgerMenu ============
 function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjectId, setSelectedProjectId, showToast }) {
   const [section, setSection] = useState('main');
@@ -306,7 +415,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
             {section !== 'main' && (
               <button onClick={() => setSection('main')} className="text-slate-500 hover:text-slate-800"><ChevronLeft className="w-5 h-5" /></button>
             )}
-            {section === 'main' ? 'メニュー' : section === 'accounts' ? '運用アカウント管理' : section === 'categories' ? '画像カテゴリ管理' : section === 'projects' ? 'プロジェクト管理' : section === 'release' ? 'リリース情報' : '改善・問合せ'}
+            {section === 'main' ? 'メニュー' : section === 'accounts' ? '運用アカウント管理' : section === 'categories' ? '画像カテゴリ管理' : section === 'projects' ? 'プロジェクト管理' : section === 'release' ? 'リリース情報' : section === 'notify' ? 'メール通知設定' : '改善・問合せ'}
           </h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded"><X className="w-5 h-5" /></button>
         </div>
@@ -319,6 +428,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
               <MenuBtn icon={Users} label="運用アカウント管理" onClick={() => setSection('accounts')} sub={`${accounts.length}件`} />
               <MenuBtn icon={Tag} label="画像カテゴリ管理" onClick={() => setSection('categories')} sub={`${categories.length}件`} />
               <MenuBtn icon={Folder} label="プロジェクト管理" onClick={() => setSection('projects')} sub={`${projects.length}件`} />
+              <MenuBtn icon={Mail} label="メール通知設定" onClick={() => setSection('notify')} sub="ギャラリー保存時" />
             </>
           )}
           {section === 'release' && <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 p-4 rounded-lg">{RELEASE_NOTES}</div>}
@@ -329,6 +439,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
               <button onClick={async () => { await copyToClipboard(CONTACT_TEMPLATE); showToast('テンプレートをコピーしました'); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2"><Copy className="w-4 h-4" />コピーする</button>
             </div>
           )}
+          {section === 'notify' && <NotifySettings accounts={accounts} showToast={showToast} />}
           {section === 'accounts' && <AccountManager accounts={accounts} onAdd={addAccount} onRename={renameAccount} onDelete={deleteAccount} />}
           {section === 'categories' && <CategoryManager accounts={accounts} categories={categories} onAdd={addCategory} onRename={renameCategory} onDelete={deleteCategory} />}
           {section === 'projects' && <ProjectManager accounts={accounts} categories={categories} projects={projects} selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId} onAdd={addProject} onDelete={deleteProject} />}
@@ -538,6 +649,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         width: canvasWidth, height: canvasHeight,
       });
       showToast('チームギャラリーに保存しました');
+      sendGalleryNotify({ accountId, accountName: account?.name || '', categoryName: category?.name || '', folderName });
     } catch (e) {
       console.error(e);
       showToast('保存に失敗しました。画像が大きすぎる可能性があります。');
