@@ -619,11 +619,30 @@ const SETTINGS={
   integMetric:"views",           // 統合レポート「項目別」で表示する指標
 };
 const THEME_COLORS={ "整骨院":"#2f6df0", "整体院":"#138a52", "Peace":"#a24bd0" };
-/* 店舗ごとのカラー上書き（端末保存）。未設定ならグループ色にフォールバック */
+/* 店舗ごとの既定色（全16店舗を判別しやすい色に。同グループ内でも色が離れるよう割当） */
+const DEFAULT_STORE_COLORS={
+  "ASK-EDO":"#c62828", // しっかり赤
+  "ASK-SMT":"#e65100", // 濃いめオレンジ
+  "ASK-NGR":"#f4b400", // 黄色
+  "ASK-KSW":"#009688", // エメラルドブルー
+  "ASK-YSO":"#29b6f6", // 青みの水色
+  "AST-MSC":"#6d4c41", // 茶色
+  "AST-MNW":"#212121", // 黒
+  "AST-MRY":"#8c8c8c", // グレー
+  "AST-ABK":"#2e7d32", // 緑
+  "PCE-KSW":"#e91e63", // ピンク
+  "PCE-NGR":"#ff8a80", // コーラルピンク
+  "PCE-YSO":"#8e24aa", // 紫
+  "PCE-MSC":"#1565c0", // 濃い青
+  "PCE-ABK":"#303f9f", // 藍（インディゴ）
+  "PCE-MRY":"#b39ddb", // ラベンダー
+  "PCE-SMT":"#8bc34a", // 黄緑
+};
+/* 店舗ごとのカラー上書き（端末保存）。未設定なら既定色→グループ色にフォールバック */
 let STORE_COLORS={};
 try{ STORE_COLORS=JSON.parse(localStorage.getItem('meo_storecolors_v1')||'{}'); }catch(e){}
 function saveStoreColors(){ try{ localStorage.setItem('meo_storecolors_v1',JSON.stringify(STORE_COLORS)); }catch(e){} }
-function colorFor(s){ if(!s) return '#2f6df0'; return STORE_COLORS[s.code]||THEME_COLORS[s.group]||'#2f6df0'; }
+function colorFor(s){ if(!s) return '#2f6df0'; return STORE_COLORS[s.code]||DEFAULT_STORE_COLORS[s.code]||THEME_COLORS[s.group]||'#2f6df0'; }
 function setStoreColor(code,hex){ if(hex){ STORE_COLORS[code]=hex; saveStoreColors(); renderDash(); renderSettings(); } }
 function resetStoreColor(code){ delete STORE_COLORS[code]; saveStoreColors(); renderDash(); renderSettings(); }
 /* 36色パレット（原色12・くすみ12・パステル12）＋任意のカラーコードは type=color で指定可 */
@@ -648,7 +667,7 @@ function openColorPalette(code){
       <code>${cur}</code>
     </div>
     ${secs}
-    <button class="btn ghost" style="margin-top:14px" onclick="resetStoreColor('${code}');closeSheet()">グループ既定に戻す</button>`);
+    <button class="btn ghost" style="margin-top:14px" onclick="resetStoreColor('${code}');closeSheet()">既定色に戻す</button>`);
 }
 /* ランキングの推移列の選択肢 */
 const TREND_OPTS=[
