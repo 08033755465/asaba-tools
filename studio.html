@@ -1003,13 +1003,26 @@ function viewImage(){
     <label class="mt">選択中の画像タイトル（手入力も可）</label>
     <input id="c_imageTitle" value="${esc(cur.imageTitle)}" placeholder="例：深呼吸_07-13.jpg" oninput="onImageTitleInput(this.value)">
     <div id="c_imageWarn" class="hint" style="margin-top:4px;"></div>
-    <div id="c_imageDLbox" class="row mt" style="display:none;gap:6px;flex-wrap:wrap;">
-      <button class="pill" onclick="dlPickedImageSafe()" title="この安全名で保存 → 同じ名前でGMOにアップ">📥 安全名で画像DL</button>
-      <button class="pill" onclick="copyImgTitle()">📋 画像名をコピー</button>
-    </div>
     <details><summary>参考：AIが作った画像プロンプト</summary>
       <textarea class="mt" oninput="cur.imagePrompt=this.value">${esc(cur.imagePrompt)}</textarea>
     </details>
+  </div>
+  <div id="c_imagePrep" class="card" style="display:none; border:2px solid var(--blue); background:#f0f7ff;">
+    <div style="font-weight:700; font-size:14px; margin-bottom:6px;">📸 この画像をGMOに登録する</div>
+    <div id="c_prepPreview" style="display:flex; gap:10px; align-items:center; margin-bottom:10px;"></div>
+    <ol style="margin:0 0 10px; padding-left:20px; font-size:13px; line-height:1.9;">
+      <li><b>① 画像を保存</b>（下のボタン。名前は自動でGMO用に統一されます）</li>
+      <li><b>② GMOの画像アップロードを開く</b>→ いま保存した画像をアップ</li>
+      <li><b>③ この画面に戻る</b>だけ（画像名は一致済みなので、あとはCSV/XLSX出力へ）</li>
+    </ol>
+    <div class="row" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary" style="flex:1; min-width:150px;" onclick="dlPickedImageSafe()">📥 ① 画像を保存</button>
+      <button class="btn btn-blue" style="flex:1; min-width:150px;" onclick="return openGmoUpload()">🚀 ② GMO画像アップロードを開く</button>
+    </div>
+    <div class="row mt" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="pill" onclick="copyImgTitle()">📋 画像名をコピー</button>
+      <span class="hint" style="align-self:center;">GMOには <b id="c_prepName"></b> の名前で登録してください</span>
+    </div>
   </div>
   ${nav(2, 4, "確認へ →")}`;
 }
@@ -1051,10 +1064,11 @@ window.pickImage = (jpg)=>{
 };
 window.onImageTitleInput = (v)=>{ cur.imageTitle=v; refreshImageWarn(); };
 window.refreshImageWarn = ()=>{
-  const warn = document.getElementById("c_imageWarn"); const box = document.getElementById("c_imageDLbox");
+  const warn = document.getElementById("c_imageWarn");
+  const prep = document.getElementById("c_imagePrep");
   if(!warn) return;
   const v = cur.imageTitle||"";
-  if(!v){ warn.innerHTML=""; if(box) box.style.display="none"; return; }
+  if(!v){ warn.innerHTML=""; if(prep) prep.style.display="none"; return; }
   const safe = safeImgName(v);
   if(safe !== v){
     warn.innerHTML = `⚠️ GMOで問題になる文字があります。<b>${esc(safe)}</b> に自動で直します。<button class="pill" style="margin-left:6px;" onclick="applyImgSafe()">今すぐ安全名にする</button>`;
@@ -1063,7 +1077,19 @@ window.refreshImageWarn = ()=>{
     warn.innerHTML = `✅ 安全な名前です`;
     warn.style.color = "var(--ok)";
   }
-  if(box) box.style.display = cur.imageUrl ? "flex" : "none";
+  // 画像アップロード導線パネル（ギャラリー画像＝DL用URLがあるとき表示）
+  if(prep){
+    if(cur.imageUrl){
+      prep.style.display = "block";
+      const pv = document.getElementById("c_prepPreview");
+      if(pv) pv.innerHTML = `<img src="${esc(cur.imageUrl)}" style="width:64px;height:64px;object-fit:cover;border-radius:10px;flex-shrink:0;">
+        <div style="min-width:0;"><div class="small" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;">${esc(safe)}</div>
+        <div class="hint" style="margin:0;">この名前でGMOに登録すれば一致します</div></div>`;
+      const nm = document.getElementById("c_prepName"); if(nm) nm.textContent = safe;
+    } else {
+      prep.style.display = "none";
+    }
+  }
 };
 window.applyImgSafe = ()=>{
   const safe = safeImgName(cur.imageTitle||""); if(!safe) return;
@@ -1222,6 +1248,16 @@ window.openGmo = ()=>{
   const links=[...(window.__teamLinks||[]), ...myLinks];
   const gmo = links.find(l=> /GMO|gmo|meo|アップロード|投稿/.test((l.name||"")+(l.url||"")));
   if(gmo){ window.open(gmo.url,"_blank"); } else { toast("GMOのURLを設定タブで登録してください"); go("settings"); }
+  return false;
+};
+// GMOの画像アップロード画面を優先的に開く（「画像」「アップロード」「upload」を含むリンクを優先、無ければGMO投稿ツール）
+window.openGmoUpload = ()=>{
+  const links=[...(window.__teamLinks||[]), ...myLinks, ...(typeof BUILTIN_LINKS!=='undefined'?BUILTIN_LINKS:[])];
+  const t = l => (l.name||"")+(l.sub||"")+(l.url||"");
+  const upload = links.find(l=> /画像|アップロード|upload|メディア|media|ライブラリ/i.test(t(l)));
+  const gmo = upload || links.find(l=> /GMO|gmo|meo|投稿/.test(t(l)));
+  if(gmo){ window.open(gmo.url,"_blank"); }
+  else { toast("GMO画像アップロードのURLを設定タブ→リンクに登録してください"); go("settings"); }
   return false;
 };
 
