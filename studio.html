@@ -1215,26 +1215,56 @@ function preExportImageCheck(){
   }
   return true;
 }
-function buildRows(){
-  const immediate = cur.timing==="immediate";
+// 任意の投稿データ（作成中cur or 履歴レコード）から出力行を作る
+function exportStoresFrom(d){
+  if((d.scope||"category_common")==="category_common") return STORES;
+  const ids=(d.storeIds&&d.storeIds.length)?d.storeIds:Object.keys(d.contents||{});
+  return STORES.filter(s=> ids.includes(s.gmo));
+}
+function contentFromFor(d,store){ return (d.scope||"category_common")==="category_common" ? ((d.contents||{})[store.cat]||"") : ((d.contents||{})[store.gmo]||""); }
+function buildRowsFrom(d){
+  const immediate = d.timing==="immediate";
   const rows = [];
-  exportStores().forEach(s=>{
+  exportStoresFrom(d).forEach(s=>{
     const c=new Array(HEADERS.length).fill("");
-    c[COL.STORE_ID]=s.gmo; c[COL.STORE_NAME]=s.name; c[COL.POST_TYPE]=cur.postType;
-    if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=cur.date?fmtDate(cur.date):""; c[COL.STIME]=cur.time?fmtTime(cur.time):""; }
-    c[COL.TITLE]=cur.title; c[COL.CONTENT]=contentFor(s); c[COL.IMAGE]=cur.imageTitle||"";
+    c[COL.STORE_ID]=s.gmo; c[COL.STORE_NAME]=s.name; c[COL.POST_TYPE]=d.postType||"最新情報";
+    if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=d.date?fmtDate(d.date):""; c[COL.STIME]=d.time?fmtTime(d.time):""; }
+    c[COL.TITLE]=d.title||""; c[COL.CONTENT]=contentFromFor(d,s); c[COL.IMAGE]=d.imageTitle||"";
     c[COL.BTYPE]="予約"; c[COL.BURL]=s.url;
     rows.push(c);
   });
   return rows;
 }
+function buildRows(){ return buildRowsFrom(cur); }
+function mmddFrom(d){
+  if(d&&d.date){ const[,m,dd]=d.date.split("-"); return `${m}-${dd}`; }
+  const n=new Date(); return `${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
+}
+// CSV/XLSXファイル生成（作成中でも履歴からでも同じ関数）
+function saveCsvFrom(d){
+  const rows=buildRowsFrom(d);
+  const lines=[HEADERS.map(q).join(",")].concat(rows.map(r=>r.map(q).join(",")));
+  const csv="﻿"+lines.join("\r\n")+"\r\n";
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${mmddFrom(d)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+}
+function saveXlsxFrom(d){
+  const rows=buildRowsFrom(d);
+  // GMO互換: 店舗IDは数値セル、空欄は本当の空セル
+  const aoa=[HEADERS.slice()].concat(rows.map(r=> r.map((v,i)=>{
+    if(v==null||v==="") return null;
+    if(i===COL.STORE_ID && /^\d+$/.test(String(v))) return Number(v);
+    return v;
+  })));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=HEADERS.map((_,i)=> i===COL.CONTENT?{wch:60}:(i===COL.STORE_NAME||i===COL.TITLE?{wch:26}:{wch:14}));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, `【あさば様】一括投稿_${mmddFrom(d)}.xlsx`);
+}
 window.downloadCsv = ()=>{
   if(!preExportImageCheck()) return;
-  const rows = buildRows();
-  const lines = [HEADERS.map(q).join(",")].concat(rows.map(r=> r.map(q).join(",")));
-  const csv="\uFEFF"+lines.join("\r\n")+"\r\n";
-  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${currentMMDD()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  saveCsvFrom(cur);
   archivePost();
   toast("CSVをダウンロードしました");
 };
@@ -1246,6 +1276,7 @@ function archivePost(){
       abType: cur.abType||"", postType: cur.postType||"", scope: cur.scope||"",
       date: cur.date||"", time: cur.time||"", timing: cur.timing||"",
       imageTitle: cur.imageTitle||"", imagePrompt: cur.imagePrompt||"",
+      storeIds: cur.storeIds||[],
       contents: cur.contents||{}, createdAt: Date.now(),
     }).catch(e=>console.warn("post archive", e));
   }
@@ -1253,21 +1284,19 @@ function archivePost(){
 window.downloadXlsx = ()=>{
   if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
   if(!preExportImageCheck()) return;
-  const rows = buildRows();
-  // GMO互換: 店舗IDは数値セル、空欄は空文字でなく「本当の空セル」にする
-  // （文字"117528"だとGMOが店舗を照合できず「店舗名が存在していません」になる）
-  const aoa = [HEADERS.slice()].concat(rows.map(r=> r.map((v,i)=>{
-    if(v==null || v==="") return null;
-    if(i===COL.STORE_ID && /^\d+$/.test(String(v))) return Number(v);
-    return v;
-  })));
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = HEADERS.map((_,i)=> i===COL.CONTENT?{wch:60}:(i===COL.STORE_NAME||i===COL.TITLE?{wch:26}:{wch:14}));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  XLSX.writeFile(wb, `【あさば様】一括投稿_${currentMMDD()}.xlsx`);
+  saveXlsxFrom(cur);
   archivePost();
   toast("XLSXをダウンロードしました");
+};
+// 履歴からの再ダウンロード
+window.redlHistory = (id, kind)=>{
+  const p=(window.__posts||[]).find(x=>x.id===id); if(!p){ toast("履歴が見つかりません"); return; }
+  if(kind==="xlsx"){
+    if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
+    saveXlsxFrom(p); toast("📗 再ダウンロードしました");
+  } else {
+    saveCsvFrom(p); toast("📄 再ダウンロードしました");
+  }
 };
 window.openGmo = ()=>{
   const links=[...(window.__teamLinks||[]), ...myLinks];
@@ -1475,6 +1504,10 @@ function renderHistory(){
           ${p.imageTitle?`<div class="small muted">🖼️ ${esc(p.imageTitle)}</div>`:""}
         </div>
         <button class="pill" style="color:var(--ng); flex-shrink:0;" onclick="delHistory('${p.id}')">削除</button>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+        <button class="pill" onclick="redlHistory('${p.id}','xlsx')">📗 XLSX再DL</button>
+        <button class="pill" onclick="redlHistory('${p.id}','csv')">📄 CSV再DL</button>
       </div>
       ${blocks}
     </div>`;
