@@ -212,6 +212,36 @@
   </div>
 </div>
 
+<!-- 再ダウンロード前の最終確認 -->
+<div id="redlModal" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
+    <h2>📥 再ダウンロードの確認</h2>
+    <div id="rd_summary" class="small muted" style="margin-bottom:10px;"></div>
+    <div class="row">
+      <div>
+        <label>投稿タイミング</label>
+        <select id="rd_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
+      </div>
+      <div><label>投稿タイプ</label>
+        <select id="rd_postType"><option>最新情報</option><option>イベント</option><option>クーポン</option></select>
+      </div>
+    </div>
+    <div class="row mt" id="rd_dtRow">
+      <div><label>予約投稿日</label><input type="date" id="rd_date"></div>
+      <div><label>投稿時間</label><input type="time" id="rd_time"></div>
+    </div>
+    <label class="mt">画像名（GMOライブラリと完全一致させる）</label>
+    <input id="rd_image" placeholder="例：◯◯_07-26.jpg">
+    <div id="rd_imgWarn" class="hint" style="margin-top:4px;"></div>
+    <p class="hint">※ここでの変更はダウンロードするファイルにだけ反映されます（履歴の記録は変わりません）</p>
+    <div class="row mt" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary" style="flex:1; min-width:140px;" onclick="redlGo('xlsx')">📗 XLSXでDL</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="redlGo('csv')">📄 CSVでDL</button>
+    </div>
+    <button class="btn btn-ghost mt" style="width:100%;" onclick="closeRedl()">キャンセル</button>
+  </div>
+</div>
+
 <!-- ギャラリー画像ピッカー（予定への事前紐付け用） -->
 <div id="galPickModal" style="display:none; position:fixed; inset:0; z-index:85; background:rgba(0,0,0,.5); align-items:flex-end; justify-content:center;">
   <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
@@ -1290,15 +1320,60 @@ window.downloadXlsx = ()=>{
   archivePost();
   toast("XLSXをダウンロードしました");
 };
-// 履歴からの再ダウンロード
-window.redlHistory = (id, kind)=>{
+// 履歴からの再ダウンロード（確認モーダルを開く）
+let REDL_REC = null;
+window.redlHistory = (id)=>{
   const p=(window.__posts||[]).find(x=>x.id===id); if(!p){ toast("履歴が見つかりません"); return; }
+  REDL_REC = p;
+  const stores = exportStoresFrom(p).length;
+  document.getElementById("rd_summary").innerHTML =
+    `<b>${esc(p.catchTitle||p.title||"（無題）")}</b> ・ 対象 ${stores}店舗`;
+  document.getElementById("rd_timing").value = p.timing==="immediate" ? "immediate" : "scheduled";
+  document.getElementById("rd_postType").value = p.postType||"最新情報";
+  document.getElementById("rd_date").value = p.date||"";
+  document.getElementById("rd_time").value = p.time||"";
+  document.getElementById("rd_image").value = p.imageTitle||"";
+  rdSyncTiming(); rdImgWarn();
+  document.getElementById("redlModal").style.display = "flex";
+};
+window.closeRedl = ()=>{ document.getElementById("redlModal").style.display="none"; REDL_REC=null; };
+function rdSyncTiming(){
+  const im = document.getElementById("rd_timing").value === "immediate";
+  document.getElementById("rd_dtRow").style.opacity = im ? ".4" : "1";
+  document.getElementById("rd_date").disabled = im;
+  document.getElementById("rd_time").disabled = im;
+}
+function rdImgWarn(){
+  const w = document.getElementById("rd_imgWarn");
+  const v = document.getElementById("rd_image").value.trim();
+  if(!v){ w.innerHTML=""; return; }
+  const safe = safeImgName(v);
+  if(safe !== v){
+    w.innerHTML = `⚠️ 危険な文字あり → <b>${esc(safe)}</b> に自動で直して出力します`;
+    w.style.color = "var(--warn)";
+  } else { w.innerHTML = "✅ 安全な名前です"; w.style.color = "var(--ok)"; }
+}
+document.getElementById("rd_timing").addEventListener("change", rdSyncTiming);
+document.getElementById("rd_image").addEventListener("input", rdImgWarn);
+window.redlGo = (kind)=>{
+  if(!REDL_REC){ toast("データがありません"); return; }
+  const timing = document.getElementById("rd_timing").value;
+  const date = document.getElementById("rd_date").value;
+  const time = document.getElementById("rd_time").value;
+  if(timing!=="immediate" && (!date || !time)){ toast("予約投稿日と時間を入れてください（即時なら「即時投稿」に切替）"); return; }
+  const img = document.getElementById("rd_image").value.trim();
+  const d = { ...REDL_REC,
+    timing, postType: document.getElementById("rd_postType").value,
+    date: timing==="immediate" ? "" : date,
+    time: timing==="immediate" ? "" : time,
+    imageTitle: img ? safeImgName(img) : "" };
   if(kind==="xlsx"){
     if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
-    saveXlsxFrom(p); toast("📗 再ダウンロードしました");
+    saveXlsxFrom(d); toast("📗 再ダウンロードしました");
   } else {
-    saveCsvFrom(p); toast("📄 再ダウンロードしました");
+    saveCsvFrom(d); toast("📄 再ダウンロードしました");
   }
+  closeRedl();
 };
 window.openGmo = ()=>{
   const links=[...(window.__teamLinks||[]), ...myLinks];
@@ -1508,8 +1583,7 @@ function renderHistory(){
         <button class="pill" style="color:var(--ng); flex-shrink:0;" onclick="delHistory('${p.id}')">削除</button>
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-        <button class="pill" onclick="redlHistory('${p.id}','xlsx')">📗 XLSX再DL</button>
-        <button class="pill" onclick="redlHistory('${p.id}','csv')">📄 CSV再DL</button>
+        <button class="pill" onclick="redlHistory('${p.id}')">📥 再ダウンロード（内容確認）</button>
       </div>
       ${blocks}
     </div>`;
