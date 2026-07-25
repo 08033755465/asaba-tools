@@ -247,7 +247,10 @@
       <button class="btn btn-primary" style="flex:1; min-width:140px;" onclick="redlGo('xlsx')">📗 XLSXでDL</button>
       <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="redlGo('csv')">📄 CSVでDL</button>
     </div>
-    <button class="btn btn-ghost mt" style="width:100%;" onclick="return openGmoUpload()">🚀 GMO投稿ページだけ開く</button>
+    <div class="row mt" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="return openGmoFileUpload()">🚀 アップロード画面（XLSX用）</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="return openGmoSheet()">📊 スプレッドシート（CSV用）</button>
+    </div>
     <button class="btn btn-ghost mt" style="width:100%;" onclick="closeRedl()">キャンセル</button>
   </div>
 </div>
@@ -1217,13 +1220,26 @@ function viewExport(){
   </div>
   ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>`
     :`<div class="note">✅ チェックOK。出力形式を選んでダウンロードしてください。</div>`}
-  <div class="row mt" style="display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-primary" ${errs.length?"disabled":""} onclick="downloadXlsx()" style="flex:1;min-width:180px">📗 XLSXでDL（GMO直接投入OK）</button>
-    <button class="btn btn-ghost" ${errs.length?"disabled":""} onclick="downloadCsv()" style="flex:1;min-width:180px">📄 CSVでDL</button>
+  <div class="mt" style="display:flex; flex-direction:column; gap:10px;">
+    <div style="border:2px solid var(--blue); border-radius:12px; padding:12px; background:#f0f7ff;">
+      <div class="small" style="font-weight:700; margin-bottom:8px;">おすすめ：📗 XLSX → GMOへ直接アップロード</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-primary" style="flex:1; min-width:140px;" ${errs.length?"disabled":""} onclick="downloadXlsx()">📗 ① XLSXでDL</button>
+        <span style="font-weight:700; color:var(--muted);">→</span>
+        <button class="btn btn-blue" style="flex:1; min-width:140px;" onclick="return openGmoFileUpload()">🚀 ② アップロード画面へ</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0;">GBP投稿一覧の「ファイルアップロード」にDLしたXLSXをそのまま投入</p>
+    </div>
+    <div style="border:1px solid var(--line); border-radius:12px; padding:12px;">
+      <div class="small" style="font-weight:700; margin-bottom:8px;">予備：📄 CSV → 共有スプレッドシート経由</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-ghost" style="flex:1; min-width:140px;" ${errs.length?"disabled":""} onclick="downloadCsv()">📄 ① CSVでDL</button>
+        <span style="font-weight:700; color:var(--muted);">→</span>
+        <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="return openGmoSheet()">📊 ② スプレッドシートへ</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0;">シートで「ファイル→インポート→アップロード→<b>データを置換</b>」で取り込み</p>
+    </div>
   </div>
-  <div class="note"><b>XLSX（推奨）</b>: GMOツールの「ファイル→インポート→アップロード→<b>データを置換</b>」でそのまま取り込めます（Excelを開き直す必要なし）。<br><b>CSV</b>: 既存の運用フロー用の予備。</div>
-  <a class="linkbtn mt" id="gmoLink" href="#" onclick="return openGmo()"><span class="ic">🚀</span><span>GMOツールを開いて投稿する</span><span class="arr">›</span></a>
-  <p class="hint">※GMOのURLは設定タブ、またはリンク集に登録したものを開きます</p>
   ${nav(3, null)}`;
 }
 function contentFor(store){ return cur.scope==="category_common" ? (cur.contents[store.cat]||"") : (cur.contents[store.gmo]||""); }
@@ -1405,11 +1421,12 @@ window.redlGo = (kind)=>{
     imageTitle: img ? safeImgName(img) : "" };
   if(kind==="xlsx"){
     if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
-    saveXlsxFrom(d); toast("📗 DL完了 → GMO投稿ページを開きます");
+    saveXlsxFrom(d); toast("📗 DL完了 → アップロード画面を開きます");
+    openGmoFileUpload();
   } else {
-    saveCsvFrom(d); toast("📄 DL完了 → GMO投稿ページを開きます");
+    saveCsvFrom(d); toast("📄 DL完了 → 共有スプレッドシートを開きます");
+    openGmoSheet();
   }
-  openGmoUpload();
   closeRedl();
 };
 window.openGmo = ()=>{
@@ -1419,6 +1436,19 @@ window.openGmo = ()=>{
   return false;
 };
 // GMOの画像アップロード画面を優先的に開く（「画像」「アップロード」「upload」を含むリンクを優先、無ければGMO投稿ツール）
+// GMOの2つの投入先（チームリンク優先・無ければ既知URL）
+const GMO_UPLOAD_URL_FALLBACK = "https://app.meo-dash.com/groups/14324/list_bookings";
+const GMO_SHEET_URL_FALLBACK = "https://docs.google.com/spreadsheets/d/1Es4jgMFoKaAxNkP84WW1OMR07QxkEBHm/edit?gid=153312182#gid=153312182";
+window.openGmoFileUpload = ()=>{
+  const links=[...(window.__teamLinks||[]), ...myLinks];
+  const l=links.find(x=>/ファイルアップロード/.test(x.name||"")) || links.find(x=>/meo-dash\.com/.test(x.url||""));
+  window.open(l?l.url:GMO_UPLOAD_URL_FALLBACK, "_blank"); return false;
+};
+window.openGmoSheet = ()=>{
+  const links=[...(window.__teamLinks||[]), ...myLinks];
+  const l=links.find(x=>/一括投稿用.*スプレッドシート|共有スプレッドシート/.test(x.name||""));
+  window.open(l?l.url:GMO_SHEET_URL_FALLBACK, "_blank"); return false;
+};
 // あさば様からの店舗写真など「共通画像フォルダ」（Googleドライブ）を開く
 window.openCommonPhotos = ()=>{
   const links=[...(window.__teamLinks||[]), ...myLinks];
