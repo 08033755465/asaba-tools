@@ -1760,6 +1760,21 @@ if(localStorage.getItem("meo_unlocked")==="1") maybeAutoHelp();
   };
   document.getElementById("lockInput").addEventListener("keydown", e=>{ if(e.key==="Enter") tryUnlock(); });
 })();
+
+/* サムネイルツール等から ?sched=予定ID で開かれたら、その予定から作成を自動開始 */
+(function(){
+  const id = new URLSearchParams(location.search).get("sched");
+  if(!id) return;
+  let done = false;
+  function tryStart(n){
+    if(done) return;
+    const s = (typeof schedule!=="undefined" ? schedule : []).find(x=>x.id===id);
+    if(s){ done = true; startFromSched(id); toast("📅 予定「"+(s.catchTitle||s.title||"")+"」から作成を開始します"); }
+    else if(n < 40) setTimeout(()=>tryStart(n+1), 400);
+  }
+  window.addEventListener("sched-ready", ()=>tryStart(0));
+  setTimeout(()=>tryStart(0), 1200);
+})();
 </script>
 </body>
 </html>
