@@ -1260,7 +1260,9 @@ function saveXlsxFrom(d){
   ws['!cols']=HEADERS.map((_,i)=> i===COL.CONTENT?{wch:60}:(i===COL.STORE_NAME||i===COL.TITLE?{wch:26}:{wch:14}));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  XLSX.writeFile(wb, `【あさば様】一括投稿_${mmddFrom(d)}.xlsx`);
+  // bookSST:true = 文字列をsharedStrings形式（Excel標準）で保存。
+  // 既定のt="str"形式だとGMOの読取が店舗名を認識できず「店舗名が存在していません」になる
+  XLSX.writeFile(wb, `【あさば様】一括投稿_${mmddFrom(d)}.xlsx`, {bookSST:true});
 }
 window.downloadCsv = ()=>{
   if(!preExportImageCheck()) return;
