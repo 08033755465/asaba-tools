@@ -1254,7 +1254,13 @@ window.downloadXlsx = ()=>{
   if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
   if(!preExportImageCheck()) return;
   const rows = buildRows();
-  const aoa = [HEADERS.slice()].concat(rows);
+  // GMO互換: 店舗IDは数値セル、空欄は空文字でなく「本当の空セル」にする
+  // （文字"117528"だとGMOが店舗を照合できず「店舗名が存在していません」になる）
+  const aoa = [HEADERS.slice()].concat(rows.map(r=> r.map((v,i)=>{
+    if(v==null || v==="") return null;
+    if(i===COL.STORE_ID && /^\d+$/.test(String(v))) return Number(v);
+    return v;
+  })));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = HEADERS.map((_,i)=> i===COL.CONTENT?{wch:60}:(i===COL.STORE_NAME||i===COL.TITLE?{wch:26}:{wch:14}));
   const wb = XLSX.utils.book_new();
