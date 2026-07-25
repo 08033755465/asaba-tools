@@ -346,6 +346,10 @@ try {
     addPost: (rec) => addDoc(collection(db, ...basePath('studio_posts')), rec),
     // 画像←→予定の双方向紐付け：ギャラリー画像(shared_thumbnails)にも予定情報を書き戻す
     linkImage: (imageId, data) => setDoc(doc(db, ...basePath('shared_thumbnails'), imageId), data, { merge: true }),
+    // チーム共有リンクの編集・追加・削除（links コレクション。サムネツールと共通）
+    setLink: (id, data) => setDoc(doc(db, ...basePath('links'), id), data, { merge: true }),
+    addLink: (rec) => addDoc(collection(db, ...basePath('links')), rec),
+    delLink: (id) => deleteDoc(doc(db, ...basePath('links'), id)),
   };
   try {
     const snap = await getDocs(collection(db, ...basePath('studio_schedule')));
@@ -525,17 +529,32 @@ function renderLinks(){
   const team = window.__teamLinks || [];
   const all = [...team.map(l=>({name:l.name, url:l.url, sub:l.sub})), ...myLinks, ...BUILTIN_LINKS]
     .filter(l=>l.url);
-  box.innerHTML = all.length ? all.map(l=>`
-    <a class="linkbtn" href="${esc(l.url)}" target="_blank" rel="noopener">
-      <span class="ic">🔗</span>
-      <span style="min-width:0;flex:1;">
-        <span style="display:block;">${esc(l.name||l.url)}</span>
-        ${l.sub?`<span style="display:block;font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.sub)}</span>`:""}
-        <span style="display:block;font-size:10px;font-weight:400;color:#c0c8d4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.url)}</span>
-      </span>
-      <span class="arr">›</span>
-    </a>`).join("") : `<p class="hint">リンクはまだありません。設定タブから追加できます。</p>`;
+  box.innerHTML = all.length ? all.map(l=>{
+    const isTeam = !!l.id; // Firestoreチームリンクだけ id を持つ
+    return `
+    <div class="linkrow" style="display:flex;align-items:center;gap:6px;">
+      <a class="linkbtn" href="${esc(l.url)}" target="_blank" rel="noopener" style="flex:1;min-width:0;">
+        <span class="ic">🔗</span>
+        <span style="min-width:0;flex:1;">
+          <span style="display:block;">${esc(l.name||l.url)}</span>
+          ${l.sub?`<span style="display:block;font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.sub)}</span>`:""}
+          <span style="display:block;font-size:10px;font-weight:400;color:#c0c8d4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(l.url)}</span>
+        </span>
+        <span class="arr">›</span>
+      </a>
+      ${isTeam?`<button class="pill" style="flex-shrink:0;" onclick="renameTeamLink('${esc(l.id)}')" title="名前を変更">✏️</button>`:""}
+    </div>`;
+  }).join("") : `<p class="hint">リンクはまだありません。設定タブから追加できます。</p>`;
 }
+window.renameTeamLink = (id)=>{
+  const l = (window.__teamLinks||[]).find(x=>x.id===id); if(!l) return;
+  const name = prompt("リンクの表示名を変更", l.name||""); if(name===null) return;
+  const nm = name.trim(); if(!nm){ toast("名前を入力してください"); return; }
+  if(!window.fs || !window.fs.setLink){ toast("チームリンクの編集に接続できていません（時間をおいて再度お試しください）"); return; }
+  window.fs.setLink(id, { name: nm })
+    .then(()=> toast("✏️ 名前を変更しました："+nm))
+    .catch(e=>{ console.warn("setLink", e); toast("変更に失敗しました"); });
+};
 window.addEventListener("links-ready", ()=>{ document.getElementById("fbLinkStatus").textContent=""; renderLinks(); });
 window.addEventListener("links-error", (e)=>{ document.getElementById("fbLinkStatus").textContent="共有リンクの読み込みに失敗（設定タブから自分用リンクを追加できます）"; renderLinks(); });
 
