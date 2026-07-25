@@ -127,6 +127,9 @@
       <input id="myLinkSub" placeholder="例：あさば様のMEO投稿アップロード用">
       <label class="mt">URL</label>
       <input id="myLinkUrl" placeholder="https://...">
+      <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
+        <input type="checkbox" id="myLinkTeam" style="width:auto;"> チーム共有リンクとして追加（全員に表示）
+      </label>
       <button class="btn btn-ghost mt" onclick="addMyLink()">追加</button>
       <div id="myLinkList" class="mt"></div>
       <p class="hint">※サムネイルツールのチーム共有リンクは自動で表示されます。ここは自分用の追加分です</p>
@@ -192,9 +195,15 @@
     <input id="sm_kw" placeholder="例：肩こり・首こり・手足の冷え">
     <label class="mt">画像メモ（サムネの場面イメージ）</label>
     <input id="sm_imgmemo" placeholder="例：冷房の中でカーディガンを羽織る女性→リラックス">
+    <label class="mt">🎯 文脈メモ（この回の投稿の文脈・特別指示）</label>
+    <textarea id="sm_context" style="min-height:60px;" placeholder="例：お盆明けのだるさに寄り添う文脈で。売り込み感は弱めに。"></textarea>
     <label class="mt">サムネイル画像（事前に紐付け）</label>
     <div id="sm_imgLinked"></div>
-    <button class="btn btn-ghost" onclick="openGalPickForSched()">🖼️ ギャラリーから画像を選ぶ</button>
+    <div class="row" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="openGalPickForSched()">🖼️ ギャラリーから選ぶ</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="return openCommonPhotos()">📁 店舗写真フォルダ（Drive）</button>
+    </div>
+    <p class="hint">📁の写真を使う場合：写真を保存 → サムネイルツールでギャラリーに登録（文字入れ無しでもOK）→ 🖼️から選択</p>
     <label class="mt">対象</label>
     <div class="seg" id="sm_scope">
       <button data-scope="category_common" class="on">カテゴリ共通</button>
@@ -238,6 +247,7 @@
       <button class="btn btn-primary" style="flex:1; min-width:140px;" onclick="redlGo('xlsx')">📗 XLSXでDL</button>
       <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="redlGo('csv')">📄 CSVでDL</button>
     </div>
+    <button class="btn btn-ghost mt" style="width:100%;" onclick="return openGmoUpload()">🚀 GMO投稿ページだけ開く</button>
     <button class="btn btn-ghost mt" style="width:100%;" onclick="closeRedl()">キャンセル</button>
   </div>
 </div>
@@ -599,9 +609,18 @@ window.addMyLink = ()=>{
   const url = document.getElementById("myLinkUrl").value.trim();
   const sub = document.getElementById("myLinkSub").value.trim();
   if(!name || !url) return toast("表示名とURLを入力してください");
+  const asTeam = document.getElementById("myLinkTeam")?.checked;
+  const clear = ()=>{ document.getElementById("myLinkName").value=""; document.getElementById("myLinkUrl").value=""; document.getElementById("myLinkSub").value=""; const c=document.getElementById("myLinkTeam"); if(c) c.checked=false; };
+  if(asTeam){
+    if(window.fs && window.fs.addLink){
+      window.fs.addLink({name, url, sub, createdAt: Date.now()})
+        .then(()=>{ toast("👥 チーム共有リンクを追加しました"); clear(); })
+        .catch(e=>{ console.warn("addLink",e); toast("チーム共有への追加に失敗しました"); });
+    } else { toast("チーム共有に接続できていません。少し待って再度お試しください"); }
+    return;
+  }
   myLinks.push({name,url,sub}); save(LS.mylinks,myLinks);
-  document.getElementById("myLinkName").value=""; document.getElementById("myLinkUrl").value=""; document.getElementById("myLinkSub").value="";
-  renderMyLinks(); toast("追加しました");
+  clear(); renderMyLinks(); toast("追加しました");
 };
 window.delMyLink = (i)=>{ myLinks.splice(i,1); save(LS.mylinks,myLinks); renderMyLinks(); };
 
@@ -665,6 +684,7 @@ window.openSchedEdit = (id)=>{
   document.getElementById("sm_time").value = s?.time || defaultTime(s?.abType || "A");
   document.getElementById("sm_kw").value = s?.kw || "";
   document.getElementById("sm_imgmemo").value = s?.imageMemo || "";
+  document.getElementById("sm_context").value = s?.context || "";
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
   document.getElementById("sm_timing").value = s?.timing || "scheduled";
   const scope = s?.scope || "category_common";
@@ -776,6 +796,7 @@ window.saveSchedEdit = ()=>{
     abType: ab,
     kw: document.getElementById("sm_kw").value.trim(),
     imageMemo: document.getElementById("sm_imgmemo").value.trim(),
+    context: document.getElementById("sm_context").value.trim(),
     imageTitle: smImage ? smImage.title : "",
     imageId: smImage ? (smImage.id||"") : "",
     imageUrl: "", // 旧仕様で保存された重い画像データを消去（サムネはギャラリーから解決）
@@ -819,14 +840,14 @@ window.importSchedBulk = ()=>{
 const STEPS = ["対象","指示文","貼付け","画像","出力"];
 const cur = {};
 function setCur(o){ for(const k in cur) delete cur[k]; Object.assign(cur, o); }
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = (id)=>{
   const s = schedule.find(x=>x.id===id); if(!s) return;
   freshCur({ schedId:id, title:s.catchTitle||s.title, themeTitle:s.title, catchTitle:s.catchTitle||"",
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
-             kw:s.kw||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", timing:s.timing||"scheduled",
+             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", timing:s.timing||"scheduled",
              scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
              imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
@@ -926,7 +947,10 @@ ${cur.themeTitle || cur.title || "（テーマ未入力）"}${cur.kw ? `
 盛り込みたいキーワード：${cur.kw}` : ""}${cur.catchTitle ? `
 共通タイトルはこの案を使用（より良くできるなら微調整OK・文字数は同程度で）：「${cur.catchTitle}」` : ""}
 
-## 作成対象
+${cur.context ? `## 今回の文脈・特別指示（テーマより優先で全体に反映）
+${cur.context}
+
+` : ""}## 作成対象
 ${targetDesc}
 投稿タイプ：${cur.postType} ／ 投稿予定：${dateStr}
 
@@ -944,6 +968,9 @@ function viewInstruction(){
   cur._instruction = text;
   return `<h1>2. 指示文をコピー</h1>
   <div class="card">
+    <label>🎯 今回の文脈・特別指示（任意）</label>
+    <textarea id="c_context" style="min-height:70px;" placeholder="例：台風明けで蒸し暑さが戻る予報。冷房疲れと週末の外出をねぎらう文脈で。" oninput="cur.context=this.value">${esc(cur.context||"")}</textarea>
+    <button class="btn btn-ghost sm" style="margin:6px 0 10px;" onclick="applyContextToInstr()">↻ 下の指示文に反映</button>
     <p class="small muted">下の指示文をコピーして、スマホのClaude（プロジェクト）に貼り付けてください。返ってきた文章を次のステップで貼り付けます。</p>
     <textarea id="c_instruction" style="min-height:220px;">${esc(text)}</textarea>
     <p class="hint">✏️ 手動で書き換えOK。書き換えた内容がそのままコピーされます（画面を移動すると自動生成に戻ります）</p>
@@ -953,6 +980,11 @@ function viewInstruction(){
 }
 
 // --- Step2: 貼り付け解析 ---
+window.applyContextToInstr = ()=>{
+  const t=document.getElementById("c_instruction"); if(!t) return;
+  t.value = buildInstruction(); cur._instruction = t.value;
+  toast("🎯 文脈を指示文に反映しました");
+};
 function viewPaste(){
   return `<h1>3. Claudeの返信を貼り付け</h1>
   <div class="card">
@@ -1041,8 +1073,12 @@ function updateChips(key){
 function viewImage(){
   return `<h1>4. サムネイル画像を選ぶ</h1>
   <div class="card">
-    <button class="btn btn-blue" onclick="openImgPrompt()">🎨 ChatGPT用の画像プロンプトを作る</button>
-    <p class="hint">画像がまだ無いときは、ここでプロンプトをコピー→ChatGPTで生成→サムネイルツールで文字入れ→ギャラリー保存、の流れです</p>
+    <div class="row" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-blue" style="flex:1; min-width:170px;" onclick="openImgPrompt()">🎨 画像プロンプトを作る</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:170px;" onclick="return openCommonPhotos()">📁 店舗写真フォルダ（Drive）</button>
+    </div>
+    <p class="hint">AI画像：プロンプトをコピー→ChatGPTで生成→サムネイルツールで文字入れ→ギャラリー保存<br>
+    店舗写真：📁で写真を保存→サムネイルツールでギャラリーに登録（文字入れ無しOK）→ 下の一覧から選択</p>
   </div>
   <div class="card">
     <p class="small muted">サムネイルツールのチームギャラリーから選ぶと、CSVの画像列に「◯◯.jpg」が入ります。</p>
@@ -1369,10 +1405,11 @@ window.redlGo = (kind)=>{
     imageTitle: img ? safeImgName(img) : "" };
   if(kind==="xlsx"){
     if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
-    saveXlsxFrom(d); toast("📗 再ダウンロードしました");
+    saveXlsxFrom(d); toast("📗 DL完了 → GMO投稿ページを開きます");
   } else {
-    saveCsvFrom(d); toast("📄 再ダウンロードしました");
+    saveCsvFrom(d); toast("📄 DL完了 → GMO投稿ページを開きます");
   }
+  openGmoUpload();
   closeRedl();
 };
 window.openGmo = ()=>{
@@ -1382,6 +1419,14 @@ window.openGmo = ()=>{
   return false;
 };
 // GMOの画像アップロード画面を優先的に開く（「画像」「アップロード」「upload」を含むリンクを優先、無ければGMO投稿ツール）
+// あさば様からの店舗写真など「共通画像フォルダ」（Googleドライブ）を開く
+window.openCommonPhotos = ()=>{
+  const links=[...(window.__teamLinks||[]), ...myLinks];
+  const l = links.find(x=> /共通画像|店舗写真|写真フォルダ|画像フォルダ/.test((x.name||"")+(x.sub||"")));
+  if(l){ window.open(l.url,"_blank"); }
+  else { toast("「共通画像フォルダ」の名前でGoogleドライブのリンクを登録してください（チーム共有がおすすめ）"); go("settings"); }
+  return false;
+};
 window.openGmoUpload = ()=>{
   const links=[...(window.__teamLinks||[]), ...myLinks, ...(typeof BUILTIN_LINKS!=='undefined'?BUILTIN_LINKS:[])];
   const t = l => (l.name||"")+(l.sub||"")+(l.url||"");
