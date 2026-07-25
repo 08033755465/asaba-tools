@@ -949,8 +949,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               <input type="date" value={dateISO} onChange={(e) => setDateISO(e.target.value)} className="w-full p-2 border rounded text-sm" />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-500">任意テキスト（省略可）</label>
-              <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="例：夏キャンペーン" className="w-full p-2 border rounded text-sm" />
+              <label className="text-xs font-medium text-slate-500">任意テキスト（原則不要）</label>
+              <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="通常は空欄のまま（特別な区別が必要な時だけ）" className="w-full p-2 border rounded text-sm" />
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs">
               <div className="text-slate-500 mb-1">プレビュー</div>
