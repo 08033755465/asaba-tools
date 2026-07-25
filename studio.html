@@ -6,6 +6,7 @@
 <title>MEO投稿 統合ツール</title>
 <link rel="icon" type="image/png" href="/app-icon.png">
 <link rel="apple-touch-icon" href="/app-icon.png">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root { --ink:#0f172a; --line:#e2e8f0; --muted:#64748b; --bg:#f1f5f9; --brand:#0f172a; --ok:#059669; --warn:#d97706; --ng:#dc2626; --blue:#2563eb; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -415,9 +416,9 @@ const storeByName = (name) => STORES.find(s => s.name === name) || STORES.find(s
 // ============ NGワード ============
 const NG = [["治す","整える"],["治る","変わる"],["治療","施術・アプローチ"],["完治","卒業"],["根治","根本にアプローチ"],["改善する","整えていく"],["改善します","サポートします"],["効きます","働きかけます"],["必ず","（削除）"],["絶対に良くなる","（削除）"],["診断","チェック・分析"],["医学的効果","（削除）"]];
 
-// ============ 48列ヘッダー ============
-const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","掲載期間の設定（Yahoo!記載欄）の予約投稿日","掲載期間の設定（Yahoo!記載欄）の予約投稿時間","掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
-const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:23,CONTENT:24,IMAGE:26,BTYPE:30,BURL:31 };
+// ============ 52列ヘッダー（新テンプレ 2026-07更新） ============
+const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","A_掲載期間の設定（Apple記載欄）の予約投稿日 ","A_掲載期間の設定（Apple記載欄）の予約投稿終了日","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","A_アクションボタン（Apple）","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","Apple","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
+const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:25,CONTENT:26,IMAGE:28,BTYPE:32,BURL:33 };
 
 // ============ 生成ルール（§8） ============
 const RULES = `【文体・トーン】
@@ -634,13 +635,35 @@ function renderSmImgLinked(){
         ${smImage.url?`<img src="${esc(smImage.url)}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
         <span class="small" style="min-width:0;overflow:hidden;text-overflow:ellipsis;">${esc(smImage.title)}</span>
       </div>
-      <button class="pill" style="color:var(--ng);flex-shrink:0;" onclick="unlinkSmImage()">解除</button>
-    </div>`;
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        ${smImage.url?`<button class="pill" onclick="dlSmImageSafe()" title="この安全名でスマホ/PCに保存 → 同じ名前でGMOにアップ">📥 安全名でDL</button>`:""}
+        <button class="pill" style="color:var(--ng);" onclick="unlinkSmImage()">解除</button>
+      </div>
+    </div>
+    <p class="hint" style="margin:6px 0 0;">GMOには <b>この名前</b> で画像を登録してください（1文字違いでも「不正値」になります）</p>`;
   } else {
     box.innerHTML = `<p class="hint">まだ画像を紐付けていません（あとで作成時に選ぶこともできます）</p>`;
   }
 }
 window.unlinkSmImage = ()=>{ smImage = null; renderSmImgLinked(); };
+// 画像を安全ファイル名でダウンロード（CSV/GMO登録名と統一）
+window.dlSmImageSafe = async ()=>{
+  if(!smImage || !smImage.url){ toast("画像URLが取れませんでした"); return; }
+  try{
+    const res = await fetch(smImage.url, {mode:"cors"});
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = smImage.title;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast("📥 " + smImage.title + " をダウンロードしました");
+  }catch(e){
+    // CORS失敗時のフォールバック: 別タブで開いてもらう
+    console.warn(e);
+    toast("直接DLできませんでした。別タブで開くので、そこで保存してください");
+    window.open(smImage.url, "_blank");
+  }
+};
 
 // ===== ギャラリー画像ピッカー（予定への事前紐付け） =====
 window.openGalPickForSched = ()=>{
@@ -666,11 +689,12 @@ window.renderGalPick = (q="")=>{
 };
 window.pickGalForSched = (id)=>{
   const img = (window.__gallery||[]).find(x=>x.id===id); if(!img) return;
-  const name = img.folderName || img.titleText || "画像";
-  smImage = { title: name + ".jpg", id: img.id, url: img.imageUrl||"" };
+  const rawName = img.folderName || img.titleText || "画像";
+  const safe = (typeof safeImgName==="function") ? safeImgName(rawName) : (rawName + ".jpg");
+  smImage = { title: safe, id: img.id, url: img.imageUrl||"" };
   renderSmImgLinked();
   closeGalPick();
-  toast("画像を紐付けました：" + name);
+  toast("画像を紐付けました：" + safe);
 };
 // A/B切替時、時間が既定のままなら連動して切替
 document.getElementById("sm_ab").addEventListener("change", (e)=>{
@@ -773,7 +797,7 @@ function renderCreate(){
   if(cur.step===0) b.innerHTML = viewTarget();
   else if(cur.step===1) b.innerHTML = viewInstruction();
   else if(cur.step===2) b.innerHTML = viewPaste();
-  else if(cur.step===3) { b.innerHTML = viewImage(); renderGallery(); }
+  else if(cur.step===3) { b.innerHTML = viewImage(); renderGallery(); setTimeout(refreshImageWarn,0); }
   else if(cur.step===4) b.innerHTML = viewExport();
   bindCreate();
 }
@@ -977,7 +1001,12 @@ function viewImage(){
     <div id="gallery" class="gallery mt"></div>
     <div id="gstatus" class="fbstatus mt"></div>
     <label class="mt">選択中の画像タイトル（手入力も可）</label>
-    <input id="c_imageTitle" value="${esc(cur.imageTitle)}" placeholder="例：深呼吸_07-13.jpg" oninput="cur.imageTitle=this.value">
+    <input id="c_imageTitle" value="${esc(cur.imageTitle)}" placeholder="例：深呼吸_07-13.jpg" oninput="onImageTitleInput(this.value)">
+    <div id="c_imageWarn" class="hint" style="margin-top:4px;"></div>
+    <div id="c_imageDLbox" class="row mt" style="display:none;gap:6px;flex-wrap:wrap;">
+      <button class="pill" onclick="dlPickedImageSafe()" title="この安全名で保存 → 同じ名前でGMOにアップ">📥 安全名で画像DL</button>
+      <button class="pill" onclick="copyImgTitle()">📋 画像名をコピー</button>
+    </div>
     <details><summary>参考：AIが作った画像プロンプト</summary>
       <textarea class="mt" oninput="cur.imagePrompt=this.value">${esc(cur.imagePrompt)}</textarea>
     </details>
@@ -1004,19 +1033,62 @@ window.renderGallery = (q="")=>{
   }).join("");
 };
 window.pickImage = (jpg)=>{
-  cur.imageTitle=jpg;
+  const safe = (typeof safeImgName==="function") ? safeImgName(jpg) : jpg;
+  cur.imageTitle=safe;
   const img = (window.__gallery||[]).find(i=> (i.folderName||i.titleText||"画像")+".jpg"===jpg);
   cur.imageId = img?.id || "";
   cur.imageUrl = img?.imageUrl || "";
-  document.getElementById("c_imageTitle").value=jpg;
+  document.getElementById("c_imageTitle").value=safe;
+  refreshImageWarn();
   // この投稿が予定から来ている場合、予定にも画像を紐付けて双方向に記録
   if(cur.schedId){
     const i = schedule.findIndex(s=>s.id===cur.schedId);
-    if(i>=0){ persistSched({ ...schedule[i], imageTitle:jpg, imageId:cur.imageId }); }
+    if(i>=0){ persistSched({ ...schedule[i], imageTitle:safe, imageId:cur.imageId }); }
     if(window.fs && cur.imageId){ window.fs.linkImage(cur.imageId, { linkedScheduleId:cur.schedId, linkedScheduleTitle: cur.catchTitle||cur.title }).catch(e=>console.warn("linkImage",e)); }
   }
   renderGallery(document.getElementById("gsearch").value);
-  toast("画像を選択："+jpg);
+  toast("画像を選択："+safe);
+};
+window.onImageTitleInput = (v)=>{ cur.imageTitle=v; refreshImageWarn(); };
+window.refreshImageWarn = ()=>{
+  const warn = document.getElementById("c_imageWarn"); const box = document.getElementById("c_imageDLbox");
+  if(!warn) return;
+  const v = cur.imageTitle||"";
+  if(!v){ warn.innerHTML=""; if(box) box.style.display="none"; return; }
+  const safe = safeImgName(v);
+  if(safe !== v){
+    warn.innerHTML = `⚠️ GMOで問題になる文字があります。<b>${esc(safe)}</b> に自動で直します。<button class="pill" style="margin-left:6px;" onclick="applyImgSafe()">今すぐ安全名にする</button>`;
+    warn.style.color = "var(--warn)";
+  } else {
+    warn.innerHTML = `✅ 安全な名前です`;
+    warn.style.color = "var(--ok)";
+  }
+  if(box) box.style.display = cur.imageUrl ? "flex" : "none";
+};
+window.applyImgSafe = ()=>{
+  const safe = safeImgName(cur.imageTitle||""); if(!safe) return;
+  cur.imageTitle = safe;
+  const el = document.getElementById("c_imageTitle"); if(el) el.value = safe;
+  refreshImageWarn();
+  toast("画像名を安全に整えました：" + safe);
+};
+window.copyImgTitle = ()=>{ if(!cur.imageTitle){toast("画像名がありません");return;} copyStr(cur.imageTitle); };
+window.dlPickedImageSafe = async ()=>{
+  if(!cur.imageUrl){ toast("この画像はDL用URLが取れません（ギャラリー画像を選んでください）"); return; }
+  const safe = safeImgName(cur.imageTitle||"image.jpg");
+  try{
+    const res = await fetch(cur.imageUrl, {mode:"cors"});
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = safe;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast("📥 " + safe + " をダウンロードしました");
+  }catch(e){
+    console.warn(e);
+    toast("直接DL不可。別タブで開くので保存してください");
+    window.open(cur.imageUrl, "_blank");
+  }
 };
 window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data-view="create"]').hidden && cur.step===3) renderGallery(document.getElementById("gsearch")?.value||""); });
 
@@ -1033,9 +1105,12 @@ function viewExport(){
     ${cur.imageTitle?`<div class="note" style="margin-top:8px;">⚠️ <b>この画像名が、GMOにアップロードした画像のファイル名と1文字でも違うと「不正値」になります。</b><br>GMOの画像管理に表示されている名前が違う場合は、その名前をコピーして前の画面の「選択中の画像タイトル」に貼り付けてください。<button class="pill" style="margin-left:6px;" onclick='copyStr(${JSON.stringify(cur.imageTitle)})'>画像名をコピー</button></div>`:""}
   </div>
   ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>`
-    :`<div class="note">✅ チェックOK。CSVを出力できます。</div>`}
-  <button class="btn btn-primary mt" ${errs.length?"disabled":""} onclick="downloadCsv()">📄 CSVダウンロード</button>
-  <div class="note">取込：GMOツールの既存シートに、Googleスプレッドシートの「ファイル→インポート→アップロード→<b>データを置換</b>」で取り込むとプルダウンが壊れません。</div>
+    :`<div class="note">✅ チェックOK。出力形式を選んでダウンロードしてください。</div>`}
+  <div class="row mt" style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-primary" ${errs.length?"disabled":""} onclick="downloadXlsx()" style="flex:1;min-width:180px">📗 XLSXでDL（GMO直接投入OK）</button>
+    <button class="btn btn-ghost" ${errs.length?"disabled":""} onclick="downloadCsv()" style="flex:1;min-width:180px">📄 CSVでDL</button>
+  </div>
+  <div class="note"><b>XLSX（推奨）</b>: GMOツールの「ファイル→インポート→アップロード→<b>データを置換</b>」でそのまま取り込めます（Excelを開き直す必要なし）。<br><b>CSV</b>: 既存の運用フロー用の予備。</div>
   <a class="linkbtn mt" id="gmoLink" href="#" onclick="return openGmo()"><span class="ic">🚀</span><span>GMOツールを開いて投稿する</span><span class="arr">›</span></a>
   <p class="hint">※GMOのURLは設定タブ、またはリンク集に登録したものを開きます</p>
   ${nav(3, null)}`;
@@ -1061,36 +1136,65 @@ function validateExport(){
 function fmtDate(d){ const[y,m,dd]=d.split("-"); return `${y}/${m}/${dd}`; }
 function fmtTime(t){ const[h,m]=t.split(":"); return `${parseInt(h,10)}:${m}`; }
 function q(v){ return `"${String(v==null?"":v).replace(/"/g,'""')}"`; }
-window.downloadCsv = ()=>{
-  // 画像名の形式チェック（過去にGMO取込成功した形式＝「◯◯：◯◯_MM-DD.jpg」）
-  if(cur.imageTitle){
-    const proven = /_\d{2}-\d{2}\.jpg$/.test(cur.imageTitle);
-    if(!proven){
-      const ok = confirm(
-        "画像名が、過去にGMO取込に成功した形式（…_07-24.jpg のように日付で終わる形）と異なります：\n\n" +
-        cur.imageTitle + "\n\n" +
-        "GMOにアップロードした画像名と完全一致していないと「不正値」になります。\n" +
-        "このままCSVを出力しますか？"
-      );
-      if(!ok) return;
-    }
+// 画像名の安全化: Windows/GMOで問題になる文字を _ に置換。JPG拡張子を保証。
+function safeImgName(name){
+  if(!name) return "";
+  let s = String(name).trim();
+  s = s.replace(/[\\/:*?"<>|]/g, "_");
+  s = s.replace(/[：／＊？＜＞｜「」【】（）　]/g, "_");
+  s = s.replace(/_+/g, "_").replace(/^[_.]+|[_.]+$/g, "");
+  const m = s.match(/^(.+?)(\.(?:jpe?g|png|gif|webp))$/i);
+  if(m) s = m[1] + m[2].toLowerCase();
+  else s = s + ".jpg";
+  return s || "image.jpg";
+}
+window.safeImgName = safeImgName;
+function currentMMDD(){
+  if(cur.date){ const[,m,d]=cur.date.split("-"); return `${m}-${d}`; }
+  const n=new Date(); return `${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
+}
+function preExportImageCheck(){
+  if(!cur.imageTitle) return true;
+  const safe = safeImgName(cur.imageTitle);
+  if(safe !== cur.imageTitle){
+    const ok = confirm(
+      "画像名にGMOで問題になる文字（：／全角スペースなど）が含まれています。\n\n" +
+      "現在の名前： " + cur.imageTitle + "\n" +
+      "安全な名前： " + safe + "\n\n" +
+      "OKを押すと安全な名前に自動で置き換えて出力します。\n" +
+      "（GMOのライブラリでも同じ安全名でアップロード済みか確認してください）"
+    );
+    if(!ok) return false;
+    cur.imageTitle = safe;
+    const el=document.getElementById("c_imageTitle"); if(el) el.value=safe;
   }
-  const lines=[HEADERS.map(q).join(",")];
+  return true;
+}
+function buildRows(){
   const immediate = cur.timing==="immediate";
+  const rows = [];
   exportStores().forEach(s=>{
-    const c=new Array(48).fill("");
+    const c=new Array(HEADERS.length).fill("");
     c[COL.STORE_ID]=s.gmo; c[COL.STORE_NAME]=s.name; c[COL.POST_TYPE]=cur.postType;
     if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=cur.date?fmtDate(cur.date):""; c[COL.STIME]=cur.time?fmtTime(cur.time):""; }
     c[COL.TITLE]=cur.title; c[COL.CONTENT]=contentFor(s); c[COL.IMAGE]=cur.imageTitle||"";
     c[COL.BTYPE]="予約"; c[COL.BURL]=s.url;
-    lines.push(c.map(q).join(","));
+    rows.push(c);
   });
+  return rows;
+}
+window.downloadCsv = ()=>{
+  if(!preExportImageCheck()) return;
+  const rows = buildRows();
+  const lines = [HEADERS.map(q).join(",")].concat(rows.map(r=> r.map(q).join(",")));
   const csv="\uFEFF"+lines.join("\r\n")+"\r\n";
-  let mmdd; if(cur.date){const[,m,d]=cur.date.split("-");mmdd=`${m}-${d}`;} else {const n=new Date();mmdd=`${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;}
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${mmdd}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${currentMMDD()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  archivePost();
+  toast("CSVをダウンロードしました");
+};
+function archivePost(){
   if(cur.schedId){ const i=schedule.findIndex(x=>x.id===cur.schedId); if(i>=0) persistSched({ ...schedule[i], done:true }); }
-  // 投稿履歴をFirestoreに蓄積（チーム共有・のちの参照/移行用）
   if(window.fs){
     window.fs.addPost({
       title: cur.title||"", themeTitle: cur.themeTitle||"", catchTitle: cur.catchTitle||"",
@@ -1100,7 +1204,19 @@ window.downloadCsv = ()=>{
       contents: cur.contents||{}, createdAt: Date.now(),
     }).catch(e=>console.warn("post archive", e));
   }
-  toast("CSVをダウンロードしました");
+}
+window.downloadXlsx = ()=>{
+  if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
+  if(!preExportImageCheck()) return;
+  const rows = buildRows();
+  const aoa = [HEADERS.slice()].concat(rows);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = HEADERS.map((_,i)=> i===COL.CONTENT?{wch:60}:(i===COL.STORE_NAME||i===COL.TITLE?{wch:26}:{wch:14}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, `【あさば様】一括投稿_${currentMMDD()}.xlsx`);
+  archivePost();
+  toast("XLSXをダウンロードしました");
 };
 window.openGmo = ()=>{
   const links=[...(window.__teamLinks||[]), ...myLinks];
