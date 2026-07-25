@@ -649,6 +649,7 @@ function renderHomeSchedule(){
         <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b>${s.imageTitle?' 🖼️':''}<br><span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
       </div>
       <div style="display:flex; gap:6px;">
+        <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
       </div>
@@ -666,6 +667,7 @@ function renderSchedList(){
         <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+        <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
         <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
@@ -745,7 +747,14 @@ window.openGalPickForSched = ()=>{
   renderGalPick("");
   document.getElementById("galPickModal").style.display = "flex";
 };
-window.closeGalPick = ()=> document.getElementById("galPickModal").style.display="none";
+window.closeGalPick = ()=>{ QUICK_LINK_SCHED=null; document.getElementById("galPickModal").style.display="none"; };
+// 予定カードから直接ギャラリーを開いて紐付け（編集モーダルを経由しない）
+let QUICK_LINK_SCHED = null;
+window.quickLinkImage = (sid)=>{
+  QUICK_LINK_SCHED = sid;
+  openGalPickForSched();
+  const t=document.getElementById("galPickTitle"); if(t) t.textContent = "🖼️ この予定に紐付ける画像を選ぶ";
+};
 window.renderGalPick = (q="")=>{
   const box = document.getElementById("galPickList"); if(!box) return;
   const g = window.__gallery||[];
@@ -763,6 +772,17 @@ window.pickGalForSched = (id)=>{
   const img = (window.__gallery||[]).find(x=>x.id===id); if(!img) return;
   const rawName = img.folderName || img.titleText || "画像";
   const safe = (typeof safeImgName==="function") ? safeImgName(rawName) : (rawName + ".jpg");
+  // 予定カードからの直接紐付けモード：その場で保存して完了
+  if(QUICK_LINK_SCHED){
+    const sid = QUICK_LINK_SCHED;
+    const i = schedule.findIndex(x=>x.id===sid);
+    if(i>=0){ persistSched({ ...schedule[i], imageTitle:safe, imageId:img.id }); }
+    if(window.fs){ window.fs.linkImage(img.id, { linkedScheduleId:sid, linkedScheduleTitle:(i>=0?(schedule[i].catchTitle||schedule[i].title||""):"") }).catch(e=>console.warn("linkImage",e)); }
+    closeGalPick();
+    renderSchedList(); if(typeof renderHomeSchedule==="function") renderHomeSchedule();
+    toast("🖼️ 予定に紐付けました：" + safe);
+    return;
+  }
   smImage = { title: safe, id: img.id, url: img.imageUrl||"" };
   renderSmImgLinked();
   closeGalPick();
