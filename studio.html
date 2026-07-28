@@ -71,6 +71,34 @@
   .center { text-align:center; }
   .toast { position:fixed; left:50%; bottom:80px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 18px; border-radius:999px; font-size:13px; z-index:60; opacity:0; transition:opacity .2s; pointer-events:none; }
   .toast.show { opacity:1; }
+  /* ===== カレンダー ===== */
+  .cal-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+  .cal-head b { font-size:16px; }
+  .cal-nav { display:flex; gap:6px; align-items:center; }
+  .cal-dow { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-bottom:3px; }
+  .cal-dow div { text-align:center; font-size:10px; color:var(--muted); font-weight:700; padding:2px 0; }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .cal-cell { border:1px solid var(--line); border-radius:8px; min-height:62px; padding:3px; cursor:pointer; background:#fff; display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+  .cal-cell:hover { background:#f8fafc; }
+  .cal-cell.other { background:#f8fafc; opacity:.55; }
+  .cal-cell.today { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue) inset; }
+  .cal-dnum { font-size:11px; font-weight:700; color:var(--muted); line-height:1; }
+  .cal-cell.today .cal-dnum { color:var(--blue); }
+  .cal-dnum.sun { color:var(--ng); } .cal-dnum.sat { color:var(--blue); }
+  .cal-chip { font-size:9px; line-height:1.25; border-radius:4px; padding:1px 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:#eef2ff; color:#3730a3; }
+  .cal-chip.a { background:#dbeafe; color:#1d4ed8; } .cal-chip.b { background:#fce7f3; color:#be185d; }
+  .cal-chip.posted { background:#d1fae5; color:#065f46; }
+  .cal-chip.overdue { background:#fef3c7; color:#92400e; }
+  .cal-chip.ev-mtg { background:#ede9fe; color:#6d28d9; } .cal-chip.ev-extraction { background:#cffafe; color:#0e7490; } .cal-chip.ev-other { background:#f1f5f9; color:#475569; }
+  .cal-more { font-size:8px; color:var(--muted); text-align:center; }
+  .cal-legend { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; font-size:10px; color:var(--muted); }
+  .cal-legend span { display:inline-flex; align-items:center; gap:3px; }
+  .dot { width:8px; height:8px; border-radius:2px; display:inline-block; }
+  .day-item { border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px; }
+  .day-item.posted { background:#f0fdf4; border-color:#bbf7d0; }
+  .day-item.posted .di-title { color:var(--muted); text-decoration:line-through; }
+  .di-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+  .di-body { font-size:11px; color:#334155; white-space:pre-wrap; background:#f8fafc; border-radius:6px; padding:6px; margin-top:6px; max-height:120px; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -97,9 +125,17 @@
   <!-- ============ スケジュール ============ -->
   <section data-view="schedule" hidden>
     <h1>スケジュール</h1>
-    <p class="sub">タイトルと投稿予定日を管理。手入力で追加・編集できます</p>
-    <button class="btn btn-primary" onclick="openSchedEdit()">＋ 予定を追加</button>
-    <div class="card mt" id="schedList"></div>
+    <p class="sub">投稿予定・実績・チームMTG・データ抽出日を管理</p>
+    <div class="seg mt" id="schedViewSeg">
+      <button data-sview="list" class="on" onclick="setSchedView('list')">📋 リスト</button>
+      <button data-sview="calendar" onclick="setSchedView('calendar')">📆 カレンダー</button>
+    </div>
+    <div class="row mt" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary" style="flex:1; min-width:150px;" onclick="openSchedEdit()">＋ 投稿予定を追加</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="openEventEdit()">＋ 予定(MTG/抽出)</button>
+    </div>
+    <div id="schedBody" class="mt"></div>
+    <div class="card" id="schedList" style="display:none;"></div>
     <details>
       <summary>まとめて貼り付けで取り込む</summary>
       <div class="mt">
@@ -218,6 +254,47 @@
       <button class="btn btn-primary" onclick="saveSchedEdit()">保存</button>
     </div>
     <button class="btn btn-ghost mt" id="sm_delete" onclick="deleteSched()" style="color:var(--ng); border-color:#fecaca;">この予定を削除</button>
+  </div>
+</div>
+
+<!-- イベント（MTG・データ抽出など）編集 -->
+<div id="eventModal" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
+    <h2 id="evModalTitle">予定を追加</h2>
+    <label>種別</label>
+    <select id="ev_type">
+      <option value="mtg">👥 チームMTG</option>
+      <option value="extraction">📊 月間データ抽出</option>
+      <option value="other">📌 その他の予定</option>
+    </select>
+    <div class="row mt">
+      <div><label>日付</label><input type="date" id="ev_date"></div>
+      <div><label>時間（任意）</label><input type="time" id="ev_time"></div>
+    </div>
+    <label class="mt">タイトル</label>
+    <input id="ev_title" placeholder="例：月次定例MTG／GMOデータ抽出">
+    <label class="mt">メモ（任意）</label>
+    <textarea id="ev_memo" style="min-height:60px;" placeholder="議題・持ち物・対象クライアントなど"></textarea>
+    <div class="row mt" style="display:flex; gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveEventEdit()">保存</button>
+      <button class="btn btn-ghost" onclick="closeEventEdit()">キャンセル</button>
+    </div>
+    <button id="ev_delete" class="btn btn-ghost mt" style="width:100%; color:var(--ng); display:none;" onclick="deleteEvent()">この予定を削除</button>
+  </div>
+</div>
+
+<!-- 日別詳細シート -->
+<div id="dayModal" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
+  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+      <h2 id="dayModalTitle" style="margin:0;">7月26日</h2>
+      <button class="pill" onclick="closeDayModal()">閉じる</button>
+    </div>
+    <div class="row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+      <button class="btn btn-primary" style="flex:1; min-width:140px;" onclick="addFromDay('post')">＋ 投稿予定</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="addFromDay('event')">＋ MTG/抽出</button>
+    </div>
+    <div id="dayModalBody"></div>
   </div>
 </div>
 
@@ -393,6 +470,9 @@ try {
     setLink: (id, data) => setDoc(doc(db, ...basePath('links'), id), data, { merge: true }),
     addLink: (rec) => addDoc(collection(db, ...basePath('links')), rec),
     delLink: (id) => deleteDoc(doc(db, ...basePath('links'), id)),
+    // カレンダー用イベント（MTG・データ抽出など。投稿とは別コレクション）
+    setEvent: (rec) => setDoc(doc(db, ...basePath('studio_events'), rec.id), rec),
+    delEvent: (id) => deleteDoc(doc(db, ...basePath('studio_events'), id)),
   };
   try {
     const snap = await getDocs(collection(db, ...basePath('studio_schedule')));
@@ -411,6 +491,15 @@ try {
     window.__remoteSched = arr;
     window.dispatchEvent(new Event('sched-ready'));
   }, (e)=> console.warn('sched read error', e));
+
+  // ===== カレンダーイベント（チーム共有・Firestore） =====
+  onSnapshot(collection(db, ...basePath('studio_events')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    arr.sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999'));
+    window.__events = arr;
+    window.dispatchEvent(new Event('events-ready'));
+  }, (e)=> console.warn('events read error', e));
 
   // ===== 定例指示（チーム共有・Firestore） =====
   onSnapshot(collection(db, ...basePath('studio_rules')), (s) => {
@@ -531,7 +620,7 @@ if(!load("meo_studio_seed_v2", false)){
 window.addEventListener('sched-ready', ()=>{
   schedule = (window.__remoteSched||[]).slice();
   save(LS.sched, schedule);
-  if(typeof renderSchedList==="function") renderSchedList();
+  if(typeof renderSchedule==="function") renderSchedule();
   if(typeof renderHomeSchedule==="function") renderHomeSchedule();
 });
 function persistSched(rec){
@@ -545,6 +634,30 @@ function removeSchedRec(id){
   save(LS.sched, schedule);
   if(window.fs) window.fs.delSched(id).catch(e=>console.warn("sched del", e));
 }
+// ===== カレンダーイベント（MTG・データ抽出など）=====
+const LS_EVENTS = "meo_studio_events";
+let events = load(LS_EVENTS, []);
+window.addEventListener('events-ready', ()=>{
+  events = (window.__events||[]).slice();
+  save(LS_EVENTS, events);
+  if(typeof renderSchedule==="function") renderSchedule();
+});
+function persistEvent(rec){
+  const i = events.findIndex(x=>x.id===rec.id);
+  if(i>=0) events[i]=rec; else events.push(rec);
+  save(LS_EVENTS, events);
+  if(window.fs) window.fs.setEvent(rec).catch(e=>console.warn("event sync", e));
+  if(typeof renderSchedule==="function") renderSchedule();
+}
+function removeEvent(id){
+  events = events.filter(x=>x.id!==id);
+  save(LS_EVENTS, events);
+  if(window.fs) window.fs.delEvent(id).catch(e=>console.warn("event del", e));
+  if(typeof renderSchedule==="function") renderSchedule();
+}
+// "YYYY-MM-DD HH:MM"（投稿完了日時などに使用）
+function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
 function load(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch(e){ return def; } }
 function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
 function uid(){ return Math.random().toString(36).slice(2,9); }
@@ -556,7 +669,7 @@ function go(view){
   document.querySelectorAll(".nav button").forEach(b=> b.classList.toggle("on", b.dataset.tab===view));
   window.scrollTo(0,0);
   if(view==="home"){ renderLinks(); renderHomeSchedule(); }
-  if(view==="schedule") renderSchedList();
+  if(view==="schedule") renderSchedule();
   if(view==="create") renderCreate();
   if(view==="settings"){ renderMyLinks(); renderRules(); }
   if(view==="history") renderHistory();
@@ -655,6 +768,23 @@ function renderHomeSchedule(){
       </div>
     </div>`).join("") : `<p class="hint">予定がありません。予定タブから追加、または「投稿を作る」で今すぐ作成できます。</p>`;
 }
+// スケジュール画面のビュー切替（リスト／カレンダー）
+let SCHED_VIEW = 'list';
+window.setSchedView = (v)=>{
+  SCHED_VIEW = v;
+  document.querySelectorAll('#schedViewSeg button').forEach(b=> b.classList.toggle('on', b.dataset.sview===v));
+  renderSchedule();
+};
+window.renderSchedule = ()=>{
+  const list = document.getElementById("schedList");
+  const body = document.getElementById("schedBody");
+  if(!list || !body) return;
+  if(SCHED_VIEW==='calendar'){
+    list.style.display='none'; body.style.display='block'; renderCalendar();
+  } else {
+    body.style.display='none'; list.style.display='block'; renderSchedList();
+  }
+};
 function renderSchedList(){
   const box = document.getElementById("schedList");
   const list = sortedSched();
@@ -662,7 +792,7 @@ function renderSchedList(){
     <div class="listitem">
       <div style="display:flex; gap:8px; min-width:0;">
         ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;" title="${esc(s.imageTitle||'')}">`:""}
-        <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b> ${s.done?'<span class="pill badge-done">出力済</span>':''}${s.imageTitle?' <span class="pill" style="background:#dcfce7;color:#166534;">🖼️紐付け済</span>':''}<br>
+        <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b> ${s.posted?'<span class="pill badge-done">✅投稿完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}${s.imageTitle?' <span class="pill" style="background:#dcfce7;color:#166534;">🖼️紐付け済</span>':''}<br>
         ${s.catchTitle?`<span class="muted" style="font-size:11px;">📝 ${esc(s.catchTitle)}</span><br>`:""}
         <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
       </div>
@@ -670,21 +800,222 @@ function renderSchedList(){
         <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
+        <button class="pill" onclick="toggledPosted('${s.id}')">${s.posted?'↩︎完了取消':'✅投稿完了'}</button>
         <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
       </div>
     </div>`).join("") : `<p class="hint">まだ予定がありません</p>`;
 }
+// 投稿完了トグル（各所から呼べる共通関数）
+window.markPosted = (id, on)=>{
+  const i = schedule.findIndex(x=>x.id===id); if(i<0) return;
+  persistSched({ ...schedule[i], posted:!!on, postedAt: on? nowStr() : "" });
+  if(typeof renderSchedule==="function") renderSchedule();
+  if(typeof renderHomeSchedule==="function") renderHomeSchedule();
+  toast(on ? "✅ 投稿完了にしました" : "↩︎ 完了を取り消しました");
+};
+window.toggledPosted = (id)=>{ const s=schedule.find(x=>x.id===id); if(s) markPosted(id, !s.posted); };
+window.dupSched = (id)=>{
+  const s = schedule.find(x=>x.id===id); if(!s) return;
+  persistSched({ ...s, id:uid(), done:false, posted:false, postedAt:"" });
+  renderSchedule(); toast("📋 複製しました（同じ日付で追加）");
+};
+
+// ============ カレンダー ============
+let CAL_Y, CAL_M; // 表示中の年・月(0始まり)
+const EV_META = { mtg:{icon:"👥", label:"MTG", cls:"ev-mtg"}, extraction:{icon:"📊", label:"データ抽出", cls:"ev-extraction"}, other:{icon:"📌", label:"予定", cls:"ev-other"} };
+function schedChipClass(s){
+  if(s.posted) return "posted";
+  if(s.date && s.date < todayISO() && !s.posted) return "overdue";
+  return s.abType==="A" ? "a" : (s.abType==="B" ? "b" : "");
+}
+function eventsForMonth(y,m){ const pre=`${y}-${String(m+1).padStart(2,"0")}`; return (events||[]).filter(e=> (e.date||"").startsWith(pre)); }
+function schedForMonth(y,m){ const pre=`${y}-${String(m+1).padStart(2,"0")}`; return schedule.filter(s=> (s.date||"").startsWith(pre)); }
+function renderCalendar(){
+  const box = document.getElementById("schedBody"); if(!box) return;
+  const now = new Date();
+  if(CAL_Y==null){ CAL_Y=now.getFullYear(); CAL_M=now.getMonth(); }
+  const first = new Date(CAL_Y, CAL_M, 1);
+  const startDow = first.getDay();
+  const daysInMonth = new Date(CAL_Y, CAL_M+1, 0).getDate();
+  const today = todayISO();
+  const posts = schedForMonth(CAL_Y, CAL_M);
+  const evs = eventsForMonth(CAL_Y, CAL_M);
+  const byDay = {}; // "YYYY-MM-DD" -> {posts:[], events:[]}
+  posts.forEach(s=>{ (byDay[s.date]=byDay[s.date]||{posts:[],events:[]}).posts.push(s); });
+  evs.forEach(e=>{ (byDay[e.date]=byDay[e.date]||{posts:[],events:[]}).events.push(e); });
+
+  let cells = "";
+  // 前月の空白
+  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell other"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = `${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const dow = new Date(CAL_Y, CAL_M, d).getDay();
+    const bucket = byDay[ds] || {posts:[],events:[]};
+    const items = [];
+    bucket.posts.forEach(s=>{
+      const label = (s.catchTitle||s.title||"投稿").slice(0,10);
+      const img = s.imageTitle ? "🖼️" : "⭕";
+      items.push(`<div class="cal-chip ${schedChipClass(s)}">${s.posted?"✓":""}${img}${esc(label)}</div>`);
+    });
+    bucket.events.forEach(e=>{
+      const m = EV_META[e.type]||EV_META.other;
+      items.push(`<div class="cal-chip ${m.cls}">${m.icon}${esc((e.title||m.label).slice(0,9))}</div>`);
+    });
+    const shown = items.slice(0,3).join("");
+    const more = items.length>3 ? `<div class="cal-more">他${items.length-3}件</div>` : "";
+    const dnumCls = dow===0?"sun":(dow===6?"sat":"");
+    cells += `<div class="cal-cell${ds===today?" today":""}" onclick="openDayModal('${ds}')">
+      <div class="cal-dnum ${dnumCls}">${d}</div>${shown}${more}</div>`;
+  }
+  box.innerHTML = `
+    <div class="cal-head">
+      <div class="cal-nav"><button class="pill" onclick="calMove(-1)">◀</button><button class="pill" onclick="calToday()">今月</button><button class="pill" onclick="calMove(1)">▶</button></div>
+      <b>${CAL_Y}年${CAL_M+1}月</b>
+      <span class="muted small">タップで詳細</span>
+    </div>
+    <div class="cal-dow">${["日","月","火","水","木","金","土"].map((d,i)=>`<div class="${i===0?'sun':i===6?'sat':''}">${d}</div>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>
+    <div class="cal-legend">
+      <span><span class="dot" style="background:#dbeafe"></span>A投稿</span>
+      <span><span class="dot" style="background:#fce7f3"></span>B投稿</span>
+      <span>🖼️画像済 ⭕画像これから</span>
+      <span><span class="dot" style="background:#d1fae5"></span>✓投稿完了</span>
+      <span><span class="dot" style="background:#fef3c7"></span>未投稿(期限過ぎ)</span>
+      <span>👥MTG 📊抽出</span>
+    </div>`;
+}
+window.calMove = (n)=>{ CAL_M+=n; if(CAL_M<0){CAL_M=11;CAL_Y--;} if(CAL_M>11){CAL_M=0;CAL_Y++;} renderCalendar(); };
+window.calToday = ()=>{ const n=new Date(); CAL_Y=n.getFullYear(); CAL_M=n.getMonth(); renderCalendar(); };
+
+// 投稿本文を studio_posts から逆引き（schedId優先、無ければ日付+タイトルで近似）
+function bodyForSched(s){
+  const posts = window.__posts||[];
+  let p = posts.find(x=> x.schedId && x.schedId===s.id);
+  if(!p) p = posts.find(x=> x.date===s.date && (x.catchTitle===s.catchTitle || x.title===s.title) && (s.catchTitle||s.title));
+  if(!p || !p.contents) return null;
+  return Object.entries(p.contents).map(([k,v])=> `【${contentLabel(k)}】\n${v}`).join("\n\n");
+}
+
+// 日別詳細シート
+let DAY_MODAL_DATE = null;
+window.openDayModal = (ds)=>{
+  DAY_MODAL_DATE = ds;
+  const [y,m,d] = ds.split("-").map(Number);
+  document.getElementById("dayModalTitle").textContent = `${m}月${d}日(${dowJp(ds)})`;
+  renderDayModalBody();
+  document.getElementById("dayModal").style.display = "flex";
+};
+window.closeDayModal = ()=> document.getElementById("dayModal").style.display="none";
+function renderDayModalBody(){
+  const ds = DAY_MODAL_DATE;
+  const box = document.getElementById("dayModalBody");
+  const posts = schedule.filter(s=> s.date===ds);
+  const evs = (events||[]).filter(e=> e.date===ds);
+  let html = "";
+  posts.forEach(s=>{
+    const body = bodyForSched(s);
+    html += `<div class="day-item${s.posted?' posted':''}">
+      <div style="display:flex; gap:8px; align-items:flex-start;">
+        ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
+        <div style="min-width:0; flex:1;">
+          <div class="di-title">${abBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${s.posted?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
+          <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)} ・ ${s.imageTitle?('🖼️ '+esc(s.imageTitle)):'⭕ 画像これから'}</div>
+          ${s.kw?`<div class="di-meta">🔑 訴求WD：${esc(s.kw)}</div>`:""}
+          ${s.postedAt?`<div class="di-meta">✅ 投稿予約完了：${esc(s.postedAt)}</div>`:""}
+          <div class="di-meta">👤 作成者：—（ログイン導入後に表示）</div>
+          ${body?`<div class="di-body">${esc(body)}</div>`:`<div class="di-meta" style="color:var(--warn)">📝 本文：未作成（作成すると表示されます）</div>`}
+        </div>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+        <button class="pill" onclick="startFromSched('${s.id}')">✍️作成</button>
+        <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
+        <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
+        <button class="pill" onclick="dupSched('${s.id}')">📋複製</button>
+        <button class="pill" onclick="toggledPosted('${s.id}');setTimeout(renderDayModalBody,50)">${s.posted?'↩︎完了取消':'✅投稿完了'}</button>
+        <button class="pill" style="color:var(--ng)" onclick="if(confirm('この投稿予定を削除しますか？')){removeSchedRec('${s.id}');renderDayModalBody();}">削除</button>
+      </div>
+    </div>`;
+  });
+  evs.forEach(e=>{
+    const meta = EV_META[e.type]||EV_META.other;
+    html += `<div class="day-item">
+      <div class="di-title"><b class="small">${meta.icon} ${esc(e.title||meta.label)}</b> <span class="pill ${meta.cls==='ev-mtg'?'':''}" style="background:#ede9fe;color:#6d28d9;">${meta.label}</span></div>
+      <div class="di-meta">🕐 ${e.time||"時間未定"}</div>
+      ${e.memo?`<div class="di-body">${esc(e.memo)}</div>`:""}
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+        <button class="pill" onclick="openEventEdit('${e.id}')">編集</button>
+        <button class="pill" onclick="dupEvent('${e.id}')">📋複製</button>
+        <button class="pill" style="color:var(--ng)" onclick="if(confirm('この予定を削除しますか？')){removeEvent('${e.id}');renderDayModalBody();}">削除</button>
+      </div>
+    </div>`;
+  });
+  if(!html) html = `<p class="hint">この日の予定はありません。上のボタンから追加できます。</p>`;
+  box.innerHTML = html;
+}
+window.addFromDay = (kind)=>{
+  const ds = DAY_MODAL_DATE;
+  closeDayModal();
+  if(kind==='post') openSchedEdit(null, ds);
+  else openEventEdit(null, ds);
+};
+
+// ============ イベント（MTG・データ抽出）編集 ============
+let editingEventId = null;
+window.openEventEdit = (id, presetDate)=>{
+  editingEventId = id || null;
+  const e = id ? (events||[]).find(x=>x.id===id) : null;
+  document.getElementById("evModalTitle").textContent = e ? "予定を編集" : "予定を追加";
+  document.getElementById("ev_type").value = e?.type || "mtg";
+  document.getElementById("ev_date").value = e?.date || presetDate || todayISO();
+  document.getElementById("ev_time").value = e?.time || "";
+  document.getElementById("ev_title").value = e?.title || "";
+  document.getElementById("ev_memo").value = e?.memo || "";
+  document.getElementById("ev_delete").style.display = e ? "block" : "none";
+  document.getElementById("eventModal").style.display = "flex";
+};
+window.closeEventEdit = ()=> document.getElementById("eventModal").style.display="none";
+window.saveEventEdit = ()=>{
+  const date = document.getElementById("ev_date").value;
+  if(!date){ toast("日付を入れてください"); return; }
+  const rec = {
+    id: editingEventId || uid(),
+    type: document.getElementById("ev_type").value,
+    date,
+    time: document.getElementById("ev_time").value || "",
+    title: document.getElementById("ev_title").value.trim(),
+    memo: document.getElementById("ev_memo").value.trim(),
+    author: "",
+    createdAt: (editingEventId && (events.find(x=>x.id===editingEventId)?.createdAt)) || Date.now(),
+  };
+  persistEvent(rec);
+  closeEventEdit();
+  if(DAY_MODAL_DATE && document.getElementById("dayModal").style.display==="flex") renderDayModalBody();
+  toast("保存しました");
+};
+window.deleteEvent = ()=>{
+  if(!editingEventId) return;
+  if(!confirm("この予定を削除しますか？")) return;
+  removeEvent(editingEventId);
+  closeEventEdit();
+  if(DAY_MODAL_DATE && document.getElementById("dayModal").style.display==="flex") renderDayModalBody();
+};
+window.dupEvent = (id)=>{
+  const e = (events||[]).find(x=>x.id===id); if(!e) return;
+  persistEvent({ ...e, id:uid(), createdAt:Date.now() });
+  if(DAY_MODAL_DATE) renderDayModalBody();
+  toast("📋 複製しました");
+};
 
 let editingSchedId = null;
 let smImage = null; // 予定編集中に紐付けたサムネ画像 {title, id, url}
 const defaultTime = (ab)=> ab==="B" ? "07:00" : "16:00"; // A=金曜16:00 / B=月曜7:00
-window.openSchedEdit = (id)=>{
+window.openSchedEdit = (id, presetDate)=>{
   editingSchedId = id || null;
   const s = id ? schedule.find(x=>x.id===id) : null;
   document.getElementById("schedModalTitle").textContent = s ? "予定を編集" : "予定を追加";
   document.getElementById("sm_title").value = s?.title || "";
   document.getElementById("sm_catch").value = s?.catchTitle || "";
-  document.getElementById("sm_date").value = s?.date || "";
+  document.getElementById("sm_date").value = s?.date || presetDate || "";
   document.getElementById("sm_ab").value = s?.abType || "A";
   document.getElementById("sm_time").value = s?.time || defaultTime(s?.abType || "A");
   document.getElementById("sm_kw").value = s?.kw || "";
@@ -779,7 +1110,7 @@ window.pickGalForSched = (id)=>{
     if(i>=0){ persistSched({ ...schedule[i], imageTitle:safe, imageId:img.id }); }
     if(window.fs){ window.fs.linkImage(img.id, { linkedScheduleId:sid, linkedScheduleTitle:(i>=0?(schedule[i].catchTitle||schedule[i].title||""):"") }).catch(e=>console.warn("linkImage",e)); }
     closeGalPick();
-    renderSchedList(); if(typeof renderHomeSchedule==="function") renderHomeSchedule();
+    renderSchedule(); if(typeof renderHomeSchedule==="function") renderHomeSchedule();
     toast("🖼️ 予定に紐付けました：" + safe);
     return;
   }
@@ -834,13 +1165,13 @@ window.saveSchedEdit = ()=>{
   if(window.fs && smImage && smImage.id){
     window.fs.linkImage(smImage.id, { linkedScheduleId: schedId, linkedScheduleTitle: rec.catchTitle || rec.title }).catch(e=>console.warn("linkImage", e));
   }
-  closeSchedEdit(); renderSchedList(); toast("保存しました");
+  closeSchedEdit(); renderSchedule(); renderHomeSchedule(); toast("保存しました");
 };
 window.deleteSched = ()=>{
   if(!editingSchedId) return;
   if(!confirm("この予定を削除しますか？")) return;
   removeSchedRec(editingSchedId);
-  closeSchedEdit(); renderSchedList();
+  closeSchedEdit(); renderSchedule(); renderHomeSchedule();
 };
 window.importSchedBulk = ()=>{
   const raw = document.getElementById("schedBulk").value.trim();
@@ -855,7 +1186,7 @@ window.importSchedBulk = ()=>{
     persistSched({ id:uid(), title:parts.slice(1).join(" "), date, postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], done:false });
     n++;
   });
-  document.getElementById("schedBulk").value=""; renderSchedList();
+  document.getElementById("schedBulk").value=""; renderSchedule();
   toast(`${n}件を取り込みました`);
 };
 
@@ -1260,6 +1591,11 @@ function viewExport(){
       <p class="hint" style="margin:6px 0 0;">シートで「ファイル→インポート→アップロード→<b>データを置換</b>」で取り込み</p>
     </div>
   </div>
+  ${cur.schedId?`<div class="card mt" style="border:1px solid #bbf7d0; background:#f0fdf4;">
+    <div class="small" style="font-weight:700;">投稿が完了したら…</div>
+    <p class="hint" style="margin:4px 0 8px;">GMOで投稿予約が完了したら、下のボタンでこの予定を「投稿完了」にできます（カレンダーに実績が反映されます）</p>
+    <button class="btn btn-ghost" style="width:100%;" onclick="markPosted('${cur.schedId}', true)">✅ この投稿を完了にする</button>
+  </div>`:""}
   ${nav(3, null)}`;
 }
 function contentFor(store){ return cur.scope==="category_common" ? (cur.contents[store.cat]||"") : (cur.contents[store.gmo]||""); }
@@ -1380,7 +1716,7 @@ function archivePost(){
       abType: cur.abType||"", postType: cur.postType||"", scope: cur.scope||"",
       date: cur.date||"", time: cur.time||"", timing: cur.timing||"",
       imageTitle: cur.imageTitle||"", imagePrompt: cur.imagePrompt||"",
-      storeIds: cur.storeIds||[],
+      storeIds: cur.storeIds||[], schedId: cur.schedId||"", kw: cur.kw||"",
       contents: cur.contents||{}, createdAt: Date.now(),
     }).catch(e=>console.warn("post archive", e));
   }
