@@ -99,6 +99,11 @@
   .day-item.posted .di-title { color:var(--muted); text-decoration:line-through; }
   .di-meta { font-size:11px; color:var(--muted); margin-top:2px; }
   .di-body { font-size:11px; color:#334155; white-space:pre-wrap; background:#f8fafc; border-radius:6px; padding:6px; margin-top:6px; max-height:120px; overflow-y:auto; }
+  /* 日別詳細ポップ（カレンダーの上にふわっと表示） */
+  #dayModal { background:rgba(15,23,42,.28); }
+  .daypop { position:absolute; left:50%; top:16%; transform:translateX(-50%) scale(.92); width:calc(100% - 28px); max-width:440px; max-height:74dvh; overflow-y:auto; background:#fff; border-radius:16px; box-shadow:0 18px 50px rgba(15,23,42,.32); padding:14px; opacity:0; transition:opacity .16s ease, transform .16s ease; touch-action:pan-y; }
+  #dayModal.show .daypop { opacity:1; transform:translateX(-50%) scale(1); }
+  .daypop-grab { width:38px; height:4px; border-radius:99px; background:#cbd5e1; margin:0 auto 10px; }
 </style>
 </head>
 <body>
@@ -283,16 +288,17 @@
   </div>
 </div>
 
-<!-- 日別詳細シート -->
-<div id="dayModal" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
-  <div style="background:#fff; width:100%; max-width:720px; border-radius:18px 18px 0 0; max-height:90dvh; overflow-y:auto; padding:18px;">
+<!-- 日別詳細ポップ（カレンダーからピヨッと表示） -->
+<div id="dayModal" style="display:none; position:fixed; inset:0; z-index:70;">
+  <div id="dayPop" class="daypop" onclick="event.stopPropagation()">
+    <div class="daypop-grab"></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-      <h2 id="dayModalTitle" style="margin:0;">7月26日</h2>
+      <h2 id="dayModalTitle" style="margin:0; font-size:17px;">7月26日</h2>
       <button class="pill" onclick="closeDayModal()">閉じる</button>
     </div>
     <div class="row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-      <button class="btn btn-primary" style="flex:1; min-width:140px;" onclick="addFromDay('post')">＋ 投稿予定</button>
-      <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="addFromDay('event')">＋ MTG/抽出</button>
+      <button class="btn btn-primary" style="flex:1; min-width:130px; padding:9px;" onclick="addFromDay('post')">＋ 投稿予定</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:130px; padding:9px;" onclick="addFromDay('event')">＋ MTG/抽出</button>
     </div>
     <div id="dayModalBody"></div>
   </div>
@@ -896,16 +902,40 @@ function bodyForSched(s){
   return Object.entries(p.contents).map(([k,v])=> `【${contentLabel(k)}】\n${v}`).join("\n\n");
 }
 
-// 日別詳細シート
+// 日別詳細ポップ（カレンダーの上にふわっと表示・背景タップ/スワイプで閉じる）
 let DAY_MODAL_DATE = null;
 window.openDayModal = (ds)=>{
   DAY_MODAL_DATE = ds;
   const [y,m,d] = ds.split("-").map(Number);
   document.getElementById("dayModalTitle").textContent = `${m}月${d}日(${dowJp(ds)})`;
   renderDayModalBody();
-  document.getElementById("dayModal").style.display = "flex";
+  const el = document.getElementById("dayModal");
+  el.style.display = "block";
+  setTimeout(()=> el.classList.add("show"), 10);
 };
-window.closeDayModal = ()=> document.getElementById("dayModal").style.display="none";
+window.closeDayModal = ()=>{
+  const el = document.getElementById("dayModal");
+  el.classList.remove("show");
+  setTimeout(()=>{ if(!el.classList.contains("show")) el.style.display="none"; }, 180);
+};
+// 背景（ポップ外）タップで閉じる
+document.getElementById("dayModal").addEventListener("click", (e)=>{ if(e.target.id==="dayModal") closeDayModal(); });
+// 下スワイプ／横スワイプで閉じる（ポップ自体をなぞる）
+(function(){
+  const pop = document.getElementById("dayPop");
+  let sx=0, sy=0, tracking=false;
+  pop.addEventListener("touchstart", e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; tracking=true; }, {passive:true});
+  pop.addEventListener("touchmove", e=>{
+    if(!tracking) return;
+    const t=e.touches[0], dx=t.clientX-sx, dy=t.clientY-sy;
+    // 上部でない縦スクロール中は閉じない。大きめのスワイプで閉じる
+    if(Math.abs(dy)>70 && pop.scrollTop<=0 && dy>0){ tracking=false; closeDayModal(); }
+    else if(Math.abs(dx)>90 && Math.abs(dx)>Math.abs(dy)){ tracking=false; closeDayModal(); }
+  }, {passive:true});
+  pop.addEventListener("touchend", ()=>{ tracking=false; }, {passive:true});
+})();
+// Escで閉じる（PC）
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.getElementById("dayModal").classList.contains("show")) closeDayModal(); });
 function renderDayModalBody(){
   const ds = DAY_MODAL_DATE;
   const box = document.getElementById("dayModalBody");
@@ -920,9 +950,7 @@ function renderDayModalBody(){
         <div style="min-width:0; flex:1;">
           <div class="di-title">${abBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${s.posted?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
           <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)} ・ ${s.imageTitle?('🖼️ '+esc(s.imageTitle)):'⭕ 画像これから'}</div>
-          ${s.kw?`<div class="di-meta">🔑 訴求WD：${esc(s.kw)}</div>`:""}
           ${s.postedAt?`<div class="di-meta">✅ 投稿予約完了：${esc(s.postedAt)}</div>`:""}
-          <div class="di-meta">👤 作成者：—（ログイン導入後に表示）</div>
           ${body?`<div class="di-body">${esc(body)}</div>`:`<div class="di-meta" style="color:var(--warn)">📝 本文：未作成（作成すると表示されます）</div>`}
         </div>
       </div>
