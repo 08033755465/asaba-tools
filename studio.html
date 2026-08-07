@@ -196,7 +196,10 @@
       <h2>📄 指示テンプレート（チーム共有）</h2>
       <p class="hint">投稿の指示文をパターンとして保存・使い分けできます（作成画面の「指示文」で選択）</p>
       <div id="tplList" class="mt"></div>
-      <button class="btn btn-ghost mt" onclick="newTpl()">＋ テンプレートを新規作成</button>
+      <div class="row mt" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="newTpl('post')">＋ 投稿テンプレ</button>
+        <button class="btn btn-ghost" style="flex:1; min-width:140px;" onclick="newTpl('image')">＋ 画像テンプレ</button>
+      </div>
     </div>
     <div class="card">
       <h2>📌 定例指示（チーム共有）</h2>
@@ -404,6 +407,12 @@
   <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:520px; border-radius:16px; max-height:84dvh; overflow-y:auto; padding:18px;">
     <h2>🎨 サムネイル画像プロンプト（ChatGPT用）</h2>
     <p class="hint" style="margin-top:0;">下の項目を確認して「コピー」→ ChatGPTに貼るだけで画像が作れます</p>
+    <label class="mt">🎨 画像テンプレート</label>
+    <select id="im_tpl" onchange="pickImgTpl(this.value)"><option value="">標準（自動生成）</option></select>
+    <div class="row mt" style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button class="pill" onclick="saveAsImgTpl()">💾 いまのプロンプトをテンプレ保存</button>
+      <span id="im_tplBtns"></span>
+    </div>
     <label class="mt">シーン</label>
     <textarea id="im_scene" style="min-height:64px;" oninput="buildImgPrompt()"></textarea>
     <div class="row mt">
@@ -1605,7 +1614,7 @@ ${rulesOf('post').map(r=>'・'+r.body).join('\n')}` : ""}`;
 function viewInstruction(){
   const text = buildInstruction();
   cur._instruction = text;
-  const tplOpts = (templates||[]).map(t=>`<option value="${esc(t.id)}" ${cur.tplId===t.id?"selected":""}>${esc(t.name||"無題")}</option>`).join("");
+  const tplOpts = (templates||[]).filter(t=>t.kind!=='image').map(t=>`<option value="${esc(t.id)}" ${cur.tplId===t.id?"selected":""}>${esc(t.name||"無題")}</option>`).join("");
   return `<h1>2. 指示文をコピー</h1>
   <div class="card">
     <label>📄 指示テンプレート</label>
@@ -1650,7 +1659,7 @@ window.saveAsTpl = ()=>{
   const name = prompt("テンプレートの名前（例：通常投稿／キャンペーン用）", currentTpl()?.name || "");
   if(name===null) return;
   const nm = name.trim(); if(!nm){ toast("名前を入力してください"); return; }
-  const rec = { id: uid(), name: nm, body: toPlaceholders(raw), createdAt: Date.now() };
+  const rec = { id: uid(), kind:'post', name: nm, body: toPlaceholders(raw), createdAt: Date.now() };
   persistTpl(rec); cur.tplId = rec.id;
   renderCreate(); toast("💾 テンプレートを保存しました");
 };
@@ -1676,19 +1685,23 @@ window.saveTplEdit = ()=>{
   persistTpl({ ...t, name, body });
   closeTplEdit(); renderCreate(); toast("保存しました");
 };
-window.newTpl = ()=>{
-  const rec = { id: uid(), name: "新しいテンプレート", body: DEFAULT_TPL_BODY, createdAt: Date.now() };
+window.newTpl = (kind)=>{
+  const isImg = kind==='image';
+  const rec = { id: uid(), kind: isImg?'image':'post', name: isImg?"新しい画像テンプレ":"新しいテンプレート", body: isImg?DEFAULT_IMG_TPL_BODY:DEFAULT_TPL_BODY, createdAt: Date.now() };
   persistTpl(rec); openTplEdit(rec.id);
 };
 window.renderTplList = ()=>{
   const box = document.getElementById("tplList"); if(!box) return;
-  box.innerHTML = (templates||[]).length ? templates.map(t=>`
-    <div class="listitem"><div class="small" style="min-width:0;"><b>${esc(t.name||"無題")}</b><br>
+  const row = t => `
+    <div class="listitem"><div class="small" style="min-width:0;">
+      <span class="pill" style="background:${t.kind==='image'?'#fce7f3':'#dbeafe'};color:${t.kind==='image'?'#be185d':'#1d4ed8'};">${t.kind==='image'?'🎨画像':'📝投稿'}</span>
+      <b>${esc(t.name||"無題")}</b><br>
       <span class="muted" style="font-size:11px;">${esc((t.body||"").slice(0,50))}…</span></div>
       <div style="display:flex; gap:6px;">
         <button class="pill" onclick="openTplEdit('${esc(t.id)}')">編集</button>
         <button class="pill" style="color:var(--ng)" onclick="delTplNow('${esc(t.id)}')">削除</button>
-      </div></div>`).join("") : `<p class="hint">まだテンプレートがありません</p>`;
+      </div></div>`;
+  box.innerHTML = (templates||[]).length ? templates.map(row).join("") : `<p class="hint">まだテンプレートがありません</p>`;
 };
 
 // --- Step2: 貼り付け解析 ---
@@ -2331,8 +2344,67 @@ function imgInputBlock(){
 ※定例指示：
 ${rulesOf('image').map(r=>'・'+r.body).join('\n')}` : ""}`;
 }
+// 画像プロンプトの変数（画像テンプレの {{...}} に差し込む）
+function imgVars(){
+  const pos = document.getElementById("im_titlepos").value;
+  return {
+    "シーン": document.getElementById("im_scene").value.trim(),
+    "人物": document.getElementById("im_person").value.trim(),
+    "タイトル": document.getElementById("im_title").value.trim(),
+    "タイトルの位置": pos + "（" + (TITLEPOS_LAYOUT[pos]||"") + "）",
+    "季節": document.getElementById("im_season").value,
+    "雰囲気": document.getElementById("im_mood").value.trim(),
+    "画像ルール": IMG_RULES,
+    "定例指示": rulesOf('image').map(r=>'・'+r.body).join('\n'),
+  };
+}
+const DEFAULT_IMG_TPL_BODY = `{{画像ルール}}
+
+―― 今回の内容 ――
+シーン：{{シーン}}
+人物：{{人物}}
+タイトル：{{タイトル}}
+タイトルの位置：{{タイトルの位置}}
+季節：{{季節}}
+雰囲気：{{雰囲気}}
+
+※画像内の文字はタイトルのみにしてください（それ以外の文章・吹き出し・アイコン・英語・ロゴ・透かしは禁止）
+※定例指示：
+{{定例指示}}`;
+let IMG_TPL_ID = load("meo_img_tpl_id", null);  // 選択中の画像テンプレ（端末ごとに記憶）
+function currentImgTpl(){ return (templates||[]).find(t=> t.id===IMG_TPL_ID && t.kind==='image') || null; }
+window.pickImgTpl = (id)=>{
+  IMG_TPL_ID = id||null; save("meo_img_tpl_id", IMG_TPL_ID);
+  renderImgTplSelect(); buildImgPrompt();
+  toast(id?"画像テンプレを適用しました":"標準に戻しました");
+};
+function renderImgTplSelect(){
+  const sel = document.getElementById("im_tpl"); if(!sel) return;
+  const opts = (templates||[]).filter(t=>t.kind==='image');
+  sel.innerHTML = `<option value="">標準（自動生成）</option>` + opts.map(t=>`<option value="${esc(t.id)}" ${IMG_TPL_ID===t.id?"selected":""}>${esc(t.name||"無題")}</option>`).join("");
+  const btns = document.getElementById("im_tplBtns");
+  if(btns) btns.innerHTML = IMG_TPL_ID?`<button class="pill" onclick="openTplEdit('${esc(IMG_TPL_ID)}')">✏️ 編集</button>
+    <button class="pill" style="color:var(--ng)" onclick="delTplNow('${esc(IMG_TPL_ID)}');IMG_TPL_ID=null;save('meo_img_tpl_id',null);renderImgTplSelect();buildImgPrompt();">🗑️ 削除</button>`:"";
+}
+window.saveAsImgTpl = ()=>{
+  const raw = document.getElementById("im_output").value;
+  const name = prompt("画像テンプレートの名前（例：水彩スタンダード／写真風）", currentImgTpl()?.name || "");
+  if(name===null) return;
+  const nm = name.trim(); if(!nm){ toast("名前を入力してください"); return; }
+  // 具体値をプレースホルダに戻す（次回から自動で入れ替わる）
+  const v = imgVars(); let body = raw;
+  ["画像ルール","定例指示","タイトルの位置","シーン","人物","タイトル","雰囲気","季節"].forEach(k=>{
+    const val = v[k];
+    if(val && String(val).trim().length>1) body = body.split(String(val)).join("{{"+k+"}}");
+  });
+  const rec = { id: uid(), kind:'image', name: nm, body, createdAt: Date.now() };
+  persistTpl(rec); IMG_TPL_ID = rec.id; save("meo_img_tpl_id", IMG_TPL_ID);
+  renderImgTplSelect(); toast("💾 画像テンプレを保存しました");
+};
 window.buildImgPrompt = ()=>{
-  document.getElementById("im_output").value = IMG_RULES + "\n\n" + imgInputBlock();
+  const tpl = currentImgTpl();
+  const out = tpl && tpl.body ? applyTpl(tpl.body, imgVars()) : (IMG_RULES + "\n\n" + imgInputBlock());
+  document.getElementById("im_output").value = out;
 };
 window.applyPeople = ()=>{
   const v = document.getElementById("im_people").value;
@@ -2356,6 +2428,7 @@ window.openImgPrompt = (schedId)=>{
   document.getElementById("im_title").value = title;
   document.getElementById("im_season").value = seasonOf(date);
   document.getElementById("im_mood").value = "明るい・爽やか・安心感・自然・健康的";
+  renderImgTplSelect();
   buildImgPrompt();
   document.getElementById("imgModal").style.display = "flex";
 };
