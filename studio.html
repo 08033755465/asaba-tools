@@ -1424,7 +1424,7 @@ window.importSchedBulk = ()=>{
 const STEPS = ["対象","指示文","貼付け","画像","出力"];
 const cur = {};
 function setCur(o){ for(const k in cur) delete cur[k]; Object.assign(cur, o); }
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = (id)=>{
@@ -2001,15 +2001,58 @@ window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data
 // --- Step4: 出力 ---
 function viewExport(){
   const errs = validateExport();
+  const stores = exportStores();
+  const rowsPreview = stores.map(st=>{
+    const ov = (cur.overrides||{})[st.gmo] || {};
+    const content = ov.content!==undefined ? ov.content : contentFor(st);
+    const v = validate(content);
+    const isOv = ov.content!==undefined;
+    const shared = cur.scope==="category_common" && !isOv;
+    const imgName = ov.imageTitle!==undefined ? ov.imageTitle : (cur.imageTitle||"");
+    return `<div class="card" style="padding:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <b class="small">${esc(st.name)}</b>
+        <div style="display:flex; gap:4px; flex-wrap:wrap;">
+          ${shared?`<span class="pill">カテゴリ共通</span>`:""}
+          ${isOv?`<span class="pill" style="background:#fef3c7;color:#92400e;">個別編集中</span>`:""}
+          <span class="chip ${v.charOk?'ok':'warn'}">${v.chars}字</span>
+          ${v.ng.length?`<span class="chip ng">NG${v.ng.length}</span>`:""}
+        </div>
+      </div>
+      <textarea data-exrow="${st.gmo}" style="min-height:90px; font-size:12px; margin-top:6px;" oninput="onExportRowEdit('${st.gmo}', this.value)">${esc(content)}</textarea>
+      <div class="hint" style="margin-top:4px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <span>🖼️ ${esc(imgName)||"画像なし"}</span>
+        ${shared?`<button class="pill" onclick="forkStoreContent('${st.gmo}')">この店舗だけ個別にする</button>`
+                :(isOv?`<button class="pill" onclick="resetStoreContent('${st.gmo}')">共通に戻す</button>`:"")}
+      </div>
+    </div>`;
+  }).join("");
   return `<h1>5. 確認して出力</h1>
   <div class="card small">
-    <div><span class="muted">タイトル：</span>${esc(cur.title)||"（未設定）"}</div>
-    <div><span class="muted">対象：</span>${cur.scope==="category_common"?"カテゴリ共通（全16店舗）":`店舗別（${cur.storeIds.length}店舗）`}</div>
-    <div><span class="muted">日時：</span>${cur.timing==="immediate"?"即時投稿":`${fmtJp(cur.date)} ${esc(cur.time||"")}（予約）`}</div>
-    <div><span class="muted">投稿タイプ：</span>${esc(cur.postType)}</div>
-    <div><span class="muted">画像：</span>${esc(cur.imageTitle)||"（なし）"}</div>
-    ${cur.imageTitle?`<div class="note" style="margin-top:8px;">⚠️ <b>この画像名が、GMOにアップロードした画像のファイル名と1文字でも違うと「不正値」になります。</b><br>GMOの画像管理に表示されている名前が違う場合は、その名前をコピーして前の画面の「選択中の画像タイトル」に貼り付けてください。<button class="pill" style="margin-left:6px;" onclick='copyStr(${JSON.stringify(cur.imageTitle)})'>画像名をコピー</button></div>`:""}
+    <label>共通タイトル</label>
+    <input value="${esc(cur.title)}" oninput="cur.title=this.value" placeholder="（未設定）">
+    <div class="row mt">
+      <div><label>タイミング</label>
+        <select onchange="cur.timing=this.value; renderCreate();">
+          <option value="scheduled" ${cur.timing!=="immediate"?"selected":""}>予約投稿</option>
+          <option value="immediate" ${cur.timing==="immediate"?"selected":""}>即時投稿</option>
+        </select></div>
+      <div><label>投稿タイプ</label>
+        <select onchange="cur.postType=this.value">${["最新情報","イベント","クーポン"].map(t=>`<option ${cur.postType===t?"selected":""}>${t}</option>`).join("")}</select></div>
+    </div>
+    ${cur.timing!=="immediate"?`<div class="row mt">
+      <div><label>予約投稿日</label><input type="date" value="${esc(cur.date)}" onchange="cur.date=this.value; renderCreate();"></div>
+      <div><label>投稿時間</label><input type="time" value="${esc(cur.time||"")}" onchange="cur.time=this.value"></div>
+    </div>`:""}
+    <label class="mt">画像名（全店共通）</label>
+    <input value="${esc(cur.imageTitle)}" oninput="cur.imageTitle=this.value" placeholder="（なし）">
+    ${cur.imageTitle?`<p class="hint">⚠️ GMOにアップした画像名と1文字でも違うと「不正値」になります <button class="pill" onclick='copyStr(${JSON.stringify(cur.imageTitle)})'>コピー</button></p>`:""}
+    <div class="hint">対象：${cur.scope==="category_common"?`カテゴリ共通（全${stores.length}店舗）`:`店舗別（${stores.length}店舗）`}</div>
   </div>
+  <details class="mt" ${stores.length<=4?"open":""}>
+    <summary>📋 出力される内容を店舗ごとに確認・修正（${stores.length}店舗）</summary>
+    <div class="mt">${rowsPreview}</div>
+  </details>
   ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>`
     :`<div class="note">✅ チェックOK。出力形式を選んでダウンロードしてください。</div>`}
   <div class="mt" style="display:flex; flex-direction:column; gap:10px;">
@@ -2040,6 +2083,27 @@ function viewExport(){
   ${nav(3, null)}`;
 }
 function contentFor(store){ return cur.scope==="category_common" ? (cur.contents[store.cat]||"") : (cur.contents[store.gmo]||""); }
+// 出力プレビュー行の編集
+window.onExportRowEdit = (gmo, val)=>{
+  cur.overrides = cur.overrides||{};
+  const st = STORES.find(x=>x.gmo===gmo); if(!st) return;
+  if(cur.scope==="category_common"){
+    // 共通スコープ：直接編集は自動的に「個別」扱い
+    cur.overrides[gmo] = { ...(cur.overrides[gmo]||{}), content: val };
+  } else {
+    cur.contents[gmo] = val;  // 店舗別スコープは本文そのものを更新
+  }
+};
+window.forkStoreContent = (gmo)=>{
+  const st = STORES.find(x=>x.gmo===gmo); if(!st) return;
+  cur.overrides = cur.overrides||{};
+  cur.overrides[gmo] = { ...(cur.overrides[gmo]||{}), content: contentFor(st) };
+  renderCreate(); toast("この店舗だけ個別に編集できます");
+};
+window.resetStoreContent = (gmo)=>{
+  if(cur.overrides && cur.overrides[gmo]){ delete cur.overrides[gmo].content; if(!Object.keys(cur.overrides[gmo]).length) delete cur.overrides[gmo]; }
+  renderCreate(); toast("共通の本文に戻しました");
+};
 function exportStores(){ return cur.scope==="category_common" ? STORES : STORES.filter(s=>cur.storeIds.includes(s.gmo)); }
 function validateExport(){
   const errs=[];
@@ -2102,13 +2166,19 @@ function exportStoresFrom(d){
 }
 function contentFromFor(d,store){ return (d.scope||"category_common")==="category_common" ? ((d.contents||{})[store.cat]||"") : ((d.contents||{})[store.gmo]||""); }
 function buildRowsFrom(d){
-  const immediate = d.timing==="immediate";
   const rows = [];
   exportStoresFrom(d).forEach(s=>{
+    const ov = (d.overrides||{})[s.gmo] || {};
+    const timing = ov.timing || d.timing;
+    const immediate = timing==="immediate";
+    const date = ov.date!==undefined ? ov.date : d.date;
+    const time = ov.time!==undefined ? ov.time : d.time;
     const c=new Array(HEADERS.length).fill("");
     c[COL.STORE_ID]=s.gmo; c[COL.STORE_NAME]=s.name; c[COL.POST_TYPE]=d.postType||"最新情報";
-    if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=d.date?fmtDate(d.date):""; c[COL.STIME]=d.time?fmtTime(d.time):""; }
-    c[COL.TITLE]=d.title||""; c[COL.CONTENT]=contentFromFor(d,s); c[COL.IMAGE]=d.imageTitle||"";
+    if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=date?fmtDate(date):""; c[COL.STIME]=time?fmtTime(time):""; }
+    c[COL.TITLE]=d.title||"";
+    c[COL.CONTENT]= ov.content!==undefined ? ov.content : contentFromFor(d,s);
+    c[COL.IMAGE]= ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||"");
     c[COL.BTYPE]="予約"; c[COL.BURL]=s.url;
     rows.push(c);
   });
@@ -2158,6 +2228,7 @@ function archivePost(){
       date: cur.date||"", time: cur.time||"", timing: cur.timing||"",
       imageTitle: cur.imageTitle||"", imagePrompt: cur.imagePrompt||"",
       storeIds: cur.storeIds||[], schedId: cur.schedId||"", kw: cur.kw||"",
+      overrides: cur.overrides||{},
       contents: cur.contents||{}, createdAt: Date.now(),
     }).catch(e=>console.warn("post archive", e));
   }
