@@ -210,7 +210,9 @@
     </div>
     <div class="card">
       <h2>データ</h2>
-      <button class="btn btn-ghost" onclick="exportBackup()">📥 全データをバックアップ保存</button>
+      <button class="btn btn-ghost" onclick="repairImageLinks()">🧹 画像紐付けの不整合をチェック／修復</button>
+      <div id="repairResult" class="hint mt"></div>
+      <button class="btn btn-ghost mt" onclick="exportBackup()">📥 全データをバックアップ保存</button>
       <label class="mt">復元（バックアップJSONを選択）</label>
       <input type="file" id="restoreFile" accept=".json" onchange="importBackup(this.files[0])">
     </div>
@@ -518,6 +520,7 @@ try {
     addPost: (rec) => addDoc(collection(db, ...basePath('studio_posts')), rec),
     // 画像←→予定の双方向紐付け：ギャラリー画像(shared_thumbnails)にも予定情報を書き戻す
     linkImage: (imageId, data) => setDoc(doc(db, ...basePath('shared_thumbnails'), imageId), data, { merge: true }),
+    unlinkImage: (imageId) => setDoc(doc(db, ...basePath('shared_thumbnails'), imageId), { linkedScheduleId:"", linkedScheduleTitle:"" }, { merge: true }),
     // チーム共有リンクの編集・追加・削除（links コレクション。サムネツールと共通）
     setLink: (id, data) => setDoc(doc(db, ...basePath('links'), id), data, { merge: true }),
     addLink: (rec) => addDoc(collection(db, ...basePath('links')), rec),
@@ -697,9 +700,43 @@ function persistSched(rec){
   if(window.fs) window.fs.setSched(rec).catch(e=>console.warn("sched sync", e));
 }
 function removeSchedRec(id){
+  // 予定を消す前に、紐付いていた画像側のリンクも解除（孤立防止）
+  const s0 = schedule.find(x=>x.id===id);
+  if(s0 && s0.imageId && window.fs && window.fs.unlinkImage) window.fs.unlinkImage(s0.imageId).catch(()=>{});
   schedule = schedule.filter(x=>x.id!==id);
   save(LS.sched, schedule);
   if(window.fs) window.fs.delSched(id).catch(e=>console.warn("sched del", e));
+}
+// ===== 画像⇔予定リンクの共通操作（全経路がここを通る） =====
+// 紐付け：旧画像の解除→画像側→予定側 の順で両側を必ず揃える
+function linkSchedImage(schedId, img, imgTitle){
+  const i = schedule.findIndex(x=>x.id===schedId); if(i<0) return false;
+  const prev = schedule[i].imageId;
+  if(prev && prev !== img.id && window.fs && window.fs.unlinkImage) window.fs.unlinkImage(prev).catch(()=>{});
+  persistSched({ ...schedule[i], imageTitle: imgTitle, imageId: img.id });
+  if(window.fs) window.fs.linkImage(img.id, { linkedScheduleId: schedId, linkedScheduleTitle: (schedule[i].catchTitle||schedule[i].title||"") }).catch(e=>console.warn("linkImage",e));
+  refreshAfterLink();
+  return true;
+}
+// 解除：予定側と画像側の両方を消す
+function unlinkSchedImage(schedId){
+  const i = schedule.findIndex(x=>x.id===schedId); if(i<0) return false;
+  const prev = schedule[i].imageId;
+  persistSched({ ...schedule[i], imageTitle:"", imageId:"" });
+  if(prev && window.fs && window.fs.unlinkImage) window.fs.unlinkImage(prev).catch(()=>{});
+  refreshAfterLink();
+  return true;
+}
+window.unlinkSchedImageUI = (schedId)=>{
+  if(!confirm("この予定の画像紐付けを解除しますか？（画像自体は消えません）")) return;
+  unlinkSchedImage(schedId);
+  toast("🖼️ 紐付けを解除しました");
+  if(typeof DAY_MODAL_DATE!=="undefined" && DAY_MODAL_DATE && document.getElementById("dayModal").classList.contains("show")) renderDayModalBody();
+};
+function refreshAfterLink(){
+  if(typeof renderSchedule==="function") renderSchedule();
+  if(typeof renderHomeSchedule==="function") renderHomeSchedule();
+  if(typeof renderNextAction==="function") renderNextAction();
 }
 // ===== カレンダーイベント（MTG・データ抽出など）=====
 const LS_EVENTS = "meo_studio_events";
@@ -849,7 +886,7 @@ function renderHomeSchedule(){
         <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b>${s.imageTitle?' 🖼️':''}<br><span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
       </div>
       <div style="display:flex; gap:6px;">
-        <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
+        ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:`<button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>`}
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
       </div>
@@ -886,7 +923,7 @@ function renderSchedList(){
         <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-        <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
+        ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:`<button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>`}
         <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
         <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
         <button class="pill" onclick="toggledPosted('${s.id}')">${s.posted?'↩︎完了取消':'✅投稿完了'}</button>
@@ -947,8 +984,9 @@ window.markPosted = (id, on)=>{
 window.toggledPosted = (id)=>{ const s=schedule.find(x=>x.id===id); if(s) markPosted(id, !s.posted); };
 window.dupSched = (id)=>{
   const s = schedule.find(x=>x.id===id); if(!s) return;
-  persistSched({ ...s, id:uid(), done:false, posted:false, postedAt:"" });
-  renderSchedule(); toast("📋 複製しました（同じ日付で追加）");
+  // 画像は1予定=1画像の紐付けなので複製には引き継がない（半リンク防止）
+  persistSched({ ...s, id:uid(), done:false, posted:false, postedAt:"", imageTitle:"", imageId:"" });
+  renderSchedule(); toast("📋 複製しました（画像の紐付けは複製されません）");
 };
 
 // ============ カレンダー ============
@@ -1105,6 +1143,7 @@ function renderDayModalBody(){
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
         <button class="pill" onclick="startFromSched('${s.id}')">✍️作成</button>
         <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
+        ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:""}
         <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
         <button class="pill" onclick="dupSched('${s.id}')">📋複製</button>
         <button class="pill" onclick="toggledPosted('${s.id}');setTimeout(renderDayModalBody,50)">${s.posted?'↩︎完了取消':'✅投稿完了'}</button>
@@ -1184,6 +1223,7 @@ window.dupEvent = (id)=>{
 
 let editingSchedId = null;
 let smImage = null; // 予定編集中に紐付けたサムネ画像 {title, id, url}
+let smPrevImageId = null; // モーダルを開いた時点で紐付いていた画像ID（解除の逆側クリア用）
 const defaultTime = (ab)=> ab==="B" ? "07:00" : "16:00"; // A=金曜16:00 / B=月曜7:00
 window.openSchedEdit = (id, presetDate)=>{
   editingSchedId = id || null;
@@ -1204,6 +1244,7 @@ window.openSchedEdit = (id, presetDate)=>{
   document.getElementById("sm_storeWrap").style.display = scope==="per_store" ? "block" : "none";
   renderSmStores(s?.storeIds || []);
   smImage = s?.imageTitle ? { title:s.imageTitle, id:s.imageId||null, url:galUrlById(s.imageId) } : null;
+  smPrevImageId = s?.imageId || null;  // 解除・差し替え時に旧画像側のリンクを消すため保持
   renderSmImgLinked();
   document.getElementById("sm_delete").style.display = s ? "block" : "none";
   document.getElementById("schedModal").style.display = "flex";
@@ -1279,15 +1320,13 @@ window.pickGalForSched = (id)=>{
   const img = (window.__gallery||[]).find(x=>x.id===id); if(!img) return;
   const rawName = img.folderName || img.titleText || "画像";
   const safe = (typeof safeImgName==="function") ? safeImgName(rawName) : (rawName + ".jpg");
-  // 予定カードからの直接紐付けモード：その場で保存して完了
+  // 予定カードからの直接紐付けモード：その場で保存して完了（旧画像の解除も共通関数が実施）
   if(QUICK_LINK_SCHED){
     const sid = QUICK_LINK_SCHED;
-    const i = schedule.findIndex(x=>x.id===sid);
-    if(i>=0){ persistSched({ ...schedule[i], imageTitle:safe, imageId:img.id }); }
-    if(window.fs){ window.fs.linkImage(img.id, { linkedScheduleId:sid, linkedScheduleTitle:(i>=0?(schedule[i].catchTitle||schedule[i].title||""):"") }).catch(e=>console.warn("linkImage",e)); }
+    linkSchedImage(sid, img, safe);
     closeGalPick();
-    renderSchedule(); if(typeof renderHomeSchedule==="function") renderHomeSchedule();
     toast("🖼️ 予定に紐付けました：" + safe);
+    if(typeof DAY_MODAL_DATE!=="undefined" && DAY_MODAL_DATE && document.getElementById("dayModal").classList.contains("show")) renderDayModalBody();
     return;
   }
   smImage = { title: safe, id: img.id, url: img.imageUrl||"" };
@@ -1337,10 +1376,16 @@ window.saveSchedEdit = ()=>{
   const schedId = rec.id;
   if(editingSchedId){ const i=schedule.findIndex(x=>x.id===editingSchedId); persistSched({...schedule[i],...rec}); }
   else persistSched(rec);
-  // 双方向紐付け：ギャラリー画像側にも予定情報を書き戻す
-  if(window.fs && smImage && smImage.id){
-    window.fs.linkImage(smImage.id, { linkedScheduleId: schedId, linkedScheduleTitle: rec.catchTitle || rec.title }).catch(e=>console.warn("linkImage", e));
+  // 双方向紐付け：画像側にも書き戻し。解除・差し替え時は旧画像側のリンクを必ずクリア
+  if(window.fs){
+    if(smPrevImageId && smPrevImageId !== (smImage && smImage.id) && window.fs.unlinkImage){
+      window.fs.unlinkImage(smPrevImageId).catch(()=>{});
+    }
+    if(smImage && smImage.id){
+      window.fs.linkImage(smImage.id, { linkedScheduleId: schedId, linkedScheduleTitle: rec.catchTitle || rec.title }).catch(e=>console.warn("linkImage", e));
+    }
   }
+  smPrevImageId = null;
   closeSchedEdit(); renderSchedule(); renderHomeSchedule(); toast("保存しました");
 };
 window.deleteSched = ()=>{
@@ -1768,6 +1813,7 @@ function viewImage(){
     <label class="mt">選択中の画像タイトル（手入力も可）</label>
     <input id="c_imageTitle" value="${esc(cur.imageTitle)}" placeholder="例：深呼吸_07-13.jpg" oninput="onImageTitleInput(this.value)">
     <div id="c_imageWarn" class="hint" style="margin-top:4px;"></div>
+    ${cur.imageTitle?`<button class="pill mt" style="color:var(--warn)" onclick="clearCurImage()">🖼️ この画像を外す（紐付け解除）</button>`:""}
     <details><summary>参考：AIが作った画像プロンプト</summary>
       <textarea class="mt" oninput="cur.imagePrompt=this.value">${esc(cur.imagePrompt)}</textarea>
     </details>
@@ -1818,11 +1864,9 @@ window.pickImage = (jpg)=>{
   cur.imageUrl = img?.imageUrl || "";
   document.getElementById("c_imageTitle").value=safe;
   refreshImageWarn();
-  // この投稿が予定から来ている場合、予定にも画像を紐付けて双方向に記録
-  if(cur.schedId){
-    const i = schedule.findIndex(s=>s.id===cur.schedId);
-    if(i>=0){ persistSched({ ...schedule[i], imageTitle:safe, imageId:cur.imageId }); }
-    if(window.fs && cur.imageId){ window.fs.linkImage(cur.imageId, { linkedScheduleId:cur.schedId, linkedScheduleTitle: cur.catchTitle||cur.title }).catch(e=>console.warn("linkImage",e)); }
+  // この投稿が予定から来ている場合、予定にも画像を紐付けて双方向に記録（旧画像の解除込み）
+  if(cur.schedId && img){
+    linkSchedImage(cur.schedId, img, safe);
   }
   renderGallery(document.getElementById("gsearch").value);
   toast("画像を選択："+safe);
@@ -1867,8 +1911,8 @@ window.uploadToGallery = async (input)=>{
     cur.imageTitle = name; cur.imageId = ref.id; cur.imageUrl = url;
     const el=document.getElementById("c_imageTitle"); if(el) el.value=name;
     refreshImageWarn();
-    // 予定にも書き戻し（双方向）
-    if(cur.schedId){ const i=schedule.findIndex(x=>x.id===cur.schedId); if(i>=0) persistSched({ ...schedule[i], imageTitle:name, imageId:ref.id }); }
+    // 予定にも書き戻し（双方向・旧画像の解除込み）
+    if(cur.schedId){ linkSchedImage(cur.schedId, { id: ref.id }, name); }
     st.style.color="var(--ok)"; st.textContent=`✅ ギャラリーに追加＆この投稿に紐付けました：${name}`;
     input.value="";
     toast("🖼️ ギャラリーに追加しました");
@@ -1878,6 +1922,14 @@ window.uploadToGallery = async (input)=>{
   }
 };
 window.onImageTitleInput = (v)=>{ cur.imageTitle=v; refreshImageWarn(); };
+// 作成中の画像を外す（予定に紐付いていれば両側解除）
+window.clearCurImage = ()=>{
+  if(!confirm("画像の紐付けを解除しますか？（画像自体は消えません）")) return;
+  if(cur.schedId){ unlinkSchedImage(cur.schedId); }
+  else if(cur.imageId && window.fs && window.fs.unlinkImage){ window.fs.unlinkImage(cur.imageId).catch(()=>{}); }
+  cur.imageTitle=""; cur.imageId=""; cur.imageUrl="";
+  renderCreate(); toast("🖼️ 画像を外しました");
+};
 window.refreshImageWarn = ()=>{
   const warn = document.getElementById("c_imageWarn");
   const prep = document.getElementById("c_imagePrep");
@@ -2406,6 +2458,42 @@ window.exportBackup = ()=>{
   const data = { app:"meo-studio", schedule, myLinks, exported:new Date().toISOString() };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="MEO統合ツール_バックアップ.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+// 画像⇔予定リンクの不整合を検出して修復（予定側を正とする）
+window.repairImageLinks = ()=>{
+  const box = document.getElementById("repairResult");
+  const gallery = window.__gallery||[];
+  const fixes = [];
+  // A: 画像が予定を指しているが、予定側が別画像 or 消滅 → 画像側をクリア
+  gallery.forEach(g=>{
+    if(!g.linkedScheduleId) return;
+    const sc = schedule.find(x=>x.id===g.linkedScheduleId);
+    if(!sc || sc.imageId !== g.id){
+      fixes.push({kind:"img", id:g.id, label:`画像「${g.folderName||g.titleText||g.id}」→ ${sc?"予定は別の画像を使用":"予定が存在しない"}`});
+    }
+  });
+  // B: 予定が画像を指しているが、画像が消滅 → 予定側をクリア
+  schedule.forEach(sc=>{
+    if(!sc.imageId) return;
+    const g = gallery.find(x=>x.id===sc.imageId);
+    if(!g){ fixes.push({kind:"sched", id:sc.id, label:`予定「${sc.catchTitle||sc.title||sc.id}」→ 画像が削除済み`}); }
+  });
+  if(!fixes.length){ box.style.color="var(--ok)"; box.textContent="✅ 不整合はありません"; return; }
+  box.style.color="var(--warn)";
+  box.innerHTML = `⚠️ ${fixes.length}件の不整合：<br>` + fixes.map(f=>"・"+esc(f.label)).join("<br>") +
+    `<br><button class="pill mt" onclick="doRepairImageLinks()">🧹 まとめて修復する</button>`;
+  window.__pendingFixes = fixes;
+};
+window.doRepairImageLinks = ()=>{
+  const fixes = window.__pendingFixes||[];
+  fixes.forEach(f=>{
+    if(f.kind==="img" && window.fs && window.fs.unlinkImage) window.fs.unlinkImage(f.id).catch(()=>{});
+    if(f.kind==="sched"){ const i=schedule.findIndex(x=>x.id===f.id); if(i>=0) persistSched({ ...schedule[i], imageTitle:"", imageId:"" }); }
+  });
+  window.__pendingFixes = [];
+  const box = document.getElementById("repairResult");
+  box.style.color="var(--ok)"; box.textContent=`✅ ${fixes.length}件を修復しました`;
+  refreshAfterLink();
 };
 window.importBackup = async (file)=>{
   if(!file) return;

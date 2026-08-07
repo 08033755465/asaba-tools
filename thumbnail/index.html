@@ -850,8 +850,11 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         width: canvasWidth, height: canvasHeight,
         linkedScheduleId: schedId || '', linkedScheduleTitle: linkTitle,
       });
-      // 予定側にも画像タイトルを書き戻し（双方向紐付け）
+      // 予定側にも画像タイトルを書き戻し（双方向紐付け）。旧画像のリンクは先にクリア
       if (schedId) {
+        if (selSched && selSched.imageId) {
+          await updateDoc(docRefFn('shared_thumbnails', selSched.imageId), { linkedScheduleId: '', linkedScheduleTitle: '' }).catch(()=>{});
+        }
         await setDoc(docRefFn('studio_schedule', schedId), { imageTitle: `${folderName}.jpg`, imageId: ref.id }, { merge: true });
         setSavedSched({ id: schedId, title: linkTitle, img: `${folderName}.jpg` });
       }
@@ -1032,6 +1035,10 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
     const sched = (schedules||[]).find(x => x.id === linkSchedId); if (!sched || !linkImg) return;
     const name = `${safeNameStr(linkImg.folderName || linkImg.titleText || 'image')}.jpg`;
     try {
+      // 予定に既に別画像が付いていたら、その画像側のリンクを先にクリア（stale防止）
+      if (sched.imageId && sched.imageId !== linkImg.id) {
+        await updateDoc(docRefFn('shared_thumbnails', sched.imageId), { linkedScheduleId: '', linkedScheduleTitle: '' }).catch(()=>{});
+      }
       await updateDoc(docRefFn('shared_thumbnails', linkImg.id), { linkedScheduleId: linkSchedId, linkedScheduleTitle: sched.catchTitle || sched.title || '' });
       await setDoc(docRefFn('studio_schedule', linkSchedId), { imageTitle: name, imageId: linkImg.id }, { merge: true });
       showToast('📅 予定と紐付けました');
@@ -1043,7 +1050,13 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
     try {
       const prevSched = linkImg.linkedScheduleId;
       await updateDoc(docRefFn('shared_thumbnails', linkImg.id), { linkedScheduleId: '', linkedScheduleTitle: '' });
-      if (prevSched) await setDoc(docRefFn('studio_schedule', prevSched), { imageTitle: '', imageId: '' }, { merge: true });
+      // 予定側は「本当にこの画像を使っている」場合だけクリア（別画像の予定を巻き込まない）
+      if (prevSched) {
+        const sc = (schedules||[]).find(x => x.id === prevSched);
+        if (sc && sc.imageId === linkImg.id) {
+          await setDoc(docRefFn('studio_schedule', prevSched), { imageTitle: '', imageId: '' }, { merge: true });
+        }
+      }
       showToast('紐付けを解除しました');
       setLinkImg(null);
     } catch (e) { console.error(e); showToast('解除に失敗しました'); }
@@ -1098,6 +1111,13 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
     setConfirm({
       title: '画像を削除しますか？', body: '元に戻せません。',
       onConfirm: async () => {
+        // この画像を使っている予定があれば紐付けを解除（孤立防止）
+        if (img.linkedScheduleId) {
+          const sc = (schedules||[]).find(x => x.id === img.linkedScheduleId);
+          if (sc && sc.imageId === img.id) {
+            await setDoc(docRefFn('studio_schedule', img.linkedScheduleId), { imageTitle: '', imageId: '' }, { merge: true }).catch(()=>{});
+          }
+        }
         await deleteDoc(docRefFn('shared_thumbnails', img.id));
         showToast('削除しました');
         setConfirm(null);
