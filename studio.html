@@ -920,10 +920,28 @@ window.renderSchedule = ()=>{
     body.style.display='none'; list.style.display='block'; renderSchedList();
   }
 };
+let SCHED_SHOW_ALL = false;  // リスト「すべて表示」トグル
+function ensureCalMonth(){ const n=new Date(); if(CAL_Y==null){ CAL_Y=n.getFullYear(); CAL_M=n.getMonth(); } }
+function monthHeader(){
+  ensureCalMonth();
+  return `<div class="cal-head" id="monthHeader">
+    <div class="cal-nav"><button class="pill" onclick="calMove(-1)">◀</button><button class="pill" onclick="calToday()">今月</button><button class="pill" onclick="calMove(1)">▶</button></div>
+    <b>${CAL_Y}年${CAL_M+1}月</b>
+    <span class="muted small">←→スワイプで移動</span>
+  </div>`;
+}
 function renderSchedList(){
   const box = document.getElementById("schedList");
-  const list = sortedSched();
-  box.innerHTML = list.length ? list.map(s=>`
+  ensureCalMonth();
+  const pre = `${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}`;
+  const all = sortedSched();
+  const list = SCHED_SHOW_ALL ? all : all.filter(s=> (s.date||"").startsWith(pre) || !s.date);
+  const monthPosts = all.filter(s=> (s.date||"").startsWith(pre));
+  const noImg = monthPosts.filter(s=>!s.imageTitle).length;
+  const unposted = monthPosts.filter(s=>!s.posted).length;
+  const summary = `<div class="hint" style="margin-bottom:6px;">この月：${monthPosts.length}件 ・ ⭕画像これから ${noImg}件 ・ 未投稿 ${unposted}件
+    <button class="pill" style="margin-left:6px;" onclick="SCHED_SHOW_ALL=!SCHED_SHOW_ALL; renderSchedule();">${SCHED_SHOW_ALL?"📅 この月だけ表示":"📜 すべて表示"}</button></div>`;
+  box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + (list.length ? list.map(s=>`
     <div class="listitem">
       <div style="display:flex; gap:8px; min-width:0;">
         ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;" title="${esc(s.imageTitle||'')}">`:""}
@@ -938,7 +956,7 @@ function renderSchedList(){
         <button class="pill" onclick="toggledPosted('${s.id}')">${s.posted?'↩︎完了取消':'✅投稿完了'}</button>
         <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
       </div>
-    </div>`).join("") : `<p class="hint">まだ予定がありません</p>`;
+    </div>`).join("") : `<p class="hint">この月の予定はありません。「＋投稿予定を追加」から登録できます</p>`);
 }
 // ===== つぎにやること（初心者向けガイド） =====
 window.goCalendar = ()=>{ setSchedView('calendar'); go('schedule'); };
@@ -1045,12 +1063,7 @@ function renderCalendar(){
     cells += `<div class="cal-cell${ds===today?" today":""}" onclick="openDayModal('${ds}')">
       <div class="cal-dnum ${dnumCls}">${d}</div>${shown}${more}</div>`;
   }
-  box.innerHTML = `
-    <div class="cal-head">
-      <div class="cal-nav"><button class="pill" onclick="calMove(-1)">◀</button><button class="pill" onclick="calToday()">今月</button><button class="pill" onclick="calMove(1)">▶</button></div>
-      <b>${CAL_Y}年${CAL_M+1}月</b>
-      <span class="muted small">タップで詳細</span>
-    </div>
+  box.innerHTML = monthHeader() + `
     <div class="cal-dow">${["日","月","火","水","木","金","土"].map((d,i)=>`<div class="${i===0?'sun':i===6?'sat':''}">${d}</div>`).join("")}</div>
     <div class="cal-grid">${cells}</div>
     <div class="cal-legend">
@@ -1061,9 +1074,84 @@ function renderCalendar(){
       <span><span class="dot" style="background:#fef3c7"></span>未投稿(期限過ぎ)</span>
       <span>👥MTG 📊抽出</span>
     </div>`;
+  // スライド演出（transformのみ・reduced-motion時は無効）
+  if(CAL_SLIDE_DIR!==0 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    const grid = box.querySelector(".cal-grid");
+    if(grid){
+      grid.style.transition="none"; grid.style.transform=`translateX(${CAL_SLIDE_DIR*40}px)`; grid.style.opacity="0.4";
+      requestAnimationFrame(()=>{ grid.style.transition="transform .18s ease, opacity .18s ease"; grid.style.transform="translateX(0)"; grid.style.opacity="1"; });
+    }
+    CAL_SLIDE_DIR = 0;
+  }
+  bindMonthSwipe(box);
 }
-window.calMove = (n)=>{ CAL_M+=n; if(CAL_M<0){CAL_M=11;CAL_Y--;} if(CAL_M>11){CAL_M=0;CAL_Y++;} renderCalendar(); };
-window.calToday = ()=>{ const n=new Date(); CAL_Y=n.getFullYear(); CAL_M=n.getMonth(); renderCalendar(); };
+// ===== 月スワイプ／スライド（タッチ・マウスドラッグ・トラックパッド） =====
+function swipeAllowed(){
+  const dm = document.getElementById("dayModal");
+  return !(dm && (dm.classList.contains("show") || dm.style.display==="block"));  // 日別ポップ中は無効
+}
+function bindMonthSwipe(box){
+  const area = box.querySelector(".cal-grid") || box;
+  if(area.__swipeBound) return; area.__swipeBound = true;
+  let sx=0, sy=0, active=false, decided=false, horiz=false;
+  const reset=()=>{ active=false; decided=false; horiz=false; document.body.style.userSelect=""; };
+  const onStart=(x,y)=>{ if(!swipeAllowed()) return; sx=x; sy=y; active=true; decided=false; horiz=false; };
+  const onMove=(x,y)=>{
+    if(!active) return;
+    const dx=x-sx, dy=y-sy;
+    if(!decided){
+      // 方向ロック: 横が縦の1.5倍かつ60px超で確定。縦優勢なら以降無視（縦スクロールを奪わない）
+      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5){ decided=true; horiz=true; document.body.style.userSelect="none"; }
+      else if(Math.abs(dy)>40){ decided=true; horiz=false; return; }
+      else return;
+      // 横確定した場合はこのまま下の判定へ（1回のmoveでも反応させる）
+    }
+    if(horiz && Math.abs(dx)>60){ calMove(dx<0?1:-1); reset(); }
+  };
+  // タッチ
+  area.addEventListener("touchstart", e=>{ const t=e.touches[0]; onStart(t.clientX,t.clientY); }, {passive:true});
+  area.addEventListener("touchmove", e=>{ const t=e.touches[0]; onMove(t.clientX,t.clientY); }, {passive:true});
+  area.addEventListener("touchend", reset, {passive:true});
+  area.addEventListener("touchcancel", reset, {passive:true});
+  // マウスドラッグ（PC）
+  area.addEventListener("mousedown", e=>{ onStart(e.clientX,e.clientY); });
+  area.addEventListener("mousemove", e=>{ if(active) onMove(e.clientX,e.clientY); });
+  area.addEventListener("mouseup", reset);
+  area.addEventListener("mouseleave", reset);
+  // トラックパッド横スクロール（Mac）
+  area.addEventListener("wheel", e=>{
+    if(!swipeAllowed()) return;
+    if(Math.abs(e.deltaX) > Math.abs(e.deltaY)*1.5 && Math.abs(e.deltaX) > 24){
+      e.preventDefault();
+      calMove(e.deltaX>0?1:-1);
+    }
+  }, {passive:false});
+}
+// キーボード ←→（予定タブ表示中のみ）
+document.addEventListener("keydown", e=>{
+  if(e.key!=="ArrowLeft" && e.key!=="ArrowRight") return;
+  const sec = document.querySelector('[data-view="schedule"]');
+  if(!sec || sec.hidden) return;
+  if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||"")) return;
+  if(!swipeAllowed()) return;
+  calMove(e.key==="ArrowRight"?1:-1);
+});
+let CAL_SLIDE_DIR = 0;  // スライド演出の向き（-1=前月, 1=次月）
+let CAL_COOLDOWN = 0;   // 連続切替防止（トラックパッド慣性対策）
+window.calMove = (n)=>{
+  const now = Date.now();
+  if(now < CAL_COOLDOWN) return;
+  CAL_COOLDOWN = now + 400;
+  CAL_M+=n; if(CAL_M<0){CAL_M=11;CAL_Y--;} if(CAL_M>11){CAL_M=0;CAL_Y++;}
+  CAL_SLIDE_DIR = n>0?1:-1;
+  rerenderMonthViews();
+};
+window.calToday = ()=>{ const n=new Date(); CAL_Y=n.getFullYear(); CAL_M=n.getMonth(); CAL_SLIDE_DIR=0; rerenderMonthViews(); };
+function rerenderMonthViews(){
+  const histSec = document.querySelector('[data-view="history"]');
+  if(histSec && !histSec.hidden && typeof renderHistory==="function"){ renderHistory(); return; }
+  renderSchedule();
+}
 
 // 投稿本文を studio_posts から逆引き（schedId優先、無ければ日付+タイトルで近似）
 function bodyForSched(s){
@@ -2555,17 +2643,26 @@ function contentLabel(key){
   if(key==="pilates") return "マシンピラティス（Peace）共通";
   const s = STORES.find(x=>x.gmo===key); return s ? s.name : key;
 }
+let HIST_SHOW_ALL = false;
 function renderHistory(){
   const box = document.getElementById("histList"); if(!box) return;
   const posts = window.__posts || [];
   const q = (document.getElementById("histSearch")?.value || "").trim().toLowerCase();
-  const filtered = q ? posts.filter(p=>{
+  ensureCalMonth();
+  const pre = `${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}`;
+  let filtered = q ? posts.filter(p=>{
     const hay = [p.title, p.themeTitle, p.catchTitle, ...Object.values(p.contents||{})].join(" ").toLowerCase();
     return hay.includes(q);
   }) : posts;
+  // 検索していないときは月別表示（すべて表示トグルあり）
+  const monthMode = !q && !HIST_SHOW_ALL;
+  if(monthMode) filtered = filtered.filter(p=> (p.date||"").startsWith(pre));
+  const head = q ? "" : (monthMode?monthHeader():"") +
+    `<div class="hint" style="margin-bottom:6px;">${monthMode?`この月の出力：${filtered.length}件`:`全${filtered.length}件`}
+     <button class="pill" style="margin-left:6px;" onclick="HIST_SHOW_ALL=!HIST_SHOW_ALL; renderHistory();">${HIST_SHOW_ALL?"📅 月別表示に戻す":"📜 すべて表示"}</button></div>`;
   if(!posts.length){ box.innerHTML = `<p class="hint">まだ投稿履歴がありません。作成タブでCSVを出力すると、その投稿文がここに貯まります。</p>`; return; }
-  if(!filtered.length){ box.innerHTML = `<p class="hint">「${esc(q)}」に一致する投稿はありません。</p>`; return; }
-  box.innerHTML = filtered.map(p=>{
+  if(!filtered.length){ box.innerHTML = head + `<p class="hint">${q?`「${esc(q)}」に一致する投稿はありません。`:"この月の出力はありません。"}</p>`; return; }
+  box.innerHTML = head + filtered.map(p=>{
     const entries = Object.entries(p.contents||{});
     const dateStr = p.date ? `${p.date.replace(/-/g,"/")}${p.time?" "+p.time:""}` : "日付なし";
     const blocks = entries.map(([k,v])=>`
