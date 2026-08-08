@@ -117,6 +117,12 @@
   .schedcard.open .sc-chev { transform:rotate(90deg); }
   .sc-detail { display:none; padding-left:50px; margin-top:6px; }
   .schedcard.open .sc-detail { display:block; }
+  .fbar { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+  .fchip { font-size:10.5px; font-weight:600; border:1px solid var(--line); background:#fff; color:var(--muted);
+    border-radius:99px; padding:4px 9px; cursor:pointer; white-space:nowrap; transition:all .12s ease; }
+  .fchip:active { transform:scale(.94); }
+  .fchip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .fchip.clear { color:var(--ng); border-color:#fecaca; }
   .bd-week { font-size:10px; font-weight:700; color:var(--muted); background:#f1f5f9; border-radius:6px; padding:3px 8px; margin:10px 0 4px; }
   /* アプリ内ギャラリー */
   #galFrameWrap { position:fixed; inset:0; z-index:90; background:#fff; display:none; flex-direction:column; }
@@ -1943,13 +1949,18 @@ function renderSchedList(){
   ensureCalMonth();
   const pre = `${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}`;
   const all = sortedSched();
-  const list = SCHED_SHOW_ALL ? all : all.filter(s=> (s.date||"").startsWith(pre) || !s.date);
+  const listAll = SCHED_SHOW_ALL ? all : all.filter(s=> (s.date||"").startsWith(pre) || !s.date);
+  const list = listAll.filter(schedMatchFilter);
   const monthPosts = all.filter(s=> (s.date||"").startsWith(pre));
   const noImg = monthPosts.filter(s=>imgState(s)!=='linked').length;
   const unposted = monthPosts.filter(s=>!postStatusOf(s)).length;
-  const summary = `<div class="hint" style="margin-bottom:6px;">この月：${monthPosts.length}件 ・ ❌画像未紐付 ${noImg}件 ・ 未投稿 ${unposted}件
+  const summary = `<div class="hint" style="margin-bottom:6px;">この月：${monthPosts.length}件 ・ ❌画像未作成 ${noImg}件 ・ 未投稿 ${unposted}件
     <button class="pill" style="margin-left:6px;" onclick="SCHED_SHOW_ALL=!SCHED_SHOW_ALL; renderSchedule();">${SCHED_SHOW_ALL?"📅 この月だけ表示":"📜 すべて表示"}</button></div>`;
-  box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + (list.length ? list.map(s=>schedCard(s)).join("") : `<p class="hint">この月の予定はありません。「＋投稿予定を追加」から登録できます</p>`);
+  const filtered = (SCF.theme||SCF.image||SCF.post);
+  box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + filterBar()
+    + (filtered?`<div class="hint" style="margin-bottom:6px;">絞り込み中：${list.length}件 / 全${listAll.length}件</div>`:"")
+    + (list.length ? list.map(s=>schedCard(s)).join("")
+       : `<p class="hint">${filtered?"条件に合う予定はありません":"この月の予定はありません。「＋投稿予定を追加」から登録できます"}</p>`);
 }
 // 予定カード（1行に凝縮 → タップで詳細＋操作を開く）
 let SC_OPEN = null;
@@ -1958,9 +1969,13 @@ function schedCard(s){
   const st = postStatusOf(s), ist = imgState(s), im = IMG_META[ist];
   const open = SC_OPEN===s.id;
   const chips = [];
-  if(st){ const m=PS_META[st]; chips.push(`<span class="stat" style="background:${m.bg};color:${m.color}">${m.icon}${m.label}</span>`); }
-  else if(s.done) chips.push(`<span class="stat" style="background:#dbeafe;color:#1d4ed8">📤出力済</span>`);
-  if(ist!=='linked') chips.push(`<span class="stat" style="background:${ist==='none'?'#f1f5f9':'#fef3c7'};color:${ist==='none'?'#64748b':'#92400e'}">${im.icon}${im.label}</span>`);
+  if(st){ const m=PS_META[st]; chips.push(`<span class="stat" style="background:${m.bg};color:${m.color}">${m.icon}${m.label==='投稿済'?'投稿済み':m.label}</span>`); }
+  else chips.push(s.done ? `<span class="stat" style="background:#dbeafe;color:#1d4ed8">📤出力済み・未投稿</span>`
+                         : `<span class="stat" style="background:#f1f5f9;color:#64748b">⬜未出力</span>`);
+  chips.push(ist==='linked'
+    ? `<span class="stat" style="background:#dcfce7;color:#166534">🖼️画像作成済み</span>`
+    : `<span class="stat" style="background:${ist==='none'?'#f1f5f9':'#fef3c7'};color:${ist==='none'?'#64748b':'#92400e'}">${im.icon}${ist==='none'?'画像未作成':im.label}</span>`);
+  if(!(s.catchTitle||s.title)) chips.push(`<span class="stat" style="background:#f1f5f9;color:#64748b">📝テーマ未作成</span>`);
   if(isShifted(s)) chips.push(`<span class="stat" style="background:#fef3c7;color:#92400e">↷${fmtJp(s.postedDate).slice(5)}</span>`);
   const thumb = galUrlById(s.imageId);
   const d = s.date ? s.date.split("-") : null;
@@ -2355,7 +2370,7 @@ function renderCalendar(){
     <div class="cal-legend">
       <span><span class="dot" style="background:#dbeafe"></span>A投稿</span>
       <span><span class="dot" style="background:#fce7f3"></span>B投稿</span>
-      <span>🖼️画像済 ❌画像未紐付</span>
+      <span>🖼️画像済 ❌画像未作成</span>
       <span><span class="dot" style="background:#d1fae5"></span>✅投稿済</span>
       <span><span class="dot" style="background:#e2e8f0"></span>🚫取消</span>
       <span><span class="dot" style="background:#fee2e2"></span>⚠️誤投稿</span>
@@ -2429,23 +2444,51 @@ let CAL_SLIDE_DIR = 0;  // スライド演出の向き（-1=前月, 1=次月）
 let CAL_COOLDOWN = 0;   // 連続切替防止（トラックパッド慣性対策）
 // ===== 進行状況ボード（チームで状況が一目でわかる） =====
 // 4ステップ：テーマ → 画像 → 出力 → 投稿完了
+// 4工程の状態（できている／できていない を必ず文字で出す）
 function schedSteps(s){
   const hasTheme = !!(s.catchTitle||s.title);
   const ist = imgState(s);
   const st = postStatusOf(s);
   return [
-    {label:"テーマ", on:hasTheme},
-    {label:"画像紐付", on:ist==="linked", warn:(ist==="nameonly"||ist==="broken")},
-    {label:"出力済", on:!!s.done},
-    {label:st==='canceled'?"取消":(st==='mistake'?"誤投稿":"投稿済"), on:st==='posted', bad:(st==='canceled'||st==='mistake')},
+    {key:"theme", label: hasTheme?"テーマあり":"テーマ未作成", on:hasTheme},
+    {key:"image", label: ist==="linked"?"画像作成済み":(ist==="none"?"画像未作成":(ist==="nameonly"?"画像 名前だけ":"画像リンク切れ")),
+      on: ist==="linked", warn:(ist==="nameonly"||ist==="broken")},
+    {key:"export", label: s.done?"出力済み":"未出力", on:!!s.done},
+    {key:"post", label: st==='posted'?"投稿済み":(st==='canceled'?"取消":(st==='mistake'?"誤投稿":"未投稿")),
+      on: st==='posted', bad:(st==='canceled'||st==='mistake')},
   ];
+}
+// 横断フィルター（テーマ／画像／投稿）
+const SCF = { theme:"", image:"", post:"" };   // "" = すべて
+function schedMatchFilter(s){
+  const hasTheme = !!(s.catchTitle||s.title);
+  const ist = imgState(s), st = postStatusOf(s);
+  if(SCF.theme==="yes" && !hasTheme) return false;
+  if(SCF.theme==="no"  &&  hasTheme) return false;
+  if(SCF.image==="yes" && ist!=="linked") return false;
+  if(SCF.image==="no"  && ist==="linked") return false;
+  if(SCF.post==="done" && st!=="posted") return false;
+  if(SCF.post==="not"  && st==="posted") return false;
+  if(SCF.post==="exp"  && !(s.done && !st)) return false;
+  if(SCF.post==="ng"   && !(st==="canceled"||st==="mistake")) return false;
+  return true;
+}
+window.setSchedFilter = (k,v)=>{ SCF[k] = (SCF[k]===v) ? "" : v; renderSchedule(); };
+function filterBar(){
+  const b=(k,v,label,icon)=>`<button class="fchip${SCF[k]===v?' on':''}" onclick="setSchedFilter('${k}','${v}')">${icon}${label}</button>`;
+  const active = SCF.theme||SCF.image||SCF.post;
+  return `<div class="fbar">
+    ${b('theme','no','テーマ未作成','📝')}${b('image','no','画像未作成','🖼️')}${b('post','exp','出力済み・未投稿','📤')}${b('post','not','未投稿','⬜')}${b('post','done','投稿済み','✅')}${b('post','ng','取消・誤投稿','⚠️')}
+    ${active?`<button class="fchip clear" onclick="SCF.theme='';SCF.image='';SCF.post='';renderSchedule();">✕ 解除</button>`:""}
+  </div>`;
 }
 function renderBoard(){
   const box = document.getElementById("schedBody"); if(!box) return;
   const now = new Date();
   if(CAL_Y==null){ CAL_Y=now.getFullYear(); CAL_M=now.getMonth(); }
   const today = todayISO();
-  const list = schedForMonth(CAL_Y, CAL_M).slice().sort((a,b)=> (a.date||"9999").localeCompare(b.date||"9999") || (a.time||"").localeCompare(b.time||""));
+  const listAll = schedForMonth(CAL_Y, CAL_M).slice().sort((a,b)=> (a.date||"9999").localeCompare(b.date||"9999") || (a.time||"").localeCompare(b.time||""));
+  const list = listAll.filter(schedMatchFilter);
   const evs = eventsForMonth(CAL_Y, CAL_M);
 
   const doneCnt = list.filter(s=>postStatusOf(s)==='posted').length;
@@ -2506,12 +2549,13 @@ function renderBoard(){
     <div class="bd-sum">
       <div><div class="n">${list.length}</div><div class="l">投稿予定</div></div>
       <div><div class="n" style="color:var(--ok)">${doneCnt}</div><div class="l">投稿完了</div></div>
-      <div><div class="n" style="color:${noImg?'var(--warn)':'var(--muted)'}">${noImg}</div><div class="l">画像未紐付</div></div>
+      <div><div class="n" style="color:${noImg?'var(--warn)':'var(--muted)'}">${noImg}</div><div class="l">画像未作成</div></div>
       <div><div class="n" style="color:${late?'var(--ng)':'var(--muted)'}">${late}</div><div class="l">期限すぎ</div></div>
       ${trouble?`<div><div class="n" style="color:var(--ng)">${trouble}</div><div class="l">取消/誤投稿</div></div>`:""}
     </div>
+    ${filterBar()}
     <div class="bd-legend">
-      <span>✓＝完了</span><span style="color:#92400e">■ いま待ち</span><span style="color:#991b1b">■ 遅れ</span>
+      <span>✓＝できている</span><span style="color:#92400e">■ いま待ち</span><span style="color:#64748b">■ 取消/誤投稿</span>
     </div>
     ${rows || `<p class="hint">この月の投稿予定はありません</p>`}
     ${evRows?`<div class="mt" style="border-top:2px solid var(--line); padding-top:6px;"><div class="small muted" style="margin-bottom:4px;">その他の予定</div>${evRows}</div>`:""}`;
@@ -2616,11 +2660,12 @@ function renderDayModalBody(){
         <div style="min-width:0; flex:1;">
           <div class="di-title">${abBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${s.posted?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
           <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)}</div>
-          <div class="di-meta" style="color:${IMG_META[imgState(s)].color}">${IMG_META[imgState(s)].icon} 画像：${IMG_META[imgState(s)].label}</div>
+          <div class="di-meta" style="color:${IMG_META[imgState(s)].color}">${IMG_META[imgState(s)].icon} 画像：${imgState(s)==='linked'?'作成済み':(imgState(s)==='none'?'未作成':IMG_META[imgState(s)].label)}</div>
           ${s.imageTitle?`<div class="di-meta" style="display:flex;align-items:center;gap:5px;"><span style="flex:1;min-width:0;word-break:break-all;">🖼️ ${esc(s.imageTitle)}</span>
             <button class="act" style="padding:3px 7px;font-size:10px;" onclick="copyStr(${JSON.stringify(s.imageTitle)},event)">📋 コピー</button></div>`:""}
           <div class="di-meta">${s.done?'📤 出力済み（GMO投入待ち）':'📤 未出力'}</div>
-          ${(()=>{const st=postStatusOf(s); if(!st) return '<div class="di-meta">⬜ 投稿：未対応</div>';
+          <div class="di-meta">${(s.catchTitle||s.title)?'📝 テーマあり':'📝 テーマ未作成'}</div>
+          ${(()=>{const st=postStatusOf(s); if(!st) return '<div class="di-meta">⬜ 投稿：未投稿</div>';
             const m=PS_META[st]; return `<div class="di-meta" style="color:${m.color}">${m.icon} 投稿：${m.label}${s.postedDate?`（${fmtJp(s.postedDate)}）`:""}</div>`;})()}
           ${isShifted(s)?`<div class="di-meta" style="color:var(--warn)">📅 予定 ${fmtJp(s.date)} → 実績 <b>${fmtJp(s.postedDate)}</b></div>`:""}
           ${s.postNote?`<div class="di-meta">📝 ${esc(s.postNote)}</div>`:""}
