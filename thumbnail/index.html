@@ -24,6 +24,28 @@
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
   .dnd-hi { outline: 3px dashed #2563eb; outline-offset: -3px; background: #eff6ff !important; }
 </style>
+<style>
+/* ===== 統合ツールと同じトーンへのオーバーライド（ティール×コーラル） ===== */
+body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fixed !important; }
+.bg-slate-50 { background:transparent !important; }
+.bg-blue-600 { background-color:#2F6D80 !important; }
+.hover\:bg-blue-700:hover { background-color:#285D6D !important; }
+.bg-blue-50 { background-color:#EAF3F4 !important; }
+.hover\:bg-blue-100:hover { background-color:#DCE9EE !important; }
+.text-blue-600, .text-blue-700 { color:#2F6D80 !important; }
+.text-blue-900 { color:#24505E !important; }
+.border-blue-200 { border-color:#CBDFE4 !important; }
+.bg-blue-100 { background-color:#DCE9EE !important; }
+.bg-indigo-600 { background-color:#4E9AAE !important; }
+.hover\:bg-indigo-700:hover { background-color:#43869A !important; }
+.text-indigo-700 { color:#4E9AAE !important; }
+.bg-emerald-600 { background-color:#3E8E7E !important; }
+.hover\:bg-emerald-700:hover { background-color:#357A6C !important; }
+.bg-emerald-50 { background-color:#EDF6F0 !important; }
+.text-emerald-700, .text-emerald-900 { color:#3E8E7E !important; }
+.border-emerald-200, .border-emerald-400 { border-color:#BFDCCB !important; }
+.bg-white { box-shadow:0 4px 16px rgba(47,109,128,.05); }
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -40,6 +62,25 @@
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
+  window.APP_VERSION = "2026-08-08.1";
+  // 新バージョン検知→バナー
+  (function(){
+    function chk(){
+      fetch(location.pathname + "?_uc=" + Date.now(), {cache:"no-store"}).then(r=>r.text()).then(t=>{
+        const m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+        if(m && m[1] !== window.APP_VERSION && !document.getElementById("updBanner")){
+          const d = document.createElement("div");
+          d.id = "updBanner";
+          d.style.cssText = "position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9999;background:#2F6D80;color:#fff;border-radius:99px;padding:8px 14px;font-size:12px;font-weight:700;display:flex;gap:10px;align-items:center;box-shadow:0 6px 20px rgba(15,23,42,.25);";
+          d.innerHTML = '🆕 新しいバージョンがあります <button onclick="location.reload()" style="border:0;background:#fff;color:#2F6D80;border-radius:99px;padding:4px 12px;font-weight:700;font-size:12px;cursor:pointer;">↻ 更新する</button>';
+          document.body.appendChild(d);
+        }
+      }).catch(()=>{});
+    }
+    setInterval(chk, 5*60*1000);
+    document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) chk(); });
+    setTimeout(chk, 20*1000);
+  })();
 </script>
 
 <script type="text/babel" data-type="module" data-presets="react">
@@ -162,6 +203,7 @@ const CONTACT_TEMPLATE = `件名：サムネツール 改善要望／不具合�
 // 予定の状態ラベル（studio側のpostStatus/doneに対応）
 function schedStatusLabel(x){
   const st = x.postStatus || (x.posted ? 'posted' : '');
+  if(st==='retired')  return '🗂未使用';
   if(st==='posted')   return '✅投稿済';
   if(st==='canceled') return '🚫取消';
   if(st==='mistake')  return '⚠️誤投稿';
@@ -177,7 +219,7 @@ function schedOptionLabel(x){
 function selectableScheds(schedules){
   const lim = new Date(); lim.setMonth(lim.getMonth()-3);
   const min = lim.toISOString().slice(0,10);
-  return (schedules||[]).filter(x=> !x.date || x.date >= min)
+  return (schedules||[]).filter(x=> (x.postStatus||'')!=='retired').filter(x=> !x.date || x.date >= min)
     .sort((a,b)=> (b.date||'').localeCompare(a.date||''));
 }
 function safeNameStr(s) {
