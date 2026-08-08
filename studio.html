@@ -177,6 +177,9 @@
       <div class="row mt">
         <button class="btn btn-ghost" style="width:100%;" onclick="openImportPost()">📥 出力ファイルから予定を復元</button>
       </div>
+      <div class="row mt">
+        <button class="btn btn-ghost" style="width:100%;" onclick="openGalFrame('')">🖼️ サムネイル・ギャラリーを開く</button>
+      </div>
       <div class="mt">
         <p class="hint">1行1件「投稿予定日[タブ or カンマ]タイトル」で貼り付け</p>
         <textarea id="schedBulk" placeholder="2026/07/13, 深呼吸と自律神経&#10;2026/07/16, 夏バテと胃腸の疲れ"></textarea>
@@ -539,6 +542,16 @@
     </div>
     <button id="ev_delete" class="btn btn-ghost mt" style="width:100%; color:var(--ng); display:none;" onclick="deleteEvent()">この予定を削除</button>
   </div>
+</div>
+
+<!-- アプリ内サムネイルギャラリー（サムネ合成ツールを埋め込み） -->
+<div id="galFrameWrap">
+  <div id="galFrameBar">
+    <b style="font-size:14px; flex:1;">🖼️ サムネイル・ギャラリー</b>
+    <button class="pill" onclick="reloadGalFrame()">↻ 再読込</button>
+    <button class="btn btn-ghost" style="padding:6px 12px;" onclick="closeGalFrame()">✕ 閉じる</button>
+  </div>
+  <iframe id="galFrame" title="サムネイル合成ツール"></iframe>
 </div>
 
 <!-- 出力済みファイルの逆読み込み -->
@@ -1908,27 +1921,53 @@ function renderSchedList(){
   const unposted = monthPosts.filter(s=>!postStatusOf(s)).length;
   const summary = `<div class="hint" style="margin-bottom:6px;">この月：${monthPosts.length}件 ・ ❌画像未紐付 ${noImg}件 ・ 未投稿 ${unposted}件
     <button class="pill" style="margin-left:6px;" onclick="SCHED_SHOW_ALL=!SCHED_SHOW_ALL; renderSchedule();">${SCHED_SHOW_ALL?"📅 この月だけ表示":"📜 すべて表示"}</button></div>`;
-  box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + (list.length ? list.map(s=>`
-    <div class="listitem">
-      <div style="display:flex; gap:8px; min-width:0;">
-        ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;" title="${esc(s.imageTitle||'')}">`:""}
-        <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b>
-        ${(()=>{const st=postStatusOf(s); if(st){const m=PS_META[st];return `<span class="pill" style="background:${m.bg};color:${m.color};">${m.icon}${m.label}</span>`;}
-          return s.done?'<span class="pill" style="background:#dbeafe;color:#1d4ed8;">📤出力済</span>':'';})()}
-        ${(()=>{const i=imgState(s);const m=IMG_META[i];return i==='linked'?`<span class="pill" style="background:#dcfce7;color:#166534;">🖼️紐付け済</span>`:(i==='none'?'':`<span class="pill" style="background:#fef3c7;color:#92400e;">${m.icon}${m.label}</span>`);})()}
-        ${isShifted(s)?`<span class="pill" style="background:#fef3c7;color:#92400e;">↷実績${fmtJp(s.postedDate).slice(5)}</span>`:''}<br>
-        ${s.catchTitle?`<span class="muted" style="font-size:11px;">📝 ${esc(s.catchTitle)}</span><br>`:""}
-        <span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
-      </div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-        ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:`<button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>`}
-        <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
-        <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
-        <button class="pill" onclick="openPostStatus('${s.id}')">${postStatusOf(s)?'✏️状態':'✅投稿状態'}</button>
-        <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
-      </div>
-    </div>`).join("") : `<p class="hint">この月の予定はありません。「＋投稿予定を追加」から登録できます</p>`);
+  box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + (list.length ? list.map(s=>schedCard(s)).join("") : `<p class="hint">この月の予定はありません。「＋投稿予定を追加」から登録できます</p>`);
 }
+// 予定カード（情報 → アクションの順。ボタンの並びは常に固定）
+function schedCard(s){
+  const st = postStatusOf(s);
+  const ist = imgState(s);
+  const im = IMG_META[ist];
+  const statuses = [];
+  if(st){ const m=PS_META[st]; statuses.push(`<span class="stat" style="background:${m.bg};color:${m.color}">${m.icon}${m.label}</span>`); }
+  else if(s.done) statuses.push(`<span class="stat" style="background:#dbeafe;color:#1d4ed8">📤出力済</span>`);
+  else statuses.push(`<span class="stat" style="background:#f1f5f9;color:#64748b">⬜未着手</span>`);
+  statuses.push(ist==='linked'
+    ? `<span class="stat" style="background:#dcfce7;color:#166534">🖼️画像あり</span>`
+    : `<span class="stat" style="background:${ist==='none'?'#f1f5f9':'#fef3c7'};color:${ist==='none'?'#64748b':'#92400e'}">${im.icon}${im.label}</span>`);
+  if(isShifted(s)) statuses.push(`<span class="stat" style="background:#fef3c7;color:#92400e">↷実績${fmtJp(s.postedDate).slice(5)}</span>`);
+  const thumb = galUrlById(s.imageId);
+  return `<div class="schedcard">
+    <div style="display:flex; gap:9px; min-width:0;">
+      ${thumb?`<img src="${esc(thumb)}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
+             :`<div style="width:52px;height:52px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;">${im.icon}</div>`}
+      <div style="min-width:0; flex:1;">
+        <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap; margin-bottom:3px;">${abBadge(s)}${statuses.join("")}</div>
+        <b class="small" style="display:block;">${esc(s.catchTitle||s.title||"（無題）")}</b>
+        <div class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</div>
+        ${s.imageTitle?`<div class="sc-imgname">🖼️ ${esc(s.imageTitle)}</div>`:""}
+      </div>
+    </div>
+    <div class="actbar">
+      <button class="act primary" onclick="startFromSched('${s.id}')" title="投稿文を作る・出力する">✍️ 投稿を作る</button>
+      ${ist==='linked'
+        ? `<button class="act warn" onclick="unlinkSchedImageUI('${s.id}')" title="この予定から画像を外す">🖼️ 画像を外す</button>`
+        : `<button class="act" onclick="quickLinkImage('${s.id}')" title="ギャラリーから画像を選んで紐付ける">🖼️ 画像を選ぶ</button>`}
+      <button class="act" onclick="openImgPrompt('${s.id}')" title="ChatGPT用の画像プロンプトを作る">🎨 画像を作る</button>
+      ${s.done?`<button class="act" onclick="reExport('${s.id}')" title="編集して同じ投稿をもう一度出力する">📤 再出力</button>`:""}
+      <button class="act" onclick="openPostStatus('${s.id}')" title="投稿できたか・取消したかを記録する">${st?'✏️ 状態を直す':'✅ 投稿できた'}</button>
+      <button class="act" onclick="openSchedEdit('${s.id}')" title="テーマ・日時・対象店舗を編集">⚙️ 予定を編集</button>
+    </div>
+  </div>`;
+}
+// 予定から再出力（履歴の本文を引いて編集可能なモーダルを開く）
+window.reExport = (schedId)=>{
+  const posts = (window.__posts||[]).filter(p=> p.schedId===schedId);
+  if(posts.length){ redlHistory(posts[0].id); return; }
+  const s = schedule.find(x=>x.id===schedId);
+  if(s && confirm("この予定の本文が履歴にありません。作成画面を開いて本文を入れ直しますか？")) startFromSched(schedId);
+  else if(!s) toast("予定が見つかりません");
+};
 // ===== つぎにやること（初心者向けガイド） =====
 window.goCalendar = ()=>{ setSchedView('calendar'); go('home'); };
 window.imageFirst = (id)=>{ startFromSched(id); cur.step = 3; renderCreate(); window.scrollTo(0,0); };
@@ -1958,6 +1997,22 @@ function nextAction(){
 window.renderNextAction = ()=>{
   const box = document.getElementById("nextAction"); if(!box) return;
   const a = nextAction();
+  // 4ステップの流れの中で「いまどこか」を見せる
+  const FLOW = [
+    {n:1, icon:"🖼️", label:"画像を用意"},
+    {n:2, icon:"✍️", label:"投稿文を作る"},
+    {n:3, icon:"📤", label:"GMOへ出す"},
+    {n:4, icon:"✅", label:"投稿を記録"},
+  ];
+  const curN = a.step ? Number(String(a.step).split("/")[0]) : 0;
+  const flow = FLOW.map(f=>{
+    const done = curN>0 && f.n<curN, now = f.n===curN;
+    return `<div style="flex:1; min-width:0; text-align:center; opacity:${curN===0?.45:(done?.55:1)};">
+      <div style="font-size:15px;">${done?"✓":f.icon}</div>
+      <div style="font-size:9px; font-weight:${now?700:400}; color:${now?"var(--blue)":"var(--muted)"}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${f.label}</div>
+      <div style="height:3px; border-radius:2px; margin-top:3px; background:${done?"#93c5fd":(now?"var(--blue)":"#e2e8f0")};"></div>
+    </div>`;
+  }).join('<div style="width:4px;"></div>');
   box.innerHTML = `<div class="card" style="border:2px solid var(--blue); background:#f0f7ff;">
     <div style="display:flex; align-items:center; gap:8px;">
       <span style="font-size:26px;">${a.icon}</span>
@@ -1966,11 +2021,32 @@ window.renderNextAction = ()=>{
         <div class="small" style="font-weight:600;">${esc(a.title)}</div>
       </div>
     </div>
-    <p class="hint" style="margin:8px 0 10px;">${esc(a.desc)}</p>
+    <p class="hint" style="margin:8px 0 8px;">${esc(a.desc)}</p>
+    <div style="display:flex; align-items:flex-end; margin-bottom:10px;">${flow}</div>
     <button class="btn btn-primary" style="width:100%;" onclick="${a.fn}">${esc(a.label)}</button>
+    ${a.step?`<p class="hint" style="margin:6px 0 0; text-align:center;">この後：${FLOW.filter(f=>f.n>curN).map(f=>f.label).join(" → ")||"完了です"}</p>`:""}
   </div>`;
 };
 // 投稿完了トグル（各所から呼べる共通関数）
+// ===== アプリ内サムネイルギャラリー（別タブに飛ばずアプリ内で完結） =====
+window.openGalFrame = (schedId)=>{
+  const f = document.getElementById("galFrame");
+  // 予定を指定して開くと、サムネ側の保存時にその予定が選ばれる
+  const src = "../thumbnail/" + (schedId?`?sched=${encodeURIComponent(schedId)}`:"");
+  if(f.getAttribute("data-src") !== src){ f.src = src; f.setAttribute("data-src", src); }
+  document.getElementById("galFrameWrap").style.display = "flex";
+  document.body.style.overflow = "hidden";
+};
+window.closeGalFrame = ()=>{
+  document.getElementById("galFrameWrap").style.display = "none";
+  document.body.style.overflow = "";
+  // 戻ったらギャラリー・予定を最新化
+  if(typeof renderSchedule==="function") renderSchedule();
+  if(typeof renderNextAction==="function") renderNextAction();
+};
+window.reloadGalFrame = ()=>{ const f=document.getElementById("galFrame"); f.src = f.src; };
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.getElementById("galFrameWrap").style.display==="flex") closeGalFrame(); });
+
 // ===== 出力ファイル（XLSX/CSV）から予定・本文・画像を逆読み込み =====
 let IMP_PARSED = null;
 window.openImportPost = ()=>{
@@ -2339,13 +2415,25 @@ function renderBoard(){
   const late = list.filter(s=> !postStatusOf(s) && s.date && s.date < today).length;
   const trouble = list.filter(s=> ['canceled','mistake'].includes(postStatusOf(s))).length;
 
+  // 週の始まり（月曜）を返す
+  const weekKey = (ds)=>{ if(!ds) return "未定"; const d=new Date(ds+"T00:00:00"); const off=(d.getDay()+6)%7; d.setDate(d.getDate()-off);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+  let lastWeek = null;
   const rows = list.map(s=>{
+    const wk = weekKey(s.date);
+    let sep = "";
+    if(wk!==lastWeek){
+      lastWeek = wk;
+      if(wk==="未定") sep = `<div class="bd-week">日付未定</div>`;
+      else { const wd=new Date(wk+"T00:00:00"), we=new Date(wd); we.setDate(we.getDate()+6);
+        sep = `<div class="bd-week">📆 ${wd.getMonth()+1}/${wd.getDate()}（月）〜 ${we.getMonth()+1}/${we.getDate()}（日）</div>`; }
+    }
     const steps = schedSteps(s);
     const overdue = !postStatusOf(s) && s.date && s.date < today;
     // 「いま何待ちか」＝最初の未完了ステップ
     const nextIdx = steps.findIndex(x=>!x.on);
     const d = s.date ? s.date.split("-") : null;
- return `<div class="bd-row${postStatusOf(s)?' done':''}" onclick="openDayModal('${esc(s.date||today)}')">
+ return sep + `<div class="bd-row${postStatusOf(s)?' done':''}" onclick="openDayModal('${esc(s.date||today)}')">
       <div class="bd-date${s.date===today?' today':''}">
         ${d?`<span class="d">${Number(d[2])}</span>${Number(d[1])}/${dowJp(s.date)}`:'日付未定'}
       </div>
@@ -3222,9 +3310,10 @@ function viewImage(){
   <div class="card">
     <div class="row" style="display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn btn-blue" style="flex:1; min-width:170px;" onclick="openImgPrompt()">🎨 画像プロンプトを作る</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:170px;" onclick="openGalFrame(cur.schedId||'')">🖼️ サムネツールを開く</button>
       <button class="btn btn-ghost" style="flex:1; min-width:170px;" onclick="return openCommonPhotos()">📁 店舗写真フォルダ（Drive）</button>
     </div>
-    <p class="hint">AI画像：プロンプトをコピー→ChatGPTで生成→サムネイルツールで文字入れ→ギャラリー保存<br>
+    <p class="hint">AI画像：プロンプトをコピー→ChatGPTで生成→サムネツールで文字入れ→ギャラリー保存<br>
     店舗写真：📁で写真を保存→サムネイルツールでギャラリーに登録（文字入れ無しOK）→ 下の一覧から選択</p>
   </div>
   <div class="card" style="border:1px solid var(--line);">

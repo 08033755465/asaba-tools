@@ -159,6 +159,27 @@ const CONTACT_TEMPLATE = `件名：サムネツール 改善要望／不具合�
 // ============ Helpers ============
 // ファイル名の安全化（studio側 safeImgName と完全一致のルール）。
 // GMO/Windowsで不正値になる半角・全角記号を _ に統一し、アップロードエラーを防ぐ。
+// 予定の状態ラベル（studio側のpostStatus/doneに対応）
+function schedStatusLabel(x){
+  const st = x.postStatus || (x.posted ? 'posted' : '');
+  if(st==='posted')   return '✅投稿済';
+  if(st==='canceled') return '🚫取消';
+  if(st==='mistake')  return '⚠️誤投稿';
+  if(x.done)          return '📤出力済';
+  return '⬜未着手';
+}
+function schedOptionLabel(x){
+  const d = (x.date||'未定').slice(5).replace('-','/');
+  const img = x.imageTitle ? (x.imageId ? '🖼️' : '⚠️') : '❌';
+  return `${d} ${x.time||''} ${schedStatusLabel(x)} ${img}｜${(x.catchTitle||x.title||'無題').slice(0,18)}`;
+}
+// 一覧に出す予定：投稿済み/取消も含め、直近3ヶ月＋未来をすべて表示
+function selectableScheds(schedules){
+  const lim = new Date(); lim.setMonth(lim.getMonth()-3);
+  const min = lim.toISOString().slice(0,10);
+  return (schedules||[]).filter(x=> !x.date || x.date >= min)
+    .sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+}
 function safeNameStr(s) {
   return String(s ?? '')
     .replace(/[\\/:*?"<>|]/g, '_')                 // 半角の禁止文字
@@ -755,7 +776,9 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   const [memo, setMemo] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [schedId, setSchedId] = useState('');        // 紐付ける投稿予定
+  const [schedId, setSchedId] = useState(()=>{        // 紐付ける投稿予定（?sched=IDで統合ツールから指定可）
+    try{ return new URLSearchParams(location.search).get('sched') || ''; }catch(e){ return ''; }
+  });
   const [dlOnShare, setDlOnShare] = useState(false); // 保存と同時にPCへDL
   const [savedSched, setSavedSched] = useState(null); // 保存成功後の予定情報（作成フロー導線用）
   const selSched = (schedules||[]).find(x => x.id === schedId) || null;
@@ -917,15 +940,13 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               <label className="text-xs font-medium text-slate-500">📅 投稿予定と紐付け（任意）</label>
               <select value={schedId} onChange={(e) => setSchedId(e.target.value)} className="w-full p-2 border rounded text-sm">
                 <option value="">紐付けない（あとで統合ツールから選択も可）</option>
-                {(schedules||[]).filter(x=>!x.done).map(x => (
-                  <option key={x.id} value={x.id}>
-                    {(x.date||'日付未定').slice(5).replace('-','/')} {x.time||''} {x.abType||''}｜{(x.catchTitle||x.title||'無題').slice(0,20)}{x.imageTitle?'｜🖼️作成済':'｜⭕画像これから'}
-                  </option>
+                {selectableScheds(schedules).map(x => (
+                  <option key={x.id} value={x.id}>{schedOptionLabel(x)}</option>
                 ))}
               </select>
               {selSched && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded p-2.5 text-xs text-emerald-900 space-y-1.5">
-                  <div>✅ 保存すると<b>この予定に自動で紐付け</b>られ、予定側にも画像タイトルが入ります{selSched.imageTitle ? <span className="text-amber-700"><br/>⚠️ この予定には既に「{selSched.imageTitle}」が紐付いています（上書きされます）</span> : null}</div>
+                  <div>✅ 保存すると<b>この予定に自動で紐付け</b>られます（状態：{schedStatusLabel(selSched)}）{selSched.imageTitle ? <span className="text-amber-700"><br/>⚠️ 既に「{selSched.imageTitle}」が紐付いています（上書きされます）</span> : null}</div>
                   <label className="flex items-center gap-2 font-medium">
                     <input type="checkbox" checked={dlOnShare} onChange={(e)=>setDlOnShare(e.target.checked)} className="w-4 h-4" />
                     保存と同時にPCへダウンロード（タイトル名）
@@ -1318,8 +1339,8 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
             <div className="text-xs text-slate-500 mb-3 break-all">{safeNameStr(linkImg.folderName || linkImg.titleText || 'image')}.jpg</div>
             <select value={linkSchedId} onChange={(e) => setLinkSchedId(e.target.value)} className="w-full p-2 border rounded text-sm">
               <option value="">予定を選択してください</option>
-              {(schedules||[]).filter(x=>!x.done).map(x => (
-                <option key={x.id} value={x.id}>{(x.date||'未定').slice(5).replace('-','/')} {x.time||''}｜{(x.catchTitle||x.title||'無題').slice(0,18)}{x.imageTitle?'｜🖼️作成済':'｜⭕画像これから'}</option>
+              {selectableScheds(schedules).map(x => (
+                <option key={x.id} value={x.id}>{schedOptionLabel(x)}</option>
               ))}
             </select>
             <p className="text-[11px] text-slate-500 mt-2">紐付けると予定側にも画像タイトルが入ります（🖼️作成済の予定を選ぶと上書き）</p>
