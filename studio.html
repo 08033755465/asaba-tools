@@ -104,6 +104,12 @@
   .daypop { position:absolute; left:50%; top:16%; transform:translateX(-50%) scale(.92); width:calc(100% - 28px); max-width:440px; max-height:74dvh; overflow-y:auto; background:#fff; border-radius:16px; box-shadow:0 18px 50px rgba(15,23,42,.32); padding:14px; opacity:0; transition:opacity .16s ease, transform .16s ease; touch-action:pan-y; }
   #dayModal.show .daypop { opacity:1; transform:translateX(-50%) scale(1); }
   .daypop-grab { width:38px; height:4px; border-radius:99px; background:#cbd5e1; margin:0 auto 10px; }
+  /* 店舗ピッカー（チップ型グリッド） */
+  .storepick-tools { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; align-items:center; }
+  .storepick-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:5px; }
+  .storepick-chip { display:flex; align-items:center; gap:5px; border:1px solid var(--line); border-radius:8px; padding:5px 7px; font-size:11px; cursor:pointer; background:#fff; line-height:1.3; }
+  .storepick-chip input { width:auto; margin:0; flex-shrink:0; }
+  .storepick-chip.on { background:#eaf1ff; border-color:var(--blue); }
   /* ===== マイクロインタラクション ===== */
   @keyframes popIn { from { opacity:0; transform:scale(.94) translateY(6px); } to { opacity:1; transform:scale(1) translateY(0); } }
   .popcard { animation: popIn .17s cubic-bezier(.34,1.4,.64,1); }
@@ -156,6 +162,11 @@
       <button class="btn btn-primary" style="flex:1; min-width:150px;" onclick="openSchedEdit()">＋ 投稿予定を追加</button>
       <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="openEventEdit()">＋ 予定(MTG/抽出)</button>
     </div>
+    <div class="row mt" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-ghost" style="flex:1; min-width:110px;" onclick="openGenModal('generate')">⚙️ 一括生成</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:110px;" onclick="openGenModal('rebuild')">🔁 組み直し</button>
+      <button class="btn btn-ghost" style="flex:1; min-width:110px;" onclick="openThemeModal()">📝 テーマ一括</button>
+    </div>
     <div id="schedBody" class="mt"></div>
     <div class="card" id="schedList" style="display:none;"></div>
     <details>
@@ -191,6 +202,18 @@
       <button class="btn btn-ghost mt" onclick="addMyLink()">追加</button>
       <div id="myLinkList" class="mt"></div>
       <p class="hint">※サムネイルツールのチーム共有リンクは自動で表示されます。ここは自分用の追加分です</p>
+    </div>
+    <div class="card">
+      <h2>🔄 投稿パターン（チーム共有）</h2>
+      <p class="hint">「何を出すか」のシリーズ定義。切り口・色・使うテンプレを設定し、スケジュール一括生成で使います</p>
+      <div id="patternList" class="mt"></div>
+      <button class="btn btn-ghost mt" onclick="openPatternEdit()">＋ パターンを追加</button>
+    </div>
+    <div class="card">
+      <h2>📆 配信枠セット（チーム共有）</h2>
+      <p class="hint">「いつ・何回出すか」の型。通常期＝週2、繁忙期＝週3 のように時期で切り替えられます</p>
+      <div id="slotsetList" class="mt"></div>
+      <button class="btn btn-ghost mt" onclick="openSlotsetEdit()">＋ 配信枠セットを追加</button>
     </div>
     <div class="card">
       <h2>📄 指示テンプレート（チーム共有）</h2>
@@ -310,6 +333,116 @@
       <button class="btn btn-primary" style="flex:1;" onclick="saveTplEdit()">保存</button>
       <button class="btn btn-ghost" onclick="closeTplEdit()">キャンセル</button>
     </div>
+  </div>
+</div>
+
+<!-- 投稿パターン編集 -->
+<div id="patternModal" style="display:none; position:fixed; inset:0; z-index:75; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:560px; border-radius:16px; max-height:86dvh; overflow-y:auto; padding:18px;">
+    <h2>🔄 投稿パターン</h2>
+    <div class="row">
+      <div><label>記号（A/B/C…）</label><input id="pt_label" maxlength="4" placeholder="C"></div>
+      <div><label>アイコン</label><input id="pt_icon" maxlength="4" placeholder="🎁"></div>
+    </div>
+    <label class="mt">名前</label>
+    <input id="pt_name" placeholder="例：キャンペーン告知">
+    <label class="mt">切り口・目的（テーマ生成の指示に使われます）</label>
+    <textarea id="pt_angle" style="min-height:60px;" placeholder="例：季節キャンペーンの告知で行動を促す"></textarea>
+    <div class="row mt">
+      <div><label>投稿タイプ</label><select id="pt_postType"><option>最新情報</option><option>イベント</option><option>クーポン</option></select></div>
+      <div><label>色</label><input id="pt_color" type="color" value="#dbeafe" style="height:42px; padding:4px;"></div>
+    </div>
+    <div class="row mt">
+      <div><label>比率の重み（比率方式で使用）</label><input id="pt_weight" type="number" min="1" max="9" value="1"></div>
+      <div><label>使う指示テンプレ</label><select id="pt_tpl"></select></div>
+    </div>
+    <label class="mt">使う画像テンプレ</label>
+    <select id="pt_imgtpl"></select>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
+      <input type="checkbox" id="pt_enabled" checked style="width:auto;"> 有効（ローテーションに含める）
+    </label>
+    <div class="row mt" style="display:flex; gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="savePatternEdit()">保存</button>
+      <button class="btn btn-ghost" onclick="closePatternEdit()">キャンセル</button>
+    </div>
+    <button id="pt_delete" class="btn btn-ghost mt" style="width:100%; color:var(--ng); display:none;" onclick="deletePatternNow()">このパターンを削除</button>
+  </div>
+</div>
+
+<!-- 配信枠セット編集 -->
+<div id="slotsetModal" style="display:none; position:fixed; inset:0; z-index:75; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:560px; border-radius:16px; max-height:86dvh; overflow-y:auto; padding:18px;">
+    <h2>📆 配信枠セット</h2>
+    <label>名前</label>
+    <input id="ss_name" placeholder="例：通常期（週2）／繁忙期（週3）">
+    <div class="row mt">
+      <div><label>間隔</label><select id="ss_interval"><option value="1">毎週</option><option value="2">隔週</option></select></div>
+      <div style="display:flex; align-items:flex-end;"><button class="btn btn-ghost" style="width:100%;" onclick="addSlotRow()">＋枠を追加</button></div>
+    </div>
+    <label class="mt">配信枠（曜日・時刻・使うパターン）</label>
+    <div id="ss_slots"></div>
+    <div class="row mt" style="display:flex; gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveSlotsetEdit()">保存</button>
+      <button class="btn btn-ghost" onclick="closeSlotsetEdit()">キャンセル</button>
+    </div>
+    <button id="ss_delete" class="btn btn-ghost mt" style="width:100%; color:var(--ng); display:none;" onclick="deleteSlotsetNow()">このセットを削除</button>
+  </div>
+</div>
+
+<!-- スケジュール一括生成／組み直し -->
+<div id="genModal" style="display:none; position:fixed; inset:0; z-index:75; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:640px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px;">
+    <h2 id="genTitle">⚙️ スケジュール一括生成</h2>
+    <div class="row">
+      <div><label>開始日</label><input type="date" id="gen_start"></div>
+      <div><label>終了日</label><input type="date" id="gen_end"></div>
+    </div>
+    <div class="row mt" id="gen_ssRow">
+      <div><label>配信枠セット</label><select id="gen_slotset"></select></div>
+      <div><label>ローテーション</label>
+        <select id="gen_mode">
+          <option value="cycle">順番にくり返す（A→B→C…）</option>
+          <option value="perslot">枠ごと固定＋交互</option>
+          <option value="ratio">比率で配分（重み）</option>
+        </select></div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
+      <input type="checkbox" id="gen_continue" checked style="width:auto;"> 前回の続きから始める
+    </label>
+    <label id="gen_keepThemeRow" style="display:none; align-items:center; gap:8px; margin-top:6px; font-weight:400;">
+      <input type="checkbox" id="gen_keepTheme" checked style="width:auto;"> テーマ入力済みの予定はパターンだけ変更（テーマを保持）
+    </label>
+    <button class="btn btn-blue mt" style="width:100%;" onclick="genPreview()">👀 プレビューを作る</button>
+    <div id="gen_preview" class="mt"></div>
+    <button id="gen_commit" class="btn btn-primary mt" style="width:100%; display:none;" onclick="genCommit()">✅ この内容で登録する</button>
+    <button class="btn btn-ghost mt" style="width:100%;" onclick="closeGenModal()">キャンセル</button>
+  </div>
+</div>
+
+<!-- テーマ一括登録 -->
+<div id="themeModal" style="display:none; position:fixed; inset:0; z-index:75; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:640px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px;">
+    <h2>📝 テーマ一括登録</h2>
+    <p class="hint" style="margin-top:0;">スケジュール（日付×パターン）にAIでテーマを流し込みます。投稿文の流し込みと同じ3ステップです</p>
+    <div class="row">
+      <div><label>開始日</label><input type="date" id="th_start"></div>
+      <div><label>終了日</label><input type="date" id="th_end"></div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-weight:400;">
+      <input type="checkbox" id="th_onlyEmpty" checked style="width:auto;"> テーマ未定の予定だけ対象にする
+    </label>
+    <button class="btn btn-blue mt" style="width:100%;" onclick="themeBuildInstr()">① 指示文を作る</button>
+    <div id="th_instrBox" style="display:none;">
+      <label class="mt">指示文（コピーしてAIに貼り付け）</label>
+      <textarea id="th_instr" style="min-height:140px; font-size:12px;"></textarea>
+      <button class="btn btn-blue mt" style="width:100%;" onclick="copyText('th_instr')">📋 ② 指示文をコピー</button>
+      <label class="mt">AIの返信を貼り付け</label>
+      <textarea id="th_paste" style="min-height:120px;" placeholder="====2026-09-04====&#10;タイトル：…&#10;キャッチ：…"></textarea>
+      <button class="btn btn-primary mt" style="width:100%;" onclick="themeParse()">⬇️ ③ 流し込む（プレビュー）</button>
+    </div>
+    <div id="th_preview" class="mt"></div>
+    <button id="th_commit" class="btn btn-primary mt" style="width:100%; display:none;" onclick="themeCommit()">✅ この内容で反映する</button>
+    <button class="btn btn-ghost mt" style="width:100%;" onclick="closeThemeModal()">キャンセル</button>
   </div>
 </div>
 
@@ -542,6 +675,11 @@ try {
     // 指示テンプレート
     setTpl: (rec) => setDoc(doc(db, ...basePath('studio_templates'), rec.id), rec),
     delTpl: (id) => deleteDoc(doc(db, ...basePath('studio_templates'), id)),
+    // 投稿パターン・配信枠セット
+    setPattern: (rec) => setDoc(doc(db, ...basePath('studio_patterns'), rec.id), rec),
+    delPattern: (id) => deleteDoc(doc(db, ...basePath('studio_patterns'), id)),
+    setSlotset: (rec) => setDoc(doc(db, ...basePath('studio_slotsets'), rec.id), rec),
+    delSlotset: (id) => deleteDoc(doc(db, ...basePath('studio_slotsets'), id)),
   };
   try {
     const snap = await getDocs(collection(db, ...basePath('studio_schedule')));
@@ -569,6 +707,22 @@ try {
     window.__events = arr;
     window.dispatchEvent(new Event('events-ready'));
   }, (e)=> console.warn('events read error', e));
+
+  // ===== 投稿パターン／配信枠セット（チーム共有・Firestore） =====
+  onSnapshot(collection(db, ...basePath('studio_patterns')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    arr.sort((a,b)=> (a.order||0) - (b.order||0));
+    window.__patterns = arr;
+    window.dispatchEvent(new Event('patterns-ready'));
+  }, (e)=> console.warn('patterns read error', e));
+  onSnapshot(collection(db, ...basePath('studio_slotsets')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    arr.sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+    window.__slotsets = arr;
+    window.dispatchEvent(new Event('slotsets-ready'));
+  }, (e)=> console.warn('slotsets read error', e));
 
   // ===== 指示テンプレート（チーム共有・Firestore） =====
   onSnapshot(collection(db, ...basePath('studio_templates')), (s) => {
@@ -788,6 +942,486 @@ function removeTpl(id){
   save(LS_TPL, templates);
   if(window.fs) window.fs.delTpl(id).catch(e=>console.warn("tpl del", e));
 }
+// ===== 投稿パターン／配信枠セット =====
+const LS_PATTERNS = "meo_studio_patterns";
+const LS_SLOTSETS = "meo_studio_slotsets";
+let patterns = load(LS_PATTERNS, []);
+let slotsets = load(LS_SLOTSETS, []);
+// 既定シード（A/Bの現行運用と互換）
+const DEFAULT_PATTERNS = [
+  { id:"pat_A", label:"A", name:"メイン（症状訴求）", angle:"体の悩み・症状に寄り添い、来院動機をつくる", postType:"最新情報", scope:"per_store", storeIds:[], tplId:"", imgTplId:"", color:"#dbeafe", icon:"💪", weight:1, enabled:true, order:1, createdAt:1 },
+  { id:"pat_B", label:"B", name:"サブ（豆知識・習慣）", angle:"軽い豆知識・生活習慣の話で親しみをつくる", postType:"最新情報", scope:"per_store", storeIds:[], tplId:"", imgTplId:"", color:"#fce7f3", icon:"💡", weight:1, enabled:true, order:2, createdAt:2 },
+];
+const DEFAULT_SLOTSETS = [
+  { id:"ss_normal", name:"通常期（週2）", slots:[{dow:5,time:"16:00",patterns:["pat_A"]},{dow:1,time:"07:00",patterns:["pat_B"]}], interval:1, enabled:true, createdAt:1 },
+];
+window.addEventListener('patterns-ready', ()=>{
+  patterns = (window.__patterns||[]).slice();
+  if(!patterns.length){ DEFAULT_PATTERNS.forEach(r=>persistPattern(r)); }
+  else save(LS_PATTERNS, patterns);
+  if(typeof renderPatternList==="function") renderPatternList();
+  if(typeof renderSchedule==="function") renderSchedule();
+});
+window.addEventListener('slotsets-ready', ()=>{
+  slotsets = (window.__slotsets||[]).slice();
+  if(!slotsets.length){ DEFAULT_SLOTSETS.forEach(r=>persistSlotset(r)); }
+  else save(LS_SLOTSETS, slotsets);
+  if(typeof renderSlotsetList==="function") renderSlotsetList();
+});
+function persistPattern(rec){
+  const i = patterns.findIndex(x=>x.id===rec.id);
+  if(i>=0) patterns[i]=rec; else patterns.push(rec);
+  patterns.sort((a,b)=>(a.order||0)-(b.order||0));
+  save(LS_PATTERNS, patterns);
+  if(window.fs && window.fs.setPattern) window.fs.setPattern(rec).catch(e=>console.warn("pattern sync", e));
+}
+function removePattern(id){
+  patterns = patterns.filter(x=>x.id!==id);
+  save(LS_PATTERNS, patterns);
+  if(window.fs && window.fs.delPattern) window.fs.delPattern(id).catch(e=>console.warn("pattern del", e));
+}
+function persistSlotset(rec){
+  const i = slotsets.findIndex(x=>x.id===rec.id);
+  if(i>=0) slotsets[i]=rec; else slotsets.push(rec);
+  save(LS_SLOTSETS, slotsets);
+  if(window.fs && window.fs.setSlotset) window.fs.setSlotset(rec).catch(e=>console.warn("slotset sync", e));
+}
+function removeSlotset(id){
+  slotsets = slotsets.filter(x=>x.id!==id);
+  save(LS_SLOTSETS, slotsets);
+  if(window.fs && window.fs.delSlotset) window.fs.delSlotset(id).catch(e=>console.warn("slotset del", e));
+}
+// ラベル or ID からパターンを引く（既存予定のabType="A"/"B"互換）
+function patternOf(key){
+  if(!key) return null;
+  return (patterns||[]).find(p=>p.id===key) || (patterns||[]).find(p=>p.label===key) || null;
+}
+function enabledPatterns(){ return (patterns||[]).filter(p=>p.enabled!==false); }
+
+// ===== スロット生成とローテーション（純ロジック） =====
+// 期間×配信枠セット → 日付スロット一覧 [{date,time,dow,slotIdx}]
+function genSlots(startISO, endISO, slotset){
+  const out = [];
+  if(!startISO || !endISO || !slotset) return out;
+  const start = new Date(startISO+"T00:00:00");
+  const end = new Date(endISO+"T00:00:00");
+  const interval = Math.max(1, slotset.interval||1);
+  // 各曜日スロットごとに「開始日以降の最初の該当曜日」から interval 週おきに列挙
+  (slotset.slots||[]).forEach((sl, slotIdx)=>{
+    const d = new Date(start);
+    while(d.getDay()!==sl.dow) d.setDate(d.getDate()+1);
+    let week = 0;
+    while(d <= end){
+      if(week % interval === 0){
+        const p=n=>String(n).padStart(2,"0");
+        out.push({ date:`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`, time:sl.time||"", dow:sl.dow, slotIdx });
+      }
+      d.setDate(d.getDate()+7); week++;
+    }
+  });
+  out.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+  return out;
+}
+// ローテーション割当: mode = 'cycle'（順番） | 'perslot'（枠固定交互） | 'ratio'（比率）
+// continueFrom: 直前に使われたパターンID（'cycle'用）
+function assignPatterns(slots, mode, slotset, continueFrom){
+  const pats = enabledPatterns();
+  if(!pats.length) return slots.map(s=>({ ...s, patternId:null }));
+  if(mode==="perslot"){
+    // 枠ごとに patterns 配列を交互に
+    const counters = {};
+    return slots.map(s=>{
+      const slotDef = (slotset.slots||[])[s.slotIdx] || {};
+      const pool = (slotDef.patterns||[]).map(id=>patternOf(id)).filter(p=>p&&p.enabled!==false);
+      const usable = pool.length?pool:pats;
+      counters[s.slotIdx] = (counters[s.slotIdx]||0);
+      const pt = usable[counters[s.slotIdx] % usable.length];
+      counters[s.slotIdx]++;
+      return { ...s, patternId: pt.id };
+    });
+  }
+  if(mode==="ratio"){
+    // 最大剰余法で決定的に配分し、時系列に均す（同一パターンの連続を避けつつ）
+    const total = slots.length;
+    const wsum = pats.reduce((a,p)=>a+(p.weight||1),0);
+    const quota = pats.map(p=>({ id:p.id, exact:total*(p.weight||1)/wsum }));
+    quota.forEach(q=>{ q.count=Math.floor(q.exact); q.frac=q.exact-q.count; });
+    let rest = total - quota.reduce((a,q)=>a+q.count,0);
+    quota.sort((a,b)=>b.frac-a.frac);
+    for(let i=0;i<rest;i++) quota[i%quota.length].count++;
+    // 残数の多い順に取り出し（直前と同じは可能なら避ける）
+    const remain = {}; quota.forEach(q=>remain[q.id]=q.count);
+    let prev = continueFrom||null;
+    return slots.map(s=>{
+      const cand = pats.filter(p=>remain[p.id]>0);
+      if(!cand.length) return { ...s, patternId:null };
+      let pick = cand.filter(p=>p.id!==prev).sort((a,b)=>remain[b.id]-remain[a.id])[0] || cand.sort((a,b)=>remain[b.id]-remain[a.id])[0];
+      remain[pick.id]--; prev = pick.id;
+      return { ...s, patternId: pick.id };
+    });
+  }
+  // cycle（順番にくり返す）
+  let idx = 0;
+  if(continueFrom){
+    const ci = pats.findIndex(p=>p.id===continueFrom || p.label===continueFrom);
+    if(ci>=0) idx = (ci+1) % pats.length;
+  }
+  return slots.map(s=>{ const pt = pats[idx % pats.length]; idx++; return { ...s, patternId: pt.id }; });
+}
+// 既存予定から「最後に使われたパターン」を推定（続きから用）
+function lastUsedPattern(beforeISO){
+  const list = sortedSched().filter(s=> s.date && (!beforeISO || s.date < beforeISO) && s.abType);
+  if(!list.length) return null;
+  const last = list[list.length-1];
+  const pt = patternOf(last.abType);
+  return pt ? pt.id : null;
+}
+
+// ===== パターン管理UI =====
+let editingPatternId = null;
+window.renderPatternList = ()=>{
+  const box = document.getElementById("patternList"); if(!box) return;
+  box.innerHTML = (patterns||[]).length ? patterns.map(pt=>`
+    <div class="listitem"><div class="small" style="min-width:0;">
+      <span class="pill" style="background:${esc(pt.color||'#e2e8f0')};">${esc(pt.icon||'')}${esc(pt.label||'')}</span>
+      <b>${esc(pt.name||"無題")}</b>${pt.enabled===false?' <span class="pill" style="color:var(--muted)">無効</span>':''}<br>
+      <span class="muted" style="font-size:11px;">${esc((pt.angle||"").slice(0,40))}</span></div>
+      <div style="display:flex; gap:6px;">
+        <button class="pill" onclick="openPatternEdit('${esc(pt.id)}')">編集</button>
+      </div></div>`).join("") : `<p class="hint">読み込み中…（オフライン時は既定のA/Bが使われます）</p>`;
+};
+window.openPatternEdit = (id)=>{
+  editingPatternId = id || null;
+  const pt = id ? patterns.find(x=>x.id===id) : null;
+  document.getElementById("pt_label").value = pt?.label || "";
+  document.getElementById("pt_icon").value = pt?.icon || "";
+  document.getElementById("pt_name").value = pt?.name || "";
+  document.getElementById("pt_angle").value = pt?.angle || "";
+  document.getElementById("pt_postType").value = pt?.postType || "最新情報";
+  document.getElementById("pt_color").value = pt?.color || "#dbeafe";
+  document.getElementById("pt_weight").value = pt?.weight || 1;
+  document.getElementById("pt_enabled").checked = pt ? pt.enabled!==false : true;
+  const tplSel = document.getElementById("pt_tpl");
+  tplSel.innerHTML = `<option value="">標準（自動生成）</option>` + (templates||[]).filter(t=>t.kind!=='image').map(t=>`<option value="${esc(t.id)}" ${pt?.tplId===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
+  const imgSel = document.getElementById("pt_imgtpl");
+  imgSel.innerHTML = `<option value="">標準（自動生成）</option>` + (templates||[]).filter(t=>t.kind==='image').map(t=>`<option value="${esc(t.id)}" ${pt?.imgTplId===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
+  document.getElementById("pt_delete").style.display = pt ? "block" : "none";
+  document.getElementById("patternModal").style.display = "flex";
+};
+window.closePatternEdit = ()=> document.getElementById("patternModal").style.display="none";
+window.savePatternEdit = ()=>{
+  const label = document.getElementById("pt_label").value.trim();
+  const name = document.getElementById("pt_name").value.trim();
+  if(!label || !name){ toast("記号と名前を入力してください"); return; }
+  const dup = patterns.find(x=>x.label===label && x.id!==editingPatternId);
+  if(dup){ toast(`記号「${label}」は「${dup.name}」で使用中です`); return; }
+  const prev = editingPatternId ? patterns.find(x=>x.id===editingPatternId) : null;
+  const rec = {
+    id: editingPatternId || ("pat_"+uid()),
+    label, name,
+    angle: document.getElementById("pt_angle").value.trim(),
+    postType: document.getElementById("pt_postType").value,
+    scope: prev?.scope || "per_store", storeIds: prev?.storeIds || [],
+    tplId: document.getElementById("pt_tpl").value || "",
+    imgTplId: document.getElementById("pt_imgtpl").value || "",
+    color: document.getElementById("pt_color").value,
+    icon: document.getElementById("pt_icon").value.trim(),
+    weight: Math.max(1, parseInt(document.getElementById("pt_weight").value,10)||1),
+    enabled: document.getElementById("pt_enabled").checked,
+    order: prev?.order ?? (patterns.length+1),
+    createdAt: prev?.createdAt || Date.now(),
+  };
+  persistPattern(rec);
+  closePatternEdit(); renderPatternList(); renderSchedule(); toast("保存しました");
+};
+window.deletePatternNow = ()=>{
+  if(!editingPatternId) return;
+  const pt = patterns.find(x=>x.id===editingPatternId);
+  const used = schedule.filter(s=> s.abType===pt?.label || s.abType===editingPatternId).length;
+  if(!confirm(`パターン「${pt?.name}」を削除しますか？${used?`\n※${used}件の予定がこのパターンを使用中です（予定は残ります）`:""}`)) return;
+  removePattern(editingPatternId);
+  closePatternEdit(); renderPatternList(); toast("削除しました");
+};
+
+// ===== 配信枠セット管理UI =====
+let editingSlotsetId = null;
+const DOW_JP = ["日","月","火","水","木","金","土"];
+window.renderSlotsetList = ()=>{
+  const box = document.getElementById("slotsetList"); if(!box) return;
+  box.innerHTML = (slotsets||[]).length ? slotsets.map(ss=>`
+    <div class="listitem"><div class="small" style="min-width:0;">
+      <b>${esc(ss.name||"無題")}</b><br>
+      <span class="muted" style="font-size:11px;">${(ss.slots||[]).map(sl=>`${DOW_JP[sl.dow]}${sl.time}`).join("・")}${(ss.interval||1)>1?`（隔週）`:""}</span></div>
+      <div style="display:flex; gap:6px;">
+        <button class="pill" onclick="openSlotsetEdit('${esc(ss.id)}')">編集</button>
+      </div></div>`).join("") : `<p class="hint">読み込み中…</p>`;
+};
+function slotRowHTML(sl, idx){
+  const patChecks = enabledPatterns().map(pt=>`
+    <label style="display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:400; margin-right:6px;">
+      <input type="checkbox" class="ssrow-pat" value="${esc(pt.id)}" ${(sl.patterns||[]).includes(pt.id)?"checked":""} style="width:auto;">${esc(pt.icon||'')}${esc(pt.label)}
+    </label>`).join("");
+  return `<div class="day-item ssrow" data-idx="${idx}">
+    <div class="row">
+      <div><label>曜日</label><select class="ssrow-dow">${DOW_JP.map((d,i)=>`<option value="${i}" ${sl.dow===i?"selected":""}>${d}曜</option>`).join("")}</select></div>
+      <div><label>時刻</label><input type="time" class="ssrow-time" value="${esc(sl.time||"16:00")}"></div>
+    </div>
+    <label class="mt" style="font-size:11px;">この枠で使うパターン（枠固定方式のとき。未選択＝全パターン）</label>
+    <div>${patChecks}</div>
+    <button type="button" class="pill mt" style="color:var(--ng)" onclick="this.closest('.ssrow').remove()">この枠を削除</button>
+  </div>`;
+}
+window.addSlotRow = ()=>{
+  const box = document.getElementById("ss_slots");
+  const div = document.createElement("div");
+  div.innerHTML = slotRowHTML({dow:5,time:"16:00",patterns:[]}, box.children.length);
+  box.appendChild(div.firstElementChild);
+};
+window.openSlotsetEdit = (id)=>{
+  editingSlotsetId = id || null;
+  const ss = id ? slotsets.find(x=>x.id===id) : null;
+  document.getElementById("ss_name").value = ss?.name || "";
+  document.getElementById("ss_interval").value = String(ss?.interval || 1);
+  const box = document.getElementById("ss_slots");
+  box.innerHTML = "";
+  (ss?.slots || [{dow:5,time:"16:00",patterns:[]},{dow:1,time:"07:00",patterns:[]}]).forEach((sl,i)=>{
+    const div=document.createElement("div"); div.innerHTML=slotRowHTML(sl,i); box.appendChild(div.firstElementChild);
+  });
+  document.getElementById("ss_delete").style.display = ss ? "block" : "none";
+  document.getElementById("slotsetModal").style.display = "flex";
+};
+window.closeSlotsetEdit = ()=> document.getElementById("slotsetModal").style.display="none";
+window.saveSlotsetEdit = ()=>{
+  const name = document.getElementById("ss_name").value.trim();
+  if(!name){ toast("名前を入力してください"); return; }
+  const slots = [...document.querySelectorAll("#ss_slots .ssrow")].map(row=>({
+    dow: parseInt(row.querySelector(".ssrow-dow").value,10),
+    time: row.querySelector(".ssrow-time").value || "16:00",
+    patterns: [...row.querySelectorAll(".ssrow-pat:checked")].map(i=>i.value),
+  }));
+  if(!slots.length){ toast("配信枠を1つ以上追加してください"); return; }
+  const prev = editingSlotsetId ? slotsets.find(x=>x.id===editingSlotsetId) : null;
+  const rec = { id: editingSlotsetId || ("ss_"+uid()), name, slots,
+    interval: parseInt(document.getElementById("ss_interval").value,10)||1,
+    enabled:true, createdAt: prev?.createdAt || Date.now() };
+  persistSlotset(rec);
+  closeSlotsetEdit(); renderSlotsetList(); toast("保存しました");
+};
+window.deleteSlotsetNow = ()=>{
+  if(!editingSlotsetId) return;
+  if(!confirm("この配信枠セットを削除しますか？")) return;
+  removeSlotset(editingSlotsetId);
+  closeSlotsetEdit(); renderSlotsetList(); toast("削除しました");
+};
+
+// ===== スケジュール一括生成／組み直しウィザード =====
+let GEN_MODE = "generate";  // generate | rebuild
+let GEN_ROWS = [];          // プレビュー行 [{date,time,dow,slotIdx,patternId,include,existingId?,theme?}]
+window.openGenModal = (mode)=>{
+  GEN_MODE = mode || "generate";
+  document.getElementById("genTitle").textContent = GEN_MODE==="rebuild" ? "🔁 ローテーションを組み直す" : "⚙️ スケジュール一括生成";
+  document.getElementById("gen_keepThemeRow").style.display = GEN_MODE==="rebuild" ? "flex" : "none";
+  document.getElementById("gen_ssRow").style.display = "grid";
+  // 既定期間: 来月1日〜末日（generate）／今日〜2ヶ月後（rebuild）
+  const n = new Date();
+  const p2=x=>String(x).padStart(2,"0");
+  if(GEN_MODE==="generate"){
+    const y=n.getFullYear(), m=n.getMonth()+1;
+    const ny = m===12? y+1 : y, nm = m===12? 1 : m+1;
+    document.getElementById("gen_start").value = `${ny}-${p2(nm)}-01`;
+    document.getElementById("gen_end").value = `${ny}-${p2(nm)}-${new Date(ny,nm,0).getDate()}`;
+  } else {
+    document.getElementById("gen_start").value = todayISO();
+    const e=new Date(n); e.setMonth(e.getMonth()+2);
+    document.getElementById("gen_end").value = `${e.getFullYear()}-${p2(e.getMonth()+1)}-${p2(e.getDate())}`;
+  }
+  const sel = document.getElementById("gen_slotset");
+  sel.innerHTML = (slotsets||[]).map(ss=>`<option value="${esc(ss.id)}">${esc(ss.name)}</option>`).join("");
+  document.getElementById("gen_preview").innerHTML = "";
+  document.getElementById("gen_commit").style.display = "none";
+  GEN_ROWS = [];
+  document.getElementById("genModal").style.display = "flex";
+};
+window.closeGenModal = ()=> document.getElementById("genModal").style.display="none";
+window.genPreview = ()=>{
+  const start=document.getElementById("gen_start").value, end=document.getElementById("gen_end").value;
+  const ss = slotsets.find(x=>x.id===document.getElementById("gen_slotset").value);
+  const mode = document.getElementById("gen_mode").value;
+  const cont = document.getElementById("gen_continue").checked ? lastUsedPattern(start) : null;
+  if(!start || !end || start>end){ toast("期間を正しく指定してください"); return; }
+  if(!ss){ toast("配信枠セットを選んでください"); return; }
+  if(GEN_MODE==="rebuild"){
+    // 対象＝期間内・未出力・未投稿の既存予定（日付順）
+    const targets = sortedSched().filter(x=> x.date && x.date>=start && x.date<=end && !x.done && !x.posted);
+    if(!targets.length){ document.getElementById("gen_preview").innerHTML = `<p class="hint">対象がありません（未出力・未投稿の予定のみ組み直せます）</p>`; return; }
+    // 疑似スロット化して割当（slotIdxは曜日一致で推定）
+    const pseudo = targets.map(t=>{
+      const dow = new Date(t.date+"T00:00:00").getDay();
+      const si = (ss.slots||[]).findIndex(sl=>sl.dow===dow);
+      return { date:t.date, time:t.time||"", dow, slotIdx: si>=0?si:0 };
+    });
+    const assigned = assignPatterns(pseudo, mode, ss, cont);
+    GEN_ROWS = targets.map((t,i)=>({ existingId:t.id, date:t.date, time:t.time, dow:pseudo[i].dow,
+      patternId: assigned[i].patternId, include:true,
+      beforeLabel: (patternOf(t.abType)?.label)||t.abType||"?", hasTheme: !!(t.title&&t.title!=="テーマ未定") }));
+  } else {
+    const slots = genSlots(start, end, ss);
+    if(!slots.length){ document.getElementById("gen_preview").innerHTML = `<p class="hint">この期間に該当する枠がありません</p>`; return; }
+    const assigned = assignPatterns(slots, mode, ss, cont);
+    // 既存重複チェック（同日付）
+    GEN_ROWS = assigned.map(a=>({ ...a, include:true,
+      dupId: (schedule.find(x=>x.date===a.date)||{}).id||null }));
+  }
+  renderGenPreview();
+};
+function renderGenPreview(){
+  const box = document.getElementById("gen_preview");
+  const patSel = (row,i)=> `<select onchange="GEN_ROWS[${i}].patternId=this.value" style="font-size:11px; padding:4px;">
+    ${enabledPatterns().map(pt=>`<option value="${esc(pt.id)}" ${row.patternId===pt.id?"selected":""}>${esc(pt.icon||'')}${esc(pt.label)} ${esc(pt.name)}</option>`).join("")}</select>`;
+  box.innerHTML = `<div class="hint">${GEN_ROWS.filter(r=>r.include).length}件を${GEN_MODE==="rebuild"?"組み直し":"登録"}します（チェックを外すと除外）</div>` +
+    GEN_ROWS.map((r,i)=>{
+      const pt = patternOf(r.patternId);
+      return `<div class="day-item" style="padding:8px; ${r.include?"":"opacity:.45;"}">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <input type="checkbox" ${r.include?"checked":""} onchange="GEN_ROWS[${i}].include=this.checked; renderGenPreview();" style="width:auto;">
+          <b class="small">${esc(fmtJp(r.date))}(${DOW_JP[r.dow]})</b>
+          <input type="time" value="${esc(r.time||"")}" onchange="GEN_ROWS[${i}].time=this.value" style="width:auto; padding:4px; font-size:12px;">
+          ${GEN_MODE==="rebuild"?`<span class="pill">${esc(r.beforeLabel)}</span>→`:""}
+          ${patSel(r,i)}
+          ${GEN_MODE==="rebuild"&&r.hasTheme?`<span class="pill" style="background:#dcfce7;color:#166534;">テーマあり</span>`:""}
+          ${r.dupId?`<span class="pill" style="background:#fef3c7;color:#92400e;">⚠️同日に既存</span>`:""}
+        </div>
+      </div>`;
+    }).join("");
+  document.getElementById("gen_commit").style.display = GEN_ROWS.some(r=>r.include) ? "block" : "none";
+}
+window.genCommit = ()=>{
+  const rows = GEN_ROWS.filter(r=>r.include);
+  if(!rows.length) return;
+  const keepTheme = document.getElementById("gen_keepTheme").checked;
+  let n=0;
+  rows.forEach(r=>{
+    const pt = patternOf(r.patternId); if(!pt) return;
+    if(GEN_MODE==="rebuild"){
+      const i = schedule.findIndex(x=>x.id===r.existingId); if(i<0) return;
+      const upd = { ...schedule[i], abType: pt.label, time: r.time||schedule[i].time, postType: pt.postType||schedule[i].postType };
+      if(!keepTheme){ upd.title=""; upd.catchTitle=""; upd.kw=""; upd.imageMemo=""; upd.context=""; }
+      persistSched(upd); n++;
+    } else {
+      persistSched({ id:uid(), title:"", catchTitle:"", date:r.date, time:r.time||"",
+        abType: pt.label, kw:"", imageMemo:"", context:"",
+        imageTitle:"", imageId:"", imageUrl:"",
+        postType: pt.postType||"最新情報", timing:"scheduled",
+        scope: pt.scope||"per_store", storeIds: (pt.storeIds&&pt.storeIds.length)?pt.storeIds.slice():STORES.map(x=>x.gmo),
+        done:false, posted:false, postedAt:"" });
+      n++;
+    }
+  });
+  closeGenModal();
+  // 生成した期間の先頭月へ移動
+  const first = rows[0];
+  if(first){ const [y,m]=first.date.split("-").map(Number); CAL_Y=y; CAL_M=m-1; }
+  renderSchedule(); renderHomeSchedule(); if(typeof renderNextAction==="function") renderNextAction();
+  toast(`✅ ${n}件を${GEN_MODE==="rebuild"?"組み直しました":"登録しました"}`);
+};
+
+// ===== テーマ一括登録 =====
+let THEME_TARGETS = [];  // 対象予定
+let THEME_ROWS = [];     // パース結果 [{date, schedId, include, title, catch, kw, imageMemo, context}]
+window.openThemeModal = ()=>{
+  const n=new Date(); const p2=x=>String(x).padStart(2,"0");
+  ensureCalMonth();
+  document.getElementById("th_start").value = `${CAL_Y}-${p2(CAL_M+1)}-01`;
+  document.getElementById("th_end").value = `${CAL_Y}-${p2(CAL_M+1)}-${new Date(CAL_Y,CAL_M+1,0).getDate()}`;
+  document.getElementById("th_instrBox").style.display="none";
+  document.getElementById("th_preview").innerHTML="";
+  document.getElementById("th_commit").style.display="none";
+  document.getElementById("th_paste").value="";
+  THEME_TARGETS=[]; THEME_ROWS=[];
+  document.getElementById("themeModal").style.display="flex";
+};
+window.closeThemeModal = ()=> document.getElementById("themeModal").style.display="none";
+window.themeBuildInstr = ()=>{
+  const start=document.getElementById("th_start").value, end=document.getElementById("th_end").value;
+  const onlyEmpty=document.getElementById("th_onlyEmpty").checked;
+  if(!start||!end||start>end){ toast("期間を正しく指定してください"); return; }
+  THEME_TARGETS = sortedSched().filter(x=> x.date && x.date>=start && x.date<=end && !x.posted && (!onlyEmpty || !x.title));
+  if(!THEME_TARGETS.length){ toast(onlyEmpty?"テーマ未定の予定がありません（チェックを外すと全予定が対象）":"対象の予定がありません"); return; }
+  const lines = THEME_TARGETS.map(t=>{
+    const pt = patternOf(t.abType);
+    return `- ${t.date}（${dowJp(t.date)}曜）｜パターン${t.abType||"?"}：${pt?.name||""}／切り口：${pt?.angle||"自由"}`;
+  }).join("\n");
+  const instr = `# MEO投稿のテーマ案作成依頼
+
+以下の投稿予定それぞれに、投稿テーマを考えてください。
+あさばグループ（整骨院・整体院・マシンピラティス）のGoogleビジネスプロフィール投稿です。
+
+## 投稿予定（日付とパターンは変更しないこと）
+${lines}
+
+## 条件
+- 各パターンの「切り口」に沿ったテーマにする
+- 季節・時期（連休、気候、行事）を自然に織り込む
+- 同じ期間内でテーマが重複しないようにする
+- 医療広告ガイドライン・薬機法に配慮（治る・改善を断定しない）
+
+## 出力フォーマット（この形を厳守。前後に説明文を書かない）
+${THEME_TARGETS.map(t=>`====${t.date}====
+タイトル：（テーマ名・15字前後）
+キャッチ：（投稿の共通タイトル案・20字前後）
+キーワード：（訴求キーワードを・区切りで3〜5個）
+画像メモ：（サムネイルの場面イメージを1行で）`).join("\n")}`;
+  document.getElementById("th_instr").value = instr;
+  document.getElementById("th_instrBox").style.display="block";
+};
+window.themeParse = ()=>{
+  const raw = document.getElementById("th_paste").value;
+  if(!raw.trim()){ toast("AIの返信を貼り付けてください"); return; }
+  const norm = raw.replace(/\r\n/g,"\n");
+  const re = /^=+\s*(\d{4}-\d{2}-\d{2})\s*=+\s*$/gm;
+  const marks=[]; let m;
+  while((m=re.exec(norm))){ marks.push({date:m[1], start:m.index, end:re.lastIndex}); }
+  if(!marks.length){ document.getElementById("th_preview").innerHTML=`<div class="err">日付の区切り（====2026-09-04==== など）が見つかりません</div>`; return; }
+  THEME_ROWS=[];
+  for(let i=0;i<marks.length;i++){
+    const body = norm.slice(marks[i].end, i+1<marks.length?marks[i+1].start:undefined);
+    const get = (label)=>{ const mm = body.match(new RegExp(`^${label}[：:]\\s*(.+)$`,"m")); return mm?mm[1].trim():""; };
+    const target = THEME_TARGETS.find(t=>t.date===marks[i].date) || schedule.find(t=>t.date===marks[i].date && !t.posted);
+    THEME_ROWS.push({ date:marks[i].date, schedId: target?target.id:null, include: !!target,
+      title:get("タイトル"), catch:get("キャッチ"), kw:get("キーワード"), imageMemo:get("画像メモ"), context:get("文脈") });
+  }
+  renderThemePreview();
+};
+function renderThemePreview(){
+  const box=document.getElementById("th_preview");
+  const okRows = THEME_ROWS.filter(r=>r.schedId);
+  box.innerHTML = `<div class="hint">${okRows.filter(r=>r.include).length}件を反映します（チェックで除外可）</div>` +
+    THEME_ROWS.map((r,i)=>`
+    <div class="day-item" style="padding:8px; ${r.include&&r.schedId?"":"opacity:.5;"}">
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <input type="checkbox" ${r.include&&r.schedId?"checked":""} ${r.schedId?"":"disabled"} onchange="THEME_ROWS[${i}].include=this.checked" style="width:auto; margin-top:3px;">
+        <div style="min-width:0; flex:1;">
+          <b class="small">${esc(fmtJp(r.date))}(${dowJp(r.date)})</b> ${r.schedId?"":"<span class='pill' style='background:#fee2e2;color:#b91c1c;'>該当予定なし</span>"}
+          <input value="${esc(r.title)}" oninput="THEME_ROWS[${i}].title=this.value" placeholder="タイトル" style="margin-top:4px; font-size:12px; padding:6px;">
+          <input value="${esc(r.catch)}" oninput="THEME_ROWS[${i}].catch=this.value" placeholder="キャッチ" style="margin-top:4px; font-size:12px; padding:6px;">
+          <div class="hint" style="margin-top:2px;">🔑${esc(r.kw||"—")}｜🖼️${esc(r.imageMemo||"—")}</div>
+        </div>
+      </div>
+    </div>`).join("");
+  document.getElementById("th_commit").style.display = okRows.some(r=>r.include) ? "block" : "none";
+}
+window.themeCommit = ()=>{
+  let n=0;
+  THEME_ROWS.filter(r=>r.include && r.schedId).forEach(r=>{
+    const i = schedule.findIndex(x=>x.id===r.schedId); if(i<0) return;
+    persistSched({ ...schedule[i], title:r.title||schedule[i].title, catchTitle:r.catch||schedule[i].catchTitle,
+      kw:r.kw||schedule[i].kw, imageMemo:r.imageMemo||schedule[i].imageMemo, context:r.context||schedule[i].context });
+    n++;
+  });
+  closeThemeModal();
+  renderSchedule(); renderHomeSchedule(); if(typeof renderNextAction==="function") renderNextAction();
+  toast(`✅ ${n}件のテーマを反映しました`);
+};
 // "YYYY-MM-DD HH:MM"（投稿完了日時などに使用）
 function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
@@ -804,7 +1438,7 @@ function go(view){
   if(view==="home"){ renderLinks(); renderHomeSchedule(); renderNextAction(); }
   if(view==="schedule") renderSchedule();
   if(view==="create") renderCreate();
-  if(view==="settings"){ renderMyLinks(); renderRules(); renderTplList(); }
+  if(view==="settings"){ renderMyLinks(); renderRules(); renderTplList(); renderPatternList(); renderSlotsetList(); }
   if(view==="history") renderHistory();
 }
 window.go = go;
@@ -878,7 +1512,13 @@ function fmtJp(d){ return d ? d.replace(/-/g,"/") : "（日付未定）"; }
 function scopeLabel(s){ return s.scope==="per_store" ? `店舗別(${(s.storeIds||[]).length})` : "カテゴリ共通"; }
 function sortedSched(){ return [...schedule].sort((a,b)=> (a.date||"9999").localeCompare(b.date||"9999")); }
 
-function abBadge(s){ return s.abType ? `<span class="pill" style="background:${s.abType==="A"?"#dbeafe":"#fce7f3"}; color:${s.abType==="A"?"#1d4ed8":"#be185d"};">${s.abType}</span> ` : ""; }
+function abBadge(s){
+  if(!s.abType) return "";
+  const pt = patternOf(s.abType);
+  const bg = pt?.color || (s.abType==="A"?"#dbeafe":"#fce7f3");
+  const icon = pt?.icon ? pt.icon : "";
+  return `<span class="pill" style="background:${bg}; color:#1f2937;">${icon}${esc(s.abType)}</span> `;
+}
 function dowJp(date){ if(!date) return ""; const d=new Date(date+"T00:00:00"); return ["日","月","火","水","木","金","土"][d.getDay()]; }
 function schedWhen(s){ return `${fmtJp(s.date)}${s.date?`(${dowJp(s.date)})`:""} ${s.time||""}`; }
 // 予定に紐付いた画像のサムネURLをギャラリーから解決（大きな画像データは予定に保存しない）
@@ -1199,6 +1839,10 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.getEle
 
 // ===== 全ポップ共通：背景タップ／Escで閉じる（下部シートを廃止し中央ポップに統一） =====
 const POP_MODALS = {
+  themeModal: ()=>closeThemeModal(),
+  patternModal: ()=>closePatternEdit(),
+  slotsetModal: ()=>closeSlotsetEdit(),
+  genModal:   ()=>closeGenModal(),
   tplModal:   ()=>closeTplEdit(),
   schedModal: ()=>closeSchedEdit(),
   eventModal: ()=>closeEventEdit(),
@@ -1321,7 +1965,17 @@ window.dupEvent = (id)=>{
 let editingSchedId = null;
 let smImage = null; // 予定編集中に紐付けたサムネ画像 {title, id, url}
 let smPrevImageId = null; // モーダルを開いた時点で紐付いていた画像ID（解除の逆側クリア用）
-const defaultTime = (ab)=> ab==="B" ? "07:00" : "16:00"; // A=金曜16:00 / B=月曜7:00
+const defaultTime = (ab)=>{
+  // パターン→そのパターンを含む配信枠の時刻を既定に。無ければ現行フォールバック
+  const pt = patternOf(ab);
+  if(pt){
+    for(const ss of (slotsets||[])){
+      const slot = (ss.slots||[]).find(sl=> (sl.patterns||[]).includes(pt.id));
+      if(slot && slot.time) return slot.time;
+    }
+  }
+  return ab==="B" ? "07:00" : "16:00";
+};
 window.openSchedEdit = (id, presetDate)=>{
   editingSchedId = id || null;
   const s = id ? schedule.find(x=>x.id===id) : null;
@@ -1336,10 +1990,10 @@ window.openSchedEdit = (id, presetDate)=>{
   document.getElementById("sm_context").value = s?.context || "";
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
   document.getElementById("sm_timing").value = s?.timing || "scheduled";
-  const scope = s?.scope || "category_common";
+  const scope = s ? (s.scope || "category_common") : "per_store";  // 新規は店舗別が既定
   document.querySelectorAll("#sm_scope button").forEach(b=> b.classList.toggle("on", b.dataset.scope===scope));
   document.getElementById("sm_storeWrap").style.display = scope==="per_store" ? "block" : "none";
-  renderSmStores(s?.storeIds || []);
+  renderSmStores(s ? (s.storeIds || []) : STORES.map(x=>x.gmo));  // 新規は全店選択
   smImage = s?.imageTitle ? { title:s.imageTitle, id:s.imageId||null, url:galUrlById(s.imageId) } : null;
   smPrevImageId = s?.imageId || null;  // 解除・差し替え時に旧画像側のリンクを消すため保持
   renderSmImgLinked();
@@ -1437,11 +2091,49 @@ document.getElementById("sm_ab").addEventListener("change", (e)=>{
   if(t.value==="07:00" || t.value==="16:00" || !t.value) t.value = defaultTime(e.target.value);
 });
 window.closeSchedEdit = ()=> document.getElementById("schedModal").style.display="none";
-function renderSmStores(selected){
-  document.getElementById("sm_stores").innerHTML = STORES.map(s=>`
-    <label style="display:flex; gap:8px; align-items:center; padding:4px 0; font-weight:400;">
-      <input type="checkbox" value="${s.gmo}" ${selected.includes(s.gmo)?"checked":""}> <span class="small">${esc(s.name)}</span>
+// 店舗ピッカー共通描画（チップ型グリッド＋業態一括選択）
+function storePickerHTML(boxId, selected){
+  const gyotais = [...new Set(STORES.map(s=>s.gyotai))];
+  const chips = STORES.map(s=>`
+    <label class="storepick-chip ${selected.includes(s.gmo)?"on":""}">
+      <input type="checkbox" value="${s.gmo}" ${selected.includes(s.gmo)?"checked":""}
+        onchange="this.closest('.storepick-chip').classList.toggle('on',this.checked); storePickerCount('${boxId}')">
+      <span>${esc(s.name.replace(/^(あさば整骨院_|あさば整体院_|マシンピラティスPeace |マシンピラティス Peace )/,""))}</span>
     </label>`).join("");
+  return `<div class="storepick-tools">
+      <span class="pill" id="${boxId}_count"></span>
+      <button type="button" class="pill" onclick="storePickerAll('${boxId}')">全選択/解除</button>
+      ${gyotais.map(g=>`<button type="button" class="pill" onclick="storePickerGyotai('${boxId}','${esc(g)}')">${esc(g)}</button>`).join("")}
+    </div>
+    <div class="storepick-grid" id="${boxId}_grid">${chips}</div>`;
+}
+window.storePickerCount = (boxId)=>{
+  const box=document.getElementById(boxId); if(!box) return;
+  const n=box.querySelectorAll('input:checked').length;
+  const c=document.getElementById(boxId+"_count"); if(c) c.textContent = `${n}/${STORES.length}店舗`;
+};
+window.storePickerAll = (boxId)=>{
+  const box=document.getElementById(boxId); if(!box) return;
+  const inputs=[...box.querySelectorAll('input')];
+  const allOn = inputs.every(i=>i.checked);
+  inputs.forEach(i=>{ i.checked=!allOn; i.closest('.storepick-chip').classList.toggle('on',!allOn); });
+  storePickerCount(boxId);
+};
+window.storePickerGyotai = (boxId, gyotai)=>{
+  const box=document.getElementById(boxId); if(!box) return;
+  const targets = STORES.filter(s=>s.gyotai===gyotai).map(s=>s.gmo);
+  const inputs=[...box.querySelectorAll('input')].filter(i=>targets.includes(i.value));
+  const allOn = inputs.every(i=>i.checked);
+  inputs.forEach(i=>{ i.checked=!allOn; i.closest('.storepick-chip').classList.toggle('on',!allOn); });
+  storePickerCount(boxId);
+};
+function storePickerValues(boxId){
+  const box=document.getElementById(boxId); if(!box) return [];
+  return [...box.querySelectorAll('input:checked')].map(i=>i.value);
+}
+function renderSmStores(selected){
+  document.getElementById("sm_stores").innerHTML = storePickerHTML("sm_stores", selected);
+  storePickerCount("sm_stores");
 }
 document.getElementById("sm_scope").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(!b) return;
@@ -1512,7 +2204,7 @@ window.importSchedBulk = ()=>{
 const STEPS = ["対象","指示文","貼付け","画像","出力"];
 const cur = {};
 function setCur(o){ for(const k in cur) delete cur[k]; Object.assign(cur, o); }
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"category_common", storeIds:[], contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = (id)=>{
@@ -1586,17 +2278,15 @@ function viewTarget(){
   </div>
   ${nav(null, 1, "次へ →")}`;
 }
-window.allStores = ()=>{
-  const all = cur.storeIds.length===STORES.length;
-  cur.storeIds = all ? [] : STORES.map(s=>s.gmo);
-  renderCStores();
-};
+window.allStores = ()=>{ storePickerAll("c_stores"); cur.storeIds = storePickerValues("c_stores"); };
 function renderCStores(){
   const box = document.getElementById("c_stores"); if(!box) return;
-  box.innerHTML = STORES.map(s=>`
-    <label style="display:flex; gap:8px; align-items:center; padding:4px 0; font-weight:400;">
-      <input type="checkbox" value="${s.gmo}" ${cur.storeIds.includes(s.gmo)?"checked":""} onchange="toggleStore('${s.gmo}',this.checked)">
-      <span class="small">${esc(s.name)}</span></label>`).join("");
+  box.innerHTML = storePickerHTML("c_stores", cur.storeIds||[]);
+  storePickerCount("c_stores");
+  // 変更をcurへ反映
+  box.querySelectorAll('input').forEach(i=>{
+    i.addEventListener('change', ()=>{ cur.storeIds = storePickerValues("c_stores"); });
+  });
 }
 window.toggleStore = (gmo,ch)=>{ cur.storeIds = ch ? [...cur.storeIds,gmo] : cur.storeIds.filter(x=>x!==gmo); };
 
