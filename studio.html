@@ -117,6 +117,45 @@
   .schedcard.open .sc-chev { transform:rotate(90deg); }
   .sc-detail { display:none; padding-left:50px; margin-top:6px; }
   .schedcard.open .sc-detail { display:block; }
+  /* ===== パレット（ガント参考の2色＋同彩度で3色追加＝計5色） ===== */
+  :root{
+    --p1:#2F6D80;  /* 深ティール：テーマ */
+    --p2:#4E9AAE;  /* ティール：画像 */
+    --p3:#6FB3A8;  /* ミント：出力 */
+    --p4:#E9A07C;  /* コーラル：投稿 */
+    --p5:#D4796B;  /* テラコッタ：取消・誤投稿 */
+    --pbg:#EAF3F4; /* 淡い下地 */
+  }
+  .prog-seg { display:flex; border-radius:99px; overflow:hidden; height:7px; background:#eef1f5; }
+  .prog-seg i { display:block; height:100%; }
+  .ringrow { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .ringcell { text-align:center; background:#fff; border:1px solid var(--line); border-radius:14px; padding:9px 2px 8px; }
+  .ringcell .rl { font-size:10.5px; font-weight:700; margin-top:2px; }
+  .ringcell .rs { font-size:9.5px; color:var(--muted); }
+  .donut-hero { background:linear-gradient(135deg,var(--pbg),#fff); border:1px solid var(--line); border-radius:18px; padding:14px; margin-bottom:10px; display:flex; align-items:center; gap:14px; }
+  .dp-list { margin-top:10px; }
+  .dp-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9; cursor:pointer; }
+  .dp-row:last-child { border-bottom:0; }
+  /* ===== ガントチャート ===== */
+  .gt-wrap { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+  .gt-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .gt-grid { min-width:max-content; }
+  .gt-r { display:flex; align-items:center; border-bottom:1px solid #f1f5f9; }
+  .gt-r:last-child { border-bottom:0; }
+  .gt-lab { position:sticky; left:0; z-index:2; width:112px; min-width:112px; background:#fff; padding:7px 8px; border-right:1px solid var(--line);
+    font-size:11px; font-weight:600; line-height:1.3; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .gt-lab.head { background:#f8fafc; font-size:10px; color:var(--muted); }
+  .gt-cells { display:flex; position:relative; height:34px; align-items:center; }
+  .gt-c { width:30px; min-width:30px; height:100%; border-right:1px solid #f4f7fa; box-sizing:border-box; }
+  .gt-c.we { background:#f6f9fa; }
+  .gt-c.today { background:#fff7ed; box-shadow:inset 2px 0 0 var(--p4); }
+  .gt-head .gt-c { display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:9px; color:var(--muted); line-height:1.15; }
+  .gt-head .gt-c b { font-size:11px; color:var(--ink); }
+  .gt-bar { position:absolute; height:19px; border-radius:99px; display:flex; align-items:center; justify-content:flex-end;
+    padding-right:6px; font-size:9.5px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; box-shadow:0 1px 2px rgba(15,23,42,.12); }
+  .gt-legend { display:flex; gap:9px; flex-wrap:wrap; font-size:10px; color:var(--muted); padding:8px 10px; background:#f8fafc; }
+  .gt-legend span { display:inline-flex; align-items:center; gap:4px; }
+  .gt-dot { width:9px; height:9px; border-radius:3px; display:inline-block; }
   .fbar { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
   .fchip { font-size:10.5px; font-weight:600; border:1px solid var(--line); background:#fff; color:var(--muted);
     border-radius:99px; padding:4px 9px; cursor:pointer; white-space:nowrap; transition:all .12s ease; }
@@ -2482,83 +2521,163 @@ function filterBar(){
     ${active?`<button class="fchip clear" onclick="SCF.theme='';SCF.image='';SCF.post='';renderSchedule();">✕ 解除</button>`:""}
   </div>`;
 }
+// ===== 進行状況：円グラフ（ドーナツ）⇄ ガントチャート =====
+const PAL = ["#2F6D80","#4E9AAE","#6FB3A8","#E9A07C","#D4796B"];
+const STEP_COLOR = { theme:PAL[0], image:PAL[1], export:PAL[2], post:PAL[3], bad:PAL[4] };
+let BOARD_MODE = load("meo_studio_boardmode","donut");   // 'donut' | 'gantt'
+window.setBoardMode = (m)=>{ BOARD_MODE=m; save("meo_studio_boardmode",m); renderSchedule(); };
+
+// 進捗（0〜4）と%（取消・誤投稿は「完了扱いにしない」）
+function schedProgress(s){
+  const st = schedSteps(s);
+  const done = st.filter(x=>x.on).length;
+  return { done, total:st.length, pct: Math.round(done/st.length*100), steps:st };
+}
+function ringSvg(pct, color, size, sw){
+  const r=(size-sw)/2, c=2*Math.PI*r, off=c*(1-Math.max(0,Math.min(100,pct))/100);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#e9eef2" stroke-width="${sw}"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"
+      stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 ${size/2} ${size/2})"/>
+    <text x="${size/2}" y="${size/2}" text-anchor="middle" dominant-baseline="central"
+      font-size="${Math.round(size*0.26)}" font-weight="700" fill="${color}">${Math.round(pct)}%</text>
+  </svg>`;
+}
+function segBar(steps){
+  return `<div class="prog-seg">${steps.map(x=>{
+    const col = x.bad ? STEP_COLOR.bad : (x.on ? STEP_COLOR[x.key] : "transparent");
+    return `<i style="flex:1;background:${col};"></i>`;
+  }).join("")}</div>`;
+}
+
 function renderBoard(){
   const box = document.getElementById("schedBody"); if(!box) return;
-  const now = new Date();
-  if(CAL_Y==null){ CAL_Y=now.getFullYear(); CAL_M=now.getMonth(); }
+  ensureCalMonth();
   const today = todayISO();
-  const listAll = schedForMonth(CAL_Y, CAL_M).slice().sort((a,b)=> (a.date||"9999").localeCompare(b.date||"9999") || (a.time||"").localeCompare(b.time||""));
+  const listAll = schedForMonth(CAL_Y, CAL_M).slice()
+    .sort((a,b)=> (a.date||"9999").localeCompare(b.date||"9999") || (a.time||"").localeCompare(b.time||""));
   const list = listAll.filter(schedMatchFilter);
   const evs = eventsForMonth(CAL_Y, CAL_M);
+  const filtered = (SCF.theme||SCF.image||SCF.post);
+  const modeSeg = `<div class="seg" style="margin-bottom:10px;">
+    <button class="${BOARD_MODE==='donut'?'on':''}" onclick="setBoardMode('donut')">◐ 円グラフ</button>
+    <button class="${BOARD_MODE==='gantt'?'on':''}" onclick="setBoardMode('gantt')">▤ ガント</button>
+  </div>`;
+  box.innerHTML = monthHeader() + modeSeg + filterBar()
+    + (filtered?`<div class="hint" style="margin-bottom:6px;">絞り込み中：${list.length}件 / 全${listAll.length}件</div>`:"")
+    + (BOARD_MODE==='gantt' ? ganttHtml(list, today) : donutHtml(list, today))
+    + eventsHtml(evs, today);
+}
 
-  const doneCnt = list.filter(s=>postStatusOf(s)==='posted').length;
-  const noImg = list.filter(s=>imgState(s)!=='linked').length;
-  const late = list.filter(s=> !postStatusOf(s) && s.date && s.date < today).length;
-  const trouble = list.filter(s=> ['canceled','mistake'].includes(postStatusOf(s))).length;
-
-  // 週の始まり（月曜）を返す
-  const weekKey = (ds)=>{ if(!ds) return "未定"; const d=new Date(ds+"T00:00:00"); const off=(d.getDay()+6)%7; d.setDate(d.getDate()-off);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
-  let lastWeek = null;
+// ---------- ① 円グラフ（SUNTORY+風の達成リング） ----------
+function donutHtml(list, today){
+  if(!list.length) return `<p class="hint">この月に表示できる投稿予定はありません</p>`;
+  const n = list.length;
+  const cnt = k => list.filter(s=> schedSteps(s).find(x=>x.key===k)?.on).length;
+  const c = { theme:cnt("theme"), image:cnt("image"), export:cnt("export"), post:cnt("post") };
+  const overall = Math.round((c.theme+c.image+c.export+c.post)/(n*4)*100);
+  const cell = (key,label,num)=>`<div class="ringcell">
+    ${ringSvg(n?num/n*100:0, STEP_COLOR[key], 58, 7)}
+    <div class="rl" style="color:${STEP_COLOR[key]}">${label}</div>
+    <div class="rs">${num}/${n}件</div></div>`;
   const rows = list.map(s=>{
-    const wk = weekKey(s.date);
-    let sep = "";
-    if(wk!==lastWeek){
-      lastWeek = wk;
-      if(wk==="未定") sep = `<div class="bd-week">日付未定</div>`;
-      else { const wd=new Date(wk+"T00:00:00"), we=new Date(wd); we.setDate(we.getDate()+6);
-        sep = `<div class="bd-week">📆 ${wd.getMonth()+1}/${wd.getDate()}（月）〜 ${we.getMonth()+1}/${we.getDate()}（日）</div>`; }
-    }
-    const steps = schedSteps(s);
-    const overdue = !postStatusOf(s) && s.date && s.date < today;
-    // 「いま何待ちか」＝最初の未完了ステップ
-    const nextIdx = steps.findIndex(x=>!x.on);
+    const p = schedProgress(s);
+    const st = postStatusOf(s);
+    const col = (st==='canceled'||st==='mistake') ? STEP_COLOR.bad
+              : (p.pct===100 ? STEP_COLOR.post : (p.done>=2 ? STEP_COLOR.image : STEP_COLOR.theme));
     const d = s.date ? s.date.split("-") : null;
- return sep + `<div class="bd-row${postStatusOf(s)?' done':''}" onclick="openDayModal('${esc(s.date||today)}')">
-      <div class="bd-date${s.date===today?' today':''}">
-        ${d?`<span class="d">${Number(d[2])}</span>${Number(d[1])}/${dowJp(s.date)}`:'日付未定'}
+    const next = p.steps.find(x=>!x.on);
+    return `<div class="dp-row" onclick="openDayModal('${esc(s.date||today)}')">
+      ${ringSvg(p.pct, col, 42, 5)}
+      <div style="min-width:0; flex:1;">
+        <div style="display:flex; gap:5px; align-items:center;">
+          <span class="sc-when">${d?`${Number(d[1])}/${Number(d[2])}(${dowJp(s.date)})`:"日付未定"}</span>${abBadge(s)}
+        </div>
+        <div class="sc-title">${esc(s.catchTitle||s.title||"（無題）")}</div>
+        <div style="margin-top:4px;">${segBar(p.steps)}</div>
+        <div class="rs" style="margin-top:3px;">${next?`つぎ：${next.label}`:`すべて完了`}</div>
       </div>
-      <div class="bd-main">
-        <div class="bd-title">${abBadge(s)}${esc(s.catchTitle||s.title||"（無題）")}
-          <button class="act" style="padding:2px 6px;font-size:10px;margin-left:4px;" onclick="event.stopPropagation();reExport('${s.id}')">📤再出力</button></div>
-        <div class="bd-steps">${steps.map((x,i)=>{
-          let cls = x.bad ? "bad" : (x.on ? "on" : (x.warn ? "late" : (i===nextIdx ? (overdue?"late":"now") : "")));
-          return `<div class="bd-step ${cls}">${x.on?"✓":(x.warn?"⚠️":"")}${x.label}</div>`;
-        }).join("")}</div>`+
-        (isShifted(s)?`<div class="hint" style="margin-top:3px;">📅 予定 ${fmtJp(s.date)} → 実績 <b>${fmtJp(s.postedDate)}</b></div>`:"")+
-        (s.postNote?`<div class="hint" style="margin-top:2px;">📝 ${esc(s.postNote)}</div>`:"")+`
+      <button class="act" style="padding:3px 7px;font-size:10px;flex-shrink:0;" onclick="event.stopPropagation();reExport('${s.id}')">📤</button>
+    </div>`;
+  }).join("");
+  return `<div class="donut-hero">
+      ${ringSvg(overall, PAL[1], 86, 10)}
+      <div style="min-width:0;">
+        <div style="font-size:13px; font-weight:700;">${CAL_M+1}月の進み具合</div>
+        <div class="rs">${n}件の投稿予定 ・ 投稿済み ${c.post}件</div>
+        <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; font-size:10px; color:var(--muted);">
+          ${["theme","image","export","post"].map((k,i)=>`<span><span class="gt-dot" style="background:${PAL[i]}"></span>${["テーマ","画像","出力","投稿"][i]}</span>`).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="ringrow">
+      ${cell("theme","テーマ",c.theme)}${cell("image","画像",c.image)}${cell("export","出力",c.export)}${cell("post","投稿",c.post)}
+    </div>
+    <div class="dp-list">${rows}</div>`;
+}
+
+// ---------- ② ガントチャート（添付2風・準備期間バー） ----------
+function ganttHtml(list, today){
+  if(!list.length) return `<p class="hint">この月に表示できる投稿予定はありません</p>`;
+  const days = new Date(CAL_Y, CAL_M+1, 0).getDate();
+  const W = 30;
+  const dayIdx = ds=>{ if(!ds) return -1; const [y,m,d]=ds.split("-").map(Number);
+    if(y!==CAL_Y || m!==CAL_M+1) return (new Date(ds) < new Date(CAL_Y,CAL_M,1)) ? 0 : days-1; return d-1; };
+  const headCells = Array.from({length:days},(_,i)=>{
+    const dt=new Date(CAL_Y,CAL_M,i+1), w=dt.getDay();
+    const ds=`${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`;
+    return `<div class="gt-c ${w===0||w===6?'we':''} ${ds===today?'today':''}">
+      <span>${["日","月","火","水","木","金","土"][w]}</span><b>${i+1}</b></div>`;
+  }).join("");
+  const rows = list.map(s=>{
+    const p = schedProgress(s);
+    const st = postStatusOf(s);
+    const endDs = actualDate(s) || s.date;
+    const end = dayIdx(endDs);
+    if(end<0) return "";
+    const start = Math.max(0, end-6);              // 準備期間＝投稿日の7日前から
+    const left = start*W, width = Math.max(W*1.2, (end-start+1)*W);
+    const col = (st==='canceled'||st==='mistake') ? STEP_COLOR.bad
+              : (p.pct===100 ? STEP_COLOR.post : (p.done>=3 ? STEP_COLOR.export : (p.done>=2 ? STEP_COLOR.image : STEP_COLOR.theme)));
+    const cells = Array.from({length:days},(_,i)=>{
+      const w=new Date(CAL_Y,CAL_M,i+1).getDay();
+      const ds=`${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`;
+      return `<div class="gt-c ${w===0||w===6?'we':''} ${ds===today?'today':''}"></div>`;
+    }).join("");
+    return `<div class="gt-r" onclick="openDayModal('${esc(endDs)}')">
+      <div class="gt-lab" title="${esc(s.catchTitle||s.title||'')}">${esc(s.catchTitle||s.title||"（無題）")}</div>
+      <div class="gt-cells">${cells}
+        <div class="gt-bar" style="left:${left}px; width:${width}px; background:${col};">${p.pct}%</div>
       </div>
     </div>`;
   }).join("");
+  return `<div class="gt-wrap"><div class="gt-scroll"><div class="gt-grid">
+      <div class="gt-r gt-head"><div class="gt-lab head">投稿テーマ</div><div class="gt-cells">${headCells}</div></div>
+      ${rows}
+    </div></div>
+    <div class="gt-legend">
+      <span><span class="gt-dot" style="background:${PAL[0]}"></span>着手前</span>
+      <span><span class="gt-dot" style="background:${PAL[1]}"></span>画像まで</span>
+      <span><span class="gt-dot" style="background:${PAL[2]}"></span>出力まで</span>
+      <span><span class="gt-dot" style="background:${PAL[3]}"></span>投稿済み</span>
+      <span><span class="gt-dot" style="background:${PAL[4]}"></span>取消・誤投稿</span>
+      <span>％＝4工程の達成率／バー＝投稿日までの準備期間</span>
+    </div></div>`;
+}
 
-  const evRows = evs.map(e=>{
-    const m = EV_META[e.type]||EV_META.other;
-    const d = e.date? e.date.split("-") : null;
-    return `<div class="bd-row" onclick="openDayModal('${esc(e.date)}')">
-      <div class="bd-date${e.date===today?' today':''}">${d?`<span class="d">${Number(d[2])}</span>${Number(d[1])}/${dowJp(e.date)}`:''}</div>
-      <div class="bd-main"><div class="bd-title">${m.icon} ${esc(e.title||m.label)}<span class="pill" style="margin-left:6px;background:#ede9fe;color:#6d28d9;">${m.label}</span></div></div>
-    </div>`;
-  }).join("");
-
-  box.innerHTML = `
-    <div class="cal-head">
-      <div class="cal-nav"><button class="pill" onclick="calMove(-1)">◀</button><button class="pill" onclick="calToday()">今月</button><button class="pill" onclick="calMove(1)">▶</button></div>
-      <b>${CAL_Y}年${CAL_M+1}月</b>
-      <span class="muted small">←→スワイプで移動</span>
-    </div>
-    <div class="bd-sum">
-      <div><div class="n">${list.length}</div><div class="l">投稿予定</div></div>
-      <div><div class="n" style="color:var(--ok)">${doneCnt}</div><div class="l">投稿完了</div></div>
-      <div><div class="n" style="color:${noImg?'var(--warn)':'var(--muted)'}">${noImg}</div><div class="l">画像未作成</div></div>
-      <div><div class="n" style="color:${late?'var(--ng)':'var(--muted)'}">${late}</div><div class="l">期限すぎ</div></div>
-      ${trouble?`<div><div class="n" style="color:var(--ng)">${trouble}</div><div class="l">取消/誤投稿</div></div>`:""}
-    </div>
-    ${filterBar()}
-    <div class="bd-legend">
-      <span>✓＝できている</span><span style="color:#92400e">■ いま待ち</span><span style="color:#64748b">■ 取消/誤投稿</span>
-    </div>
-    ${rows || `<p class="hint">この月の投稿予定はありません</p>`}
-    ${evRows?`<div class="mt" style="border-top:2px solid var(--line); padding-top:6px;"><div class="small muted" style="margin-bottom:4px;">その他の予定</div>${evRows}</div>`:""}`;
+// ---------- その他の予定（MTG・抽出） ----------
+function eventsHtml(evs, today){
+  if(!evs.length) return "";
+  return `<div class="mt" style="border-top:2px solid var(--line); padding-top:6px;">
+    <div class="small muted" style="margin-bottom:4px;">その他の予定</div>
+    ${evs.map(e=>{ const m=EV_META[e.type]||EV_META.other; const d=e.date?e.date.split("-"):null;
+      return `<div class="dp-row" onclick="openDayModal('${esc(e.date)}')">
+        <div style="width:42px;text-align:center;font-size:18px;flex-shrink:0;">${m.icon}</div>
+        <div style="min-width:0;flex:1;">
+          <span class="sc-when">${d?`${Number(d[1])}/${Number(d[2])}(${dowJp(e.date)})`:""}</span>
+          <div class="sc-title">${esc(e.title||m.label)}</div>
+        </div></div>`; }).join("")}
+  </div>`;
 }
 window.calMove = (n)=>{
   const now = Date.now();
