@@ -94,6 +94,34 @@
   .cal-chip.ghost { background:transparent; color:#b6bec9; border:1px dashed #d7dde5; text-decoration:line-through; }
   .cal-chip.ev-mtg { background:#ede9fe; color:#6d28d9; } .cal-chip.ev-extraction { background:#cffafe; color:#0e7490; } .cal-chip.ev-other { background:#f1f5f9; color:#475569; }
   .cal-more { font-size:8px; color:var(--muted); text-align:center; }
+  /* ===== 予定リスト（コンパクト・アコーディオン） ===== */
+  .stat { display:inline-flex; align-items:center; gap:1px; font-size:9.5px; font-weight:700; border-radius:4px; padding:1px 5px; white-space:nowrap; cursor:default; line-height:1.5; }
+  .act { display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:600; border:1px solid var(--line); background:#fff; color:var(--ink);
+    border-radius:8px; padding:6px 9px; cursor:pointer; box-shadow:0 1px 0 rgba(15,23,42,.05); transition:transform .08s ease, background .15s ease; }
+  .act:active { transform:scale(.96); }
+  .act.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .act.warn { color:var(--warn); border-color:#fde68a; }
+  .act.ng { color:var(--ng); border-color:#fecaca; }
+  .actbar { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .schedcard { padding:8px 0; border-bottom:1px solid #f1f5f9; }
+  .schedcard:last-child { border-bottom:0; }
+  .sc-head { display:flex; gap:8px; align-items:center; min-width:0; cursor:pointer; }
+  .sc-head:active { opacity:.7; }
+  .sc-thumb { width:42px; height:42px; border-radius:7px; object-fit:cover; flex-shrink:0; }
+  .sc-thumb.ph { background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .sc-when { font-size:11px; font-weight:700; color:var(--muted); white-space:nowrap; }
+  .sc-title { font-size:13px; font-weight:600; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .schedcard.open .sc-title { white-space:normal; }
+  .sc-imgname { font-size:10px; color:var(--muted); word-break:break-all; display:flex; align-items:center; gap:4px; margin-top:3px; }
+  .sc-chev { font-size:11px; color:#cbd5e1; flex-shrink:0; transition:transform .15s ease; }
+  .schedcard.open .sc-chev { transform:rotate(90deg); }
+  .sc-detail { display:none; padding-left:50px; margin-top:6px; }
+  .schedcard.open .sc-detail { display:block; }
+  .bd-week { font-size:10px; font-weight:700; color:var(--muted); background:#f1f5f9; border-radius:6px; padding:3px 8px; margin:10px 0 4px; }
+  /* アプリ内ギャラリー */
+  #galFrameWrap { position:fixed; inset:0; z-index:90; background:#fff; display:none; flex-direction:column; }
+  #galFrameBar { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--line); background:#fff; flex-shrink:0; }
+  #galFrame { flex:1; width:100%; border:0; }
   /* ===== 進行状況ボード（ガント風） ===== */
   .bd-legend { display:flex; flex-wrap:wrap; gap:10px; font-size:10px; color:var(--muted); margin-bottom:8px; }
   .bd-row { display:grid; grid-template-columns:64px 1fr; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid #eef1f5; cursor:pointer; }
@@ -1906,8 +1934,8 @@ function monthHeader(){
   ensureCalMonth();
   return `<div class="cal-head" id="monthHeader">
     <div class="cal-nav"><button class="pill" onclick="calMove(-1)">◀</button><button class="pill" onclick="calToday()">今月</button><button class="pill" onclick="calMove(1)">▶</button></div>
-    <b>${CAL_Y}年${CAL_M+1}月</b>
-    <span class="muted small">←→スワイプで移動</span>
+    <b style="white-space:nowrap;">${CAL_Y}年${CAL_M+1}月</b>
+    <span class="muted" style="font-size:10px; white-space:nowrap;">←→スワイプ</span>
   </div>`;
 }
 function renderSchedList(){
@@ -1923,50 +1951,60 @@ function renderSchedList(){
     <button class="pill" style="margin-left:6px;" onclick="SCHED_SHOW_ALL=!SCHED_SHOW_ALL; renderSchedule();">${SCHED_SHOW_ALL?"📅 この月だけ表示":"📜 すべて表示"}</button></div>`;
   box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + (list.length ? list.map(s=>schedCard(s)).join("") : `<p class="hint">この月の予定はありません。「＋投稿予定を追加」から登録できます</p>`);
 }
-// 予定カード（情報 → アクションの順。ボタンの並びは常に固定）
+// 予定カード（1行に凝縮 → タップで詳細＋操作を開く）
+let SC_OPEN = null;
+window.toggleSchedCard = (id)=>{ SC_OPEN = (SC_OPEN===id) ? null : id; renderSchedList(); };
 function schedCard(s){
-  const st = postStatusOf(s);
-  const ist = imgState(s);
-  const im = IMG_META[ist];
-  const statuses = [];
-  if(st){ const m=PS_META[st]; statuses.push(`<span class="stat" style="background:${m.bg};color:${m.color}">${m.icon}${m.label}</span>`); }
-  else if(s.done) statuses.push(`<span class="stat" style="background:#dbeafe;color:#1d4ed8">📤出力済</span>`);
-  else statuses.push(`<span class="stat" style="background:#f1f5f9;color:#64748b">⬜未着手</span>`);
-  statuses.push(ist==='linked'
-    ? `<span class="stat" style="background:#dcfce7;color:#166534">🖼️画像あり</span>`
-    : `<span class="stat" style="background:${ist==='none'?'#f1f5f9':'#fef3c7'};color:${ist==='none'?'#64748b':'#92400e'}">${im.icon}${im.label}</span>`);
-  if(isShifted(s)) statuses.push(`<span class="stat" style="background:#fef3c7;color:#92400e">↷実績${fmtJp(s.postedDate).slice(5)}</span>`);
+  const st = postStatusOf(s), ist = imgState(s), im = IMG_META[ist];
+  const open = SC_OPEN===s.id;
+  const chips = [];
+  if(st){ const m=PS_META[st]; chips.push(`<span class="stat" style="background:${m.bg};color:${m.color}">${m.icon}${m.label}</span>`); }
+  else if(s.done) chips.push(`<span class="stat" style="background:#dbeafe;color:#1d4ed8">📤出力済</span>`);
+  if(ist!=='linked') chips.push(`<span class="stat" style="background:${ist==='none'?'#f1f5f9':'#fef3c7'};color:${ist==='none'?'#64748b':'#92400e'}">${im.icon}${im.label}</span>`);
+  if(isShifted(s)) chips.push(`<span class="stat" style="background:#fef3c7;color:#92400e">↷${fmtJp(s.postedDate).slice(5)}</span>`);
   const thumb = galUrlById(s.imageId);
-  return `<div class="schedcard">
-    <div style="display:flex; gap:9px; min-width:0;">
-      ${thumb?`<img src="${esc(thumb)}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
-             :`<div style="width:52px;height:52px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;">${im.icon}</div>`}
+  const d = s.date ? s.date.split("-") : null;
+  const when = d ? `${Number(d[1])}/${Number(d[2])}(${dowJp(s.date)}) ${s.time||""}` : "日付未定";
+  return `<div class="schedcard${open?' open':''}">
+    <div class="sc-head" onclick="toggleSchedCard('${s.id}')">
+      ${thumb?`<img class="sc-thumb" src="${esc(thumb)}">`:`<div class="sc-thumb ph">${im.icon}</div>`}
       <div style="min-width:0; flex:1;">
-        <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap; margin-bottom:3px;">${abBadge(s)}${statuses.join("")}</div>
-        <b class="small" style="display:block;">${esc(s.catchTitle||s.title||"（無題）")}</b>
-        <div class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</div>
-        ${s.imageTitle?`<div class="sc-imgname">🖼️ ${esc(s.imageTitle)}</div>`:""}
+        <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;">
+          <span class="sc-when">${when}</span>${abBadge(s)}${chips.join("")}
+        </div>
+        <div class="sc-title">${esc(s.catchTitle||s.title||"（無題）")}</div>
       </div>
+      <span class="sc-chev">▶</span>
     </div>
-    <div class="actbar">
-      <button class="act primary" onclick="startFromSched('${s.id}')" title="投稿文を作る・出力する">✍️ 投稿を作る</button>
-      ${ist==='linked'
-        ? `<button class="act warn" onclick="unlinkSchedImageUI('${s.id}')" title="この予定から画像を外す">🖼️ 画像を外す</button>`
-        : `<button class="act" onclick="quickLinkImage('${s.id}')" title="ギャラリーから画像を選んで紐付ける">🖼️ 画像を選ぶ</button>`}
-      <button class="act" onclick="openImgPrompt('${s.id}')" title="ChatGPT用の画像プロンプトを作る">🎨 画像を作る</button>
-      ${s.done?`<button class="act" onclick="reExport('${s.id}')" title="編集して同じ投稿をもう一度出力する">📤 再出力</button>`:""}
-      <button class="act" onclick="openPostStatus('${s.id}')" title="投稿できたか・取消したかを記録する">${st?'✏️ 状態を直す':'✅ 投稿できた'}</button>
-      <button class="act" onclick="openSchedEdit('${s.id}')" title="テーマ・日時・対象店舗を編集">⚙️ 予定を編集</button>
+    <div class="sc-detail">
+      <div class="muted small">${scopeLabel(s)}${s.kw?` ・ 🔑${esc(s.kw)}`:""}</div>
+      ${s.imageTitle?`<div class="sc-imgname">🖼️ <span style="flex:1;min-width:0;">${esc(s.imageTitle)}</span>
+        <button class="act" style="padding:3px 7px; font-size:10px;" onclick="event.stopPropagation();copyStr(${JSON.stringify(s.imageTitle)},event)">📋 コピー</button></div>`:""}
+      ${isShifted(s)?`<div class="muted small" style="margin-top:3px;">📅 予定 ${fmtJp(s.date)} → 実績 <b>${fmtJp(s.postedDate)}</b></div>`:""}
+      ${s.postNote?`<div class="muted small">📝 ${esc(s.postNote)}</div>`:""}
+      <div class="actbar">
+        <button class="act primary" onclick="startFromSched('${s.id}')">✍️ 投稿を作る</button>
+        <button class="act" onclick="reExport('${s.id}')" title="この投稿を編集してもう一度出力する">📤 再出力</button>
+        ${ist==='linked'
+          ? `<button class="act warn" onclick="unlinkSchedImageUI('${s.id}')">🖼️ 画像を外す</button>`
+          : `<button class="act" onclick="quickLinkImage('${s.id}')">🖼️ 画像を選ぶ</button>`}
+        <button class="act" onclick="openImgPrompt('${s.id}')">🎨 画像を作る</button>
+        <button class="act" onclick="openPostStatus('${s.id}')">${st?'✏️ 状態を直す':'✅ 投稿できた'}</button>
+        <button class="act" onclick="openSchedEdit('${s.id}')">⚙️ 予定を編集</button>
+      </div>
     </div>
   </div>`;
 }
 // 予定から再出力（履歴の本文を引いて編集可能なモーダルを開く）
 window.reExport = (schedId)=>{
-  const posts = (window.__posts||[]).filter(p=> p.schedId===schedId);
-  if(posts.length){ redlHistory(posts[0].id); return; }
   const s = schedule.find(x=>x.id===schedId);
-  if(s && confirm("この予定の本文が履歴にありません。作成画面を開いて本文を入れ直しますか？")) startFromSched(schedId);
-  else if(!s) toast("予定が見つかりません");
+  if(!s){ toast("予定が見つかりません"); return; }
+  // ①この予定に紐づく履歴 ②日付＋タイトルが一致する履歴 の順で本文を探す
+  const posts = window.__posts||[];
+  let p = posts.find(x=> x.schedId===schedId)
+       || posts.find(x=> x.date===s.date && (x.catchTitle===s.catchTitle || x.title===s.title) && (s.catchTitle||s.title));
+  if(p){ redlHistory(p.id); return; }
+  if(confirm("この投稿の本文がまだありません。\n作成画面を開いて本文を作りますか？")) startFromSched(schedId);
 };
 // ===== つぎにやること（初心者向けガイド） =====
 window.goCalendar = ()=>{ setSchedView('calendar'); go('home'); };
@@ -2438,7 +2476,8 @@ function renderBoard(){
         ${d?`<span class="d">${Number(d[2])}</span>${Number(d[1])}/${dowJp(s.date)}`:'日付未定'}
       </div>
       <div class="bd-main">
-        <div class="bd-title">${abBadge(s)}${esc(s.catchTitle||s.title||"（無題）")}</div>
+        <div class="bd-title">${abBadge(s)}${esc(s.catchTitle||s.title||"（無題）")}
+          <button class="act" style="padding:2px 6px;font-size:10px;margin-left:4px;" onclick="event.stopPropagation();reExport('${s.id}')">📤再出力</button></div>
         <div class="bd-steps">${steps.map((x,i)=>{
           let cls = x.bad ? "bad" : (x.on ? "on" : (x.warn ? "late" : (i===nextIdx ? (overdue?"late":"now") : "")));
           return `<div class="bd-step ${cls}">${x.on?"✓":(x.warn?"⚠️":"")}${x.label}</div>`;
@@ -2577,7 +2616,9 @@ function renderDayModalBody(){
         <div style="min-width:0; flex:1;">
           <div class="di-title">${abBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${s.posted?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
           <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)}</div>
-          <div class="di-meta" style="color:${IMG_META[imgState(s)].color}">${IMG_META[imgState(s)].icon} 画像：${IMG_META[imgState(s)].label}${s.imageTitle?`（${esc(s.imageTitle)}）`:""}</div>
+          <div class="di-meta" style="color:${IMG_META[imgState(s)].color}">${IMG_META[imgState(s)].icon} 画像：${IMG_META[imgState(s)].label}</div>
+          ${s.imageTitle?`<div class="di-meta" style="display:flex;align-items:center;gap:5px;"><span style="flex:1;min-width:0;word-break:break-all;">🖼️ ${esc(s.imageTitle)}</span>
+            <button class="act" style="padding:3px 7px;font-size:10px;" onclick="copyStr(${JSON.stringify(s.imageTitle)},event)">📋 コピー</button></div>`:""}
           <div class="di-meta">${s.done?'📤 出力済み（GMO投入待ち）':'📤 未出力'}</div>
           ${(()=>{const st=postStatusOf(s); if(!st) return '<div class="di-meta">⬜ 投稿：未対応</div>';
             const m=PS_META[st]; return `<div class="di-meta" style="color:${m.color}">${m.icon} 投稿：${m.label}${s.postedDate?`（${fmtJp(s.postedDate)}）`:""}</div>`;})()}
@@ -2588,6 +2629,7 @@ function renderDayModalBody(){
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
         <button class="pill" onclick="startFromSched('${s.id}')">✍️作成</button>
+        <button class="pill" onclick="reExport('${s.id}')">📤再出力</button>
         <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
         ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:""}
         <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
@@ -3580,6 +3622,8 @@ function viewExport(){
     </div>
   </div>
   <div class="card mt" style="border:1px solid #bbf7d0; background:#f0fdf4;">
+    ${cur.imageTitle?`<div class="di-meta" style="display:flex;align-items:center;gap:5px;margin-bottom:8px;"><span style="flex:1;min-width:0;word-break:break-all;">🖼️ ${esc(cur.imageTitle)}</span>
+      <button class="act" style="padding:3px 7px;font-size:10px;" onclick="copyStr(${JSON.stringify(cur.imageTitle||"")},event)">📋 画像名コピー</button></div>`:""}
     <div class="small" style="font-weight:700;">投稿が完了したら…</div>
     ${cur.schedId?`<p class="hint" style="margin:4px 0 8px;">GMOで投稿予約が完了したら、下のボタンで「投稿完了」にできます（カレンダーに実績が反映されます）</p>
     <button class="btn btn-ghost" style="width:100%;" onclick="openPostStatus('${cur.schedId}')">${postStatusOf(schedule.find(x=>x.id===cur.schedId)||{})?'✏️ 投稿の状態を変更':'✅ 投稿の状態を記録（完了・取消など）'}</button>`
