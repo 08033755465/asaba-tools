@@ -174,6 +174,9 @@
         <button class="btn btn-ghost" style="flex:1; min-width:110px;" onclick="openGenModal('rebuild')">🔁 組み直し</button>
         <button class="btn btn-ghost" style="flex:1; min-width:110px;" onclick="openThemeModal()">📝 テーマ一括</button>
       </div>
+      <div class="row mt">
+        <button class="btn btn-ghost" style="width:100%;" onclick="openImportPost()">📥 出力ファイルから予定を復元</button>
+      </div>
       <div class="mt">
         <p class="hint">1行1件「投稿予定日[タブ or カンマ]タイトル」で貼り付け</p>
         <textarea id="schedBulk" placeholder="2026/07/13, 深呼吸と自律神経&#10;2026/07/16, 夏バテと胃腸の疲れ"></textarea>
@@ -535,6 +538,17 @@
       <button class="btn btn-ghost" onclick="closeEventEdit()">キャンセル</button>
     </div>
     <button id="ev_delete" class="btn btn-ghost mt" style="width:100%; color:var(--ng); display:none;" onclick="deleteEvent()">この予定を削除</button>
+  </div>
+</div>
+
+<!-- 出力済みファイルの逆読み込み -->
+<div id="impModal" style="display:none; position:fixed; inset:0; z-index:78; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:560px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px;">
+    <h2>📥 出力ファイルから予定を復元</h2>
+    <p class="hint" style="margin-top:0;">GMOに出したXLSX/CSVを読み込んで、<b>予定・テーマ・投稿本文・画像</b>を戻します（予定から消してしまった投稿の復元に）</p>
+    <input type="file" id="imp_file" accept=".xlsx,.xls,.csv" style="font-size:12px;" onchange="importExportFile(this)">
+    <div id="imp_status" class="hint" style="margin-top:6px;"></div>
+    <div id="imp_preview" class="mt"></div>
   </div>
 </div>
 
@@ -1956,6 +1970,133 @@ window.renderNextAction = ()=>{
   </div>`;
 };
 // 投稿完了トグル（各所から呼べる共通関数）
+// ===== 出力ファイル（XLSX/CSV）から予定・本文・画像を逆読み込み =====
+let IMP_PARSED = null;
+window.openImportPost = ()=>{
+  IMP_PARSED = null;
+  document.getElementById("imp_file").value = "";
+  document.getElementById("imp_status").innerHTML = "";
+  document.getElementById("imp_preview").innerHTML = "";
+  document.getElementById("impModal").style.display = "flex";
+};
+window.closeImportPost = ()=> document.getElementById("impModal").style.display="none";
+function impReadRows(file){
+  return new Promise((resolve,reject)=>{
+    const fr = new FileReader();
+    fr.onload = ev=>{
+      try{
+        const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        resolve(XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""}));
+      }catch(e){ reject(e); }
+    };
+    fr.onerror = reject;
+    fr.readAsArrayBuffer(file);
+  });
+}
+function impDateFromName(name){
+  const m = String(name||"").match(/(\d{2})-(\d{2})/);
+  if(!m) return todayISO();
+  return `${new Date().getFullYear()}-${m[1]}-${m[2]}`;
+}
+function impNorm(v){ return String(v==null?"":v).trim(); }
+window.importExportFile = async (input)=>{
+  const file = input.files && input.files[0]; if(!file) return;
+  const st = document.getElementById("imp_status");
+  if(typeof XLSX==="undefined"){ st.textContent="XLSXライブラリ読み込み中。数秒後に再度お試しください"; return; }
+  st.style.color="var(--muted)"; st.textContent="読み込み中…";
+  try{
+    const rows = await impReadRows(file);
+    let hi = rows.findIndex(r=> impNorm(r[0])==="店舗ID" && impNorm(r[1])==="店舗名");
+    if(hi<0) hi = 0;
+    const data = rows.slice(hi+1).filter(r=> impNorm(r[COL.STORE_ID]) && impNorm(r[COL.STORE_NAME]));
+    if(!data.length){ st.style.color="var(--ng)"; st.textContent="投稿データが見つかりませんでした（GMOの一括投稿ファイルを選んでください）"; return; }
+    const first = data[0];
+    const immediate = impNorm(first[COL.IMMEDIATE])==="○";
+    const rawDate = impNorm(first[COL.SDATE]);
+    const date = rawDate ? rawDate.replace(/\//g,"-").replace(/^(\d{4})-(\d{1,2})-(\d{1,2})$/,(m,y,mo,d)=>`${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`)
+                         : impDateFromName(file.name);
+    const time = impNorm(first[COL.STIME]) ? impNorm(first[COL.STIME]).replace(/^(\d):/,"0$1:") : "";
+    const title = impNorm(first[COL.TITLE]);
+    const imageTitle = impNorm(first[COL.IMAGE]);
+    const postType = impNorm(first[COL.POST_TYPE]) || "最新情報";
+    const contents = {}; const storeIds = []; const unknown = [];
+    data.forEach(r=>{
+      const gid = impNorm(r[COL.STORE_ID]);
+      const body = impNorm(r[COL.CONTENT]);
+      const st2 = STORES.find(x=>String(x.gmo)===gid);
+      if(st2){ contents[st2.gmo] = body; storeIds.push(st2.gmo); }
+      else unknown.push(`${gid} ${impNorm(r[COL.STORE_NAME])}`);
+    });
+    let scope = "per_store", catContents = {};
+    const cats = [...new Set(STORES.filter(x=>storeIds.includes(x.gmo)).map(x=>x.cat))];
+    const sameInCat = cats.every(c=>{
+      const ids = STORES.filter(x=>x.cat===c && storeIds.includes(x.gmo)).map(x=>x.gmo);
+      if(!ids.length) return true;
+      const v = contents[ids[0]]; catContents[c] = v;
+      return ids.every(id=> contents[id]===v);
+    });
+    if(sameInCat && cats.length && storeIds.length>cats.length) scope = "category_common";
+    let imageId = "";
+    if(imageTitle){
+      const want = safeImgName(imageTitle).toLowerCase();
+      const hit = (window.__gallery||[]).find(g=> safeImgName((g.folderName||g.titleText||"")+".jpg").toLowerCase()===want);
+      if(hit) imageId = hit.id;
+    }
+    const dup = schedule.find(x=> (x.catchTitle===title||x.title===title) && x.date===date);
+    IMP_PARSED = { date, time, timing: immediate?"immediate":"scheduled", title, imageTitle, imageId, postType,
+                   scope, storeIds, contents: scope==="category_common"?catContents:contents, rowCount:data.length, dupId: dup?dup.id:null };
+    st.style.color="var(--ok)"; st.textContent=`✅ ${data.length}行を読み込みました`;
+    document.getElementById("imp_preview").innerHTML = `
+      <div class="card" style="border:1px solid var(--line);">
+        <div class="small" style="font-weight:700;">${esc(title||"（タイトルなし）")}</div>
+        <div class="di-meta">📅 ${immediate?`即時投稿（${fmtJp(date)} として登録）`:`${fmtJp(date)} ${time}`}</div>
+        <div class="di-meta">🏪 ${data.length}店舗 ・ ${scope==="category_common"?"カテゴリ共通":"店舗別"} ・ ${esc(postType)}</div>
+        <div class="di-meta" style="color:${imageTitle?(imageId?"var(--ok)":"var(--warn)"):"var(--muted)"}">
+          ${imageTitle? (imageId?`🖼️ 画像：${esc(imageTitle)}（ギャラリーと紐付けます）`:`⚠️ 画像：${esc(imageTitle)}（ギャラリーに無いため未紐付けで登録）`) : "❌ 画像：なし"}</div>
+        ${unknown.length?`<div class="di-meta" style="color:var(--warn)">⚠️ 未登録の店舗 ${unknown.length}件はスキップ：${esc(unknown.slice(0,3).join(" / "))}${unknown.length>3?" …":""}</div>`:""}
+        ${dup?`<div class="di-meta" style="color:var(--warn)">⚠️ 同じ日付・タイトルの予定が既にあります</div>`:""}
+        <details class="mt"><summary>本文を確認（${Object.keys(IMP_PARSED.contents).length}件）</summary>
+          ${Object.entries(IMP_PARSED.contents).map(([k,v])=>`<div class="mt"><div class="small" style="font-weight:600;">${esc(contentLabel(k))}</div><div class="di-body">${esc(v)}</div></div>`).join("")}
+        </details>
+      </div>
+      <div class="row" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" style="flex:1; min-width:150px;" onclick="confirmImportPost(false)">${dup?"＋ 別の予定として追加":"📥 この内容で予定を復元"}</button>
+        ${dup?`<button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="confirmImportPost(true)">🔁 既存を置き換える</button>`:""}
+      </div>`;
+  }catch(e){
+    console.warn(e);
+    st.style.color="var(--ng)"; st.textContent="読み込みに失敗しました（ファイル形式をご確認ください）";
+  }
+};
+window.confirmImportPost = (replace)=>{
+  const d = IMP_PARSED; if(!d){ toast("データがありません"); return; }
+  const id = (replace && d.dupId) ? d.dupId : uid();
+  const base = (replace && d.dupId) ? (schedule.find(x=>x.id===d.dupId)||{}) : {};
+  const rec = { ...base, id,
+    title: d.title || "（無題）", catchTitle: d.title || "",
+    date: d.date, time: d.time || "", abType: base.abType || "",
+    kw: base.kw||"", context: base.context||"", imageMemo: base.imageMemo||"",
+    imageTitle: d.imageTitle || "", imageId: d.imageId || "", imageUrl: "",
+    postType: d.postType, timing: d.timing,
+    scope: d.scope, storeIds: d.storeIds.slice(),
+    done: true,
+    posted: base.posted||false, postStatus: base.postStatus||"", postedDate: base.postedDate||"", postedAt: base.postedAt||"", postNote: base.postNote||"" };
+  persistSched(rec);
+  if(d.imageId && window.fs) window.fs.linkImage(d.imageId, { linkedScheduleId:id, linkedScheduleTitle: rec.catchTitle||rec.title }).catch(()=>{});
+  if(window.fs){
+    window.fs.addPost({ title:d.title||"", themeTitle:d.title||"", catchTitle:d.title||"",
+      abType: rec.abType||"", postType:d.postType, scope:d.scope,
+      date:d.date, time:d.time||"", timing:d.timing,
+      imageTitle:d.imageTitle||"", imagePrompt:"", storeIds:d.storeIds.slice(), schedId:id, kw:"",
+      overrides:{}, contents:d.contents, createdAt: Date.now(), imported:true }).catch(()=>{});
+  }
+  closeImportPost();
+  CAL_Y = Number(d.date.slice(0,4)); CAL_M = Number(d.date.slice(5,7))-1;
+  renderSchedule(); renderNextAction();
+  toast(replace?"🔁 既存の予定を置き換えました":"📥 予定を復元しました");
+};
+
 // ===== 状態モデル =====
 // done=出力済(GMO投入待ち) / postStatus='' | 'posted'(投稿済) | 'canceled'(GMOから取消) | 'mistake'(誤投稿)
 // postedDate=実際の投稿日（予定日とズレたらこちらが実績日）
