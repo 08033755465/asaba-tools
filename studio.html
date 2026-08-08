@@ -75,17 +75,17 @@
   .cal-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
   .cal-head b { font-size:16px; }
   .cal-nav { display:flex; gap:6px; align-items:center; }
-  .cal-dow { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-bottom:3px; }
-  .cal-dow div { text-align:center; font-size:10px; color:var(--muted); font-weight:700; padding:2px 0; }
-  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
-  .cal-cell { border:1px solid var(--line); border-radius:8px; min-height:62px; padding:3px; cursor:pointer; background:#fff; display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+  .cal-dow { display:grid; grid-template-columns:repeat(7,1fr); border-bottom:1px solid var(--line); }
+  .cal-dow div { text-align:center; font-size:10px; color:var(--muted); font-weight:700; padding:4px 0; letter-spacing:.1em; }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); border-left:1px solid var(--line); background:#fff; }
+  .cal-cell { border-bottom:1px solid #eef1f5; border-right:1px solid #eef1f5; border-radius:0; min-height:88px; padding:2px 1px 3px 1px; cursor:pointer; background:#fff; display:flex; flex-direction:column; gap:1px; overflow:hidden; position:relative; }
   .cal-cell:hover { background:#f8fafc; }
-  .cal-cell.other { background:#f8fafc; opacity:.55; }
-  .cal-cell.today { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue) inset; }
-  .cal-dnum { font-size:11px; font-weight:700; color:var(--muted); line-height:1; }
-  .cal-cell.today .cal-dnum { color:var(--blue); }
+  .cal-cell.other::before { content:''; position:absolute; inset:0; background:rgba(21,23,26,.06); pointer-events:none; }
+  .cal-cell.today { box-shadow:inset 0 0 0 2px rgba(37,99,235,.35); }
+  .cal-dnum { font-size:12px; font-weight:600; color:var(--ink); line-height:1; width:19px; height:19px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .cal-cell.today .cal-dnum { background:var(--blue); color:#fff !important; border-radius:50%; }
   .cal-dnum.sun { color:var(--ng); } .cal-dnum.sat { color:var(--blue); }
-  .cal-chip { font-size:9px; line-height:1.25; border-radius:4px; padding:1px 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:#eef2ff; color:#3730a3; }
+  .cal-chip { font-size:9.5px; line-height:1.45; border-radius:2px; padding:0 1px 0 3px; margin:0; white-space:nowrap; overflow:hidden; text-overflow:clip; background:#eef2ff; color:#3730a3; }
   .cal-chip.a { background:#dbeafe; color:#1d4ed8; } .cal-chip.b { background:#fce7f3; color:#be185d; }
   .cal-chip.posted { background:#d1fae5; color:#065f46; }
   .cal-chip.overdue { background:#fef3c7; color:#92400e; }
@@ -1966,16 +1966,16 @@ function renderCalendar(){
     const bucket = byDay[ds] || {posts:[],events:[]};
     const items = [];
     bucket.posts.forEach(s=>{
-      const label = (s.catchTitle||s.title||"投稿").slice(0,10);
+      const label = s.catchTitle||s.title||"投稿";
       const img = s.imageTitle ? "🖼️" : "⭕";
       items.push(`<div class="cal-chip ${schedChipClass(s)}">${s.posted?"✓":""}${img}${esc(label)}</div>`);
     });
     bucket.events.forEach(e=>{
       const m = EV_META[e.type]||EV_META.other;
-      items.push(`<div class="cal-chip ${m.cls}">${m.icon}${esc((e.title||m.label).slice(0,9))}</div>`);
+      items.push(`<div class="cal-chip ${m.cls}">${m.icon}${esc(e.title||m.label)}</div>`);
     });
-    const shown = items.slice(0,3).join("");
-    const more = items.length>3 ? `<div class="cal-more">他${items.length-3}件</div>` : "";
+    const shown = items.slice(0,4).join("");
+    const more = items.length>4 ? `<div class="cal-more">他${items.length-4}件</div>` : "";
     const dnumCls = dow===0?"sun":(dow===6?"sat":"");
     cells += `<div class="cal-cell${ds===today?" today":""}" onclick="openDayModal('${ds}')">
       <div class="cal-dnum ${dnumCls}">${d}</div>${shown}${more}</div>`;
