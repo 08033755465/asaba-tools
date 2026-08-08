@@ -504,7 +504,7 @@
     <div id="th_instrBox" style="display:none;">
       <label class="mt">指示文（コピーしてAIに貼り付け）</label>
       <textarea id="th_instr" style="min-height:140px; font-size:12px;"></textarea>
-      <button class="btn btn-blue mt" style="width:100%;" onclick="copyText('th_instr')">📋 ② 指示文をコピー</button>
+      <button class="btn btn-blue mt" style="width:100%;" onclick="copyText('th_instr',event)">📋 ② 指示文をコピー</button>
       <label class="mt">AIの返信を貼り付け</label>
       <textarea id="th_paste" style="min-height:120px;" placeholder="====2026-09-04====&#10;タイトル：…&#10;キャッチ：…"></textarea>
       <button class="btn btn-primary mt" style="width:100%;" onclick="themeParse()">⬇️ ③ 流し込む（プレビュー）</button>
@@ -688,7 +688,7 @@
     <textarea id="im_output" style="min-height:140px; font-size:12px;"></textarea>
     <p class="hint">✏️ 手動で書き換えOK。書き換えた内容がそのままコピーされます（上の項目を変えると自動生成に戻ります）</p>
     <div class="btn-row mt">
-      <button class="btn btn-blue" onclick="copyText('im_output')">📋 全文コピー（ChatGPTへ）</button>
+      <button class="btn btn-blue" onclick="copyText('im_output',event)">📋 全文コピー（ChatGPTへ）</button>
     </div>
     <button class="btn btn-ghost mt" onclick="copyImgInputOnly()">入力部分だけコピー（ルール登録済みのGPT用）</button>
     <button class="btn btn-ghost mt" onclick="document.getElementById('imgModal').style.display='none'">閉じる</button>
@@ -3051,7 +3051,7 @@ function viewInstruction(){
     <p class="small muted">下の指示文をコピーして、スマホのClaude（プロジェクト）に貼り付けてください。返ってきた文章を次のステップで貼り付けます。</p>
     <textarea id="c_instruction" style="min-height:220px;">${esc(text)}</textarea>
     <p class="hint">✏️ 手動で書き換えOK。書き換えた内容がそのままコピーされます（画面を移動すると自動生成に戻ります）</p>
-    <button class="btn btn-blue mt" onclick="copyText('c_instruction')">📋 指示文をコピー</button>
+    <button class="btn btn-blue mt" onclick="copyText('c_instruction',event)">📋 指示文をコピー</button>
   </div>
   ${nav(0, 2, "貼り付けへ →")}`;
 }
@@ -3993,11 +3993,53 @@ window.delRule = (id)=>{
 };
 
 // ============ コピー ============
-window.copyText = (id)=>{
-  const el=document.getElementById(id); el.select();
-  navigator.clipboard.writeText(el.value).then(()=>toast("コピーしました")).catch(()=>{ document.execCommand("copy"); toast("コピーしました"); });
+// ===== コピー（スマホ対応） =====
+// el.select() は iOS でキーボード＆選択ハイライトが出てコピー結果が分かりづらいので使わない。
+// 画面外の一時textareaを使い、成功したらボタン自体を「✅コピーしました」に変える。
+function copyRaw(text){
+  const t = String(text==null?"":text);
+  if(navigator.clipboard && window.isSecureContext){
+    return navigator.clipboard.writeText(t).then(()=>true).catch(()=> legacyCopy(t));
+  }
+  return Promise.resolve(legacyCopy(t));
+}
+function legacyCopy(text){
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly","");            // キーボードを出さない
+    ta.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0;";
+    document.body.appendChild(ta);
+    const sel = document.getSelection(), prev = sel.rangeCount ? sel.getRangeAt(0) : null;
+    ta.select(); ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if(prev){ sel.removeAllRanges(); sel.addRange(prev); }
+    return ok;
+  }catch(e){ return false; }
+}
+// ボタンを一時的に「✅コピーしました」にする（押した実感を出す）
+function flashCopied(btn, ok){
+  if(!btn) return;
+  if(btn._t){ clearTimeout(btn._t); } else { btn._label = btn.innerHTML; }
+  btn.innerHTML = ok ? "✅ コピーしました" : "⚠️ コピーできません";
+  btn.style.background = ok ? "var(--ok)" : "var(--ng)";
+  btn.style.color = "#fff";
+  btn._t = setTimeout(()=>{ btn.innerHTML = btn._label; btn.style.background=""; btn.style.color=""; btn._t=null; }, 1800);
+}
+window.copyText = (id, ev)=>{
+  const el = document.getElementById(id); if(!el) return;
+  const btn = (ev && ev.currentTarget) || (window.event && window.event.currentTarget) || null;
+  copyRaw(el.value).then(ok=>{
+    flashCopied(btn, ok);
+    toast(ok ? "📋 コピーしました。Claudeに貼り付けてください" : "コピーできませんでした。長押しで選択してコピーしてください");
+    if(!ok){ el.focus(); el.select(); }   // 失敗時だけ手動コピーできるよう選択
+  });
 };
-window.copyStr = (s)=>{ navigator.clipboard.writeText(s).then(()=>toast("コピーしました")).catch(()=>toast("コピーできませんでした")); };
+window.copyStr = (s, ev)=>{
+  const btn = (ev && ev.currentTarget) || (window.event && window.event.currentTarget) || null;
+  copyRaw(s).then(ok=>{ flashCopied(btn, ok); toast(ok?"📋 コピーしました":"コピーできませんでした"); });
+};
 
 // ============ 投稿履歴（チーム共有・Firestore） ============
 window.addEventListener("posts-ready", ()=>{ const v=document.querySelector('[data-view="history"]'); if(v && !v.hidden) renderHistory(); });
