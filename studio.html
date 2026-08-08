@@ -204,6 +204,19 @@
       <p class="hint">※サムネイルツールのチーム共有リンクは自動で表示されます。ここは自分用の追加分です</p>
     </div>
     <div class="card">
+      <h2>🏪 店舗マスタ（Supabase）</h2>
+      <p class="hint" id="storeSourceHint">読み込み中…</p>
+      <div id="storeList" class="mt"></div>
+      <button class="btn btn-ghost mt" onclick="openStoreEdit()">＋ 店舗を追加</button>
+      <details class="mt"><summary>📥 GMOファイルから取り込む</summary>
+        <label class="mt">① 店舗基本情報xlsx（新店舗の登録・既存店舗の更新）</label>
+        <input type="file" accept=".xlsx" onchange="importStoreInfoXlsx(this)">
+        <label class="mt">② 一括投稿テンプレxlsx（GMO店舗IDの自動割当）</label>
+        <input type="file" accept=".xlsx" onchange="importGmoIdsXlsx(this)">
+        <div id="storeImportResult" class="hint mt"></div>
+      </details>
+    </div>
+    <div class="card">
       <h2>🔄 投稿パターン（チーム共有）</h2>
       <p class="hint">「何を出すか」のシリーズ定義。切り口・色・使うテンプレを設定し、スケジュール一括生成で使います</p>
       <div id="patternList" class="mt"></div>
@@ -416,6 +429,50 @@
     <div id="gen_preview" class="mt"></div>
     <button id="gen_commit" class="btn btn-primary mt" style="width:100%; display:none;" onclick="genCommit()">✅ この内容で登録する</button>
     <button class="btn btn-ghost mt" style="width:100%;" onclick="closeGenModal()">キャンセル</button>
+  </div>
+</div>
+
+<!-- 店舗編集 -->
+<div id="storeModal" style="display:none; position:fixed; inset:0; z-index:75; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 28px); max-width:600px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px;">
+    <h2 id="storeModalTitle">🏪 店舗を追加</h2>
+    <div class="row">
+      <div><label>店舗名 *</label><input id="st_name" placeholder="マシンピラティスPeace 東川口店"></div>
+      <div><label>業態</label><select id="st_gyotai"><option>整骨院</option><option>整体院</option><option>ピラティス</option><option>その他</option></select></div>
+    </div>
+    <div class="row mt">
+      <div><label>GMO店舗ID（一括投稿に必須）</label><input id="st_gmo" placeholder="117528" inputmode="numeric"></div>
+      <div><label>エリア（地名）</label><input id="st_area" placeholder="東川口"></div>
+    </div>
+    <label class="mt">強み・USP</label>
+    <input id="st_usp" placeholder="例：初心者向け×パーソナル×姿勢改善">
+    <label class="mt">アクセス・立地</label>
+    <input id="st_access" placeholder="例：東川口駅 徒歩3分・駐車場あり">
+    <label class="mt">検索上位に上げたいワード（・区切り）</label>
+    <input id="st_searchkw" placeholder="例：東川口 ピラティス・東川口 姿勢改善">
+    <label class="mt">周辺地域名（・区切り）</label>
+    <input id="st_nearby" placeholder="例：戸塚安行・浦和美園・草加">
+    <div class="row mt">
+      <div><label>営業時間</label><input id="st_hours" placeholder="月〜土 9:20-18:30"></div>
+      <div><label>定休日</label><input id="st_closed" placeholder="日曜"></div>
+    </div>
+    <label class="mt">予約URL（一括投稿のボタンURL）</label>
+    <input id="st_reserve" placeholder="https://...">
+    <div class="row mt">
+      <div><label>電話</label><input id="st_phone" placeholder="048-xxx-xxxx"></div>
+      <div><label>LP・サイトURL</label><input id="st_lp" placeholder="https://..."></div>
+    </div>
+    <details class="mt"><summary>その他（GBP情報）</summary>
+      <label class="mt">GBP店舗コード</label><input id="st_gbpcode" placeholder="1675...">
+      <label class="mt">ビジネス情報（GBP説明文）</label><textarea id="st_bizinfo" style="min-height:70px;"></textarea>
+    </details>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
+      <input type="checkbox" id="st_active" checked style="width:auto;"> 有効（投稿対象に含める）
+    </label>
+    <div class="row mt" style="display:flex; gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveStoreEdit()">保存</button>
+      <button class="btn btn-ghost" onclick="closeStoreEdit()">キャンセル</button>
+    </div>
   </div>
 </div>
 
@@ -760,7 +817,7 @@ try {
 
 <script>
 // ============ 16店舗 ============
-const STORES = [
+let STORES = [
   {gmo:"117528",name:"あさば整骨院_江戸川台店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"無料託児×62種検査法",area:"江戸川台",url:"https://line-scenario-builder.vercel.app/t/m7v98hof"},
   {gmo:"117413",name:"あさば整骨院_南流山店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"駅近×駐車場×通いやすさ",area:"南流山",url:"https://line-scenario-builder.vercel.app/t/EWlINgOJ"},
   {gmo:"117411",name:"あさば整骨院_柏の葉店",cat:"seitai_seikotsu",gyotai:"整骨院",usp:"Peace併設×KOIL立地",area:"柏の葉",url:"https://line-scenario-builder.vercel.app/t/SI1mfLlP"},
@@ -779,6 +836,226 @@ const STORES = [
   {gmo:"117598",name:"マシンピラティス Peace 新松戸店",cat:"pilates",gyotai:"ピラティス",usp:"整骨院併設スタジオ",area:"新松戸",url:"https://line-scenario-builder.vercel.app/t/GmX3WUGw"},
 ];
 const CAT_LABEL = { seitai_seikotsu:"整体整骨グループ", pilates:"マシンピラティス（Peace）" };
+// ===== 店舗マスタ（Supabase・フォールバック＝上の直書き16店舗） =====
+const SUPA_URL = "https://frrujvtokwtbypljcaia.supabase.co";
+const SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZycnVqdnRva3d0YnlwbGpjYWlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5OTg3MjEsImV4cCI6MjEwMDU3NDcyMX0.kECJBAz4O32WJV2SJRt7WV7HPstDr_l6ZYUG3dV8Cco";
+const SUPA_CLIENT_ID = "11111111-1111-1111-1111-111111111111";  // あさばグループ
+const SUPA_HEADERS = { "apikey": SUPA_ANON, "Authorization": "Bearer "+SUPA_ANON, "Content-Type": "application/json" };
+let SUPA_STORES = [];      // Supabaseの生の店舗行（管理UI用・無効含む）
+let STORES_SOURCE = "local"; // local | supabase
+function gyotaiToCat(g){ return g==="ピラティス" ? "pilates" : "seitai_seikotsu"; }
+function mapSupaStore(row){
+  const ext = row.external||{};
+  return { gmo: ext.gmo_store_id||"", name: row.name||"", cat: gyotaiToCat(row.gyotai||row.category||""),
+    gyotai: row.gyotai||row.category||"", usp: row.usp||"", area: row.area||"", url: row.button_url||row.reserve_url||"",
+    _row: row };
+}
+async function loadStores(){
+  try{
+    const res = await fetch(`${SUPA_URL}/rest/v1/stores?client_id=eq.${SUPA_CLIENT_ID}&order=display_order`, { headers: SUPA_HEADERS });
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const rows = await res.json();
+    if(!Array.isArray(rows) || !rows.length) return;  // 空なら直書きフォールバック維持
+    SUPA_STORES = rows;
+    const active = rows.filter(r=> r.is_active!==false).map(mapSupaStore).filter(s=> s.gmo && s.name);
+    if(active.length){ STORES = active; STORES_SOURCE = "supabase"; }
+    window.dispatchEvent(new Event("stores-ready"));
+  }catch(e){ console.warn("stores load (フォールバック=直書き16店舗)", e); }
+}
+loadStores();
+window.addEventListener("stores-ready", ()=>{
+  if(typeof renderStoreList==="function") renderStoreList();
+  if(typeof renderSchedule==="function") renderSchedule();
+  if(typeof renderHomeSchedule==="function") renderHomeSchedule();
+  // 作成中の全店選択を新しい店舗リストに同期（既定のper_store全店のときだけ）
+  if(typeof cur!=="undefined" && cur && cur.scope==="per_store" && !cur._parsed && (!cur.storeIds || cur.storeIds.length===0 || cur.storeIds.length>=STORES.length-1)){
+    cur.storeIds = STORES.map(x=>x.gmo);
+  }
+});
+// ===== 店舗管理UI =====
+let editingStoreId = null;  // SupabaseのUUID
+window.renderStoreList = ()=>{
+  const box = document.getElementById("storeList"); if(!box) return;
+  const hint = document.getElementById("storeSourceHint");
+  if(hint) hint.textContent = STORES_SOURCE==="supabase"
+    ? `Supabaseから${SUPA_STORES.length}店舗を読込中（有効${SUPA_STORES.filter(r=>r.is_active!==false).length}）`
+    : "⚠️ Supabase未接続（内蔵の16店舗で動作中）。SQL未実行の場合は0002マイグレーションを実行してください";
+  const rows = STORES_SOURCE==="supabase" ? SUPA_STORES : STORES.map(s=>({ id:null, name:s.name, gyotai:s.gyotai, usp:s.usp, area:s.area, is_active:true, external:{gmo_store_id:s.gmo}, button_url:s.url }));
+  box.innerHTML = rows.map((r,i)=>{
+    const gmo = (r.external||{}).gmo_store_id||"";
+    return `<div class="listitem"><div class="small" style="min-width:0;">
+      <b>${esc(r.name)}</b> <span class="pill">${esc(r.gyotai||"")}</span>
+      ${r.is_active===false?'<span class="pill" style="color:var(--muted)">無効</span>':''}
+      ${gmo?'':'<span class="pill" style="background:#fef3c7;color:#92400e;">⚠️GMO ID未設定＝一括投稿の対象外</span>'}<br>
+      <span class="muted" style="font-size:11px;">${gmo?("ID:"+esc(gmo)+"｜"):""}${esc((r.usp||"").slice(0,26))}</span></div>
+      <div style="display:flex; gap:6px;">
+        ${STORES_SOURCE==="supabase"?`<button class="pill" onclick="openStoreEdit('${esc(r.id)}')">編集</button>`:`<span class="pill muted">SQL実行後に編集可</span>`}
+      </div></div>`;
+  }).join("") || `<p class="hint">店舗がありません</p>`;
+};
+window.openStoreEdit = (id)=>{
+  if(STORES_SOURCE!=="supabase" && !id){ toast("先にSupabaseの0002マイグレーションSQLを実行してください（設定→店舗マスタの注意書き）"); }
+  editingStoreId = id || null;
+  const r = id ? SUPA_STORES.find(x=>x.id===id) : null;
+  const ext = r?.external||{};
+  document.getElementById("storeModalTitle").textContent = r ? "🏪 店舗を編集" : "🏪 店舗を追加";
+  document.getElementById("st_name").value = r?.name||"";
+  document.getElementById("st_gyotai").value = r?.gyotai||"ピラティス";
+  document.getElementById("st_gmo").value = ext.gmo_store_id||"";
+  document.getElementById("st_area").value = r?.area||"";
+  document.getElementById("st_usp").value = r?.usp||"";
+  document.getElementById("st_access").value = r?.access||"";
+  document.getElementById("st_searchkw").value = (r?.search_keywords||[]).join("・");
+  document.getElementById("st_nearby").value = (r?.nearby_areas||[]).join("・");
+  document.getElementById("st_hours").value = r?.hours||"";
+  document.getElementById("st_closed").value = r?.closed_days||"";
+  document.getElementById("st_reserve").value = r?.button_url||r?.reserve_url||"";
+  document.getElementById("st_phone").value = r?.phone||"";
+  document.getElementById("st_lp").value = r?.lp_url||"";
+  document.getElementById("st_gbpcode").value = ext.gbp_store_code||"";
+  document.getElementById("st_bizinfo").value = r?.business_info||"";
+  document.getElementById("st_active").checked = r? r.is_active!==false : true;
+  document.getElementById("storeModal").style.display="flex";
+};
+window.closeStoreEdit = ()=> document.getElementById("storeModal").style.display="none";
+function splitWords(v){ return v.split(/[・,、\s]+/).map(x=>x.trim()).filter(Boolean); }
+window.saveStoreEdit = async ()=>{
+  const name = document.getElementById("st_name").value.trim();
+  if(!name){ toast("店舗名を入力してください"); return; }
+  const prev = editingStoreId ? SUPA_STORES.find(x=>x.id===editingStoreId) : null;
+  const row = {
+    id: editingStoreId||undefined,
+    name, gyotai: document.getElementById("st_gyotai").value,
+    category: document.getElementById("st_gyotai").value,
+    area: document.getElementById("st_area").value.trim(),
+    usp: document.getElementById("st_usp").value.trim(),
+    access: document.getElementById("st_access").value.trim(),
+    search_keywords: splitWords(document.getElementById("st_searchkw").value),
+    nearby_areas: splitWords(document.getElementById("st_nearby").value),
+    hours: document.getElementById("st_hours").value.trim(),
+    closed_days: document.getElementById("st_closed").value.trim(),
+    button_url: document.getElementById("st_reserve").value.trim(),
+    reserve_url: document.getElementById("st_reserve").value.trim(),
+    phone: document.getElementById("st_phone").value.trim(),
+    lp_url: document.getElementById("st_lp").value.trim(),
+    business_info: document.getElementById("st_bizinfo").value.trim(),
+    is_active: document.getElementById("st_active").checked,
+    external: { ...(prev?.external||{}), gmo_store_id: document.getElementById("st_gmo").value.trim(), gbp_store_code: document.getElementById("st_gbpcode").value.trim() },
+    display_order: prev?.display_order ?? (SUPA_STORES.length+1),
+  };
+  try{
+    await supaUpsertStore(row);
+    closeStoreEdit(); toast("💾 保存しました");
+    await loadStores(); renderStoreList();
+  }catch(e){ console.warn(e); toast("保存に失敗しました（SQL未実行の可能性）"); }
+};
+
+// ===== 取込①: GMO店舗基本情報xlsx =====
+window.importStoreInfoXlsx = (input)=>{
+  const file = input.files && input.files[0]; if(!file) return;
+  const out = document.getElementById("storeImportResult");
+  const fr = new FileReader();
+  fr.onload = async (ev)=>{
+    try{
+      const wb = XLSX.read(ev.target.result, {type:"array"});
+      const ws = wb.Sheets["登録内容"] || wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+      const val = x => (x==null?"":String(x).trim()).replace(/^-$/,"");
+      // key-value抽出（A列=項目名, C列=Google列の値）
+      const kv = {}; let hoursLines=[]; let inHours=false;
+      aoa.forEach(row=>{
+        const a=val(row[0]), b=val(row[1]), c=val(row[2]);
+        if(a==="営業時間"){ inHours=true; if(b&&c) hoursLines.push(b+" "+c); else if(b) hoursLines.push(b); return; }
+        if(a==="入店可能時間"||a==="祝日"){ inHours=false; }
+        if(inHours && a && (b||c)){ hoursLines.push(a+" "+(b||c)); return; }
+        if(a && (b||c)) kv[a] = c || b;
+      });
+      const mapped = {
+        name: kv["店舗名"]||"",
+        gbp_store_code: kv["店舗コード"]||"",
+        phone: kv["電話番号"]||"",
+        reserve_url: kv["予約リンク"]||"",
+        lp_url: kv["WEBサイト URL"]||kv["WEBサイトURL"]||"",
+        business_info: (kv["ビジネス情報"]||"").slice(0,1000),
+        category: kv["メインカテゴリー"]||"",
+        address: [kv["住所"],kv["住所２"]].filter(Boolean).join(" "),
+        hours: hoursLines.filter(l=>!/定休日/.test(l)).join("、").slice(0,200),
+        closed_days: hoursLines.filter(l=>/定休日/.test(l)).map(l=>l.split(" ")[0]).join("・"),
+        instagram: kv["Instagram"]||"",
+      };
+      if(!mapped.name){ out.textContent="店舗名が読み取れませんでした（『登録内容』シートの形式か確認してください）"; return; }
+      // 既存店舗と名前一致するか
+      const norm = t=>String(t).replace(/[\s　_]/g,"");
+      const exist = SUPA_STORES.find(r=> norm(r.name)===norm(mapped.name));
+      const gyotai = /ピラティス/.test(mapped.category+mapped.name) ? "ピラティス" : (/整体/.test(mapped.name)?"整体院":"整骨院");
+      const summary = `店舗名:${mapped.name}\n電話:${mapped.phone}\n予約:${(mapped.reserve_url||"").slice(0,40)}…\n営業:${mapped.hours.slice(0,50)}\n定休:${mapped.closed_days}`;
+      if(!confirm(`ファイルから読み取りました：\n\n${summary}\n\n${exist?`既存店舗「${exist.name}」に上書き反映しますか？`:"新規店舗として追加しますか？"}`)) { out.textContent="キャンセルしました"; input.value=""; return; }
+      const row = {
+        id: exist?.id, name: mapped.name, gyotai, category: gyotai,
+        phone: mapped.phone, reserve_url: mapped.reserve_url, button_url: exist?.button_url || mapped.reserve_url,
+        lp_url: mapped.lp_url, business_info: mapped.business_info,
+        hours: mapped.hours, closed_days: mapped.closed_days,
+        address: mapped.address,
+        external: { ...(exist?.external||{}), gbp_store_code: mapped.gbp_store_code },
+        is_active: exist? exist.is_active!==false : true,
+        display_order: exist?.display_order ?? (SUPA_STORES.length+1),
+      };
+      await supaUpsertStore(row);
+      out.style.color="var(--ok)"; out.textContent=`✅ ${mapped.name} を${exist?"更新":"追加"}しました${row.external.gmo_store_id?"":"（⚠️GMO店舗IDは未設定。②の取込か編集で設定してください）"}`;
+      await loadStores(); renderStoreList();
+    }catch(e){ console.warn(e); out.style.color="var(--ng)"; out.textContent="取込に失敗しました："+e.message; }
+    input.value="";
+  };
+  fr.readAsArrayBuffer(file);
+};
+
+// ===== 取込②: 一括投稿テンプレxlsxからGMO店舗ID割当 =====
+window.importGmoIdsXlsx = (input)=>{
+  const file = input.files && input.files[0]; if(!file) return;
+  const out = document.getElementById("storeImportResult");
+  const fr = new FileReader();
+  fr.onload = async (ev)=>{
+    try{
+      const wb = XLSX.read(ev.target.result, {type:"array"});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+      const head = aoa[0]||[];
+      const idCol = head.findIndex(h=>/店舗ID/.test(String(h)));
+      const nameCol = head.findIndex(h=>/店舗名/.test(String(h)));
+      if(idCol<0||nameCol<0){ out.textContent="店舗ID/店舗名の列が見つかりません"; return; }
+      const pairs = aoa.slice(1).map(r=>({ id:String(r[idCol]||"").replace(/\.0$/,"").trim(), name:String(r[nameCol]||"").trim() })).filter(x=>x.id&&x.name);
+      const uniq = {}; pairs.forEach(x=>uniq[x.name]=x.id);
+      const norm = t=>String(t).replace(/[\s　_]/g,"");
+      const updates = [];
+      SUPA_STORES.forEach(r=>{
+        const cur_id = (r.external||{}).gmo_store_id||"";
+        const hit = Object.entries(uniq).find(([nm])=> norm(nm)===norm(r.name));
+        if(hit && hit[1]!==cur_id) updates.push({ row:r, newId:hit[1], name:r.name });
+      });
+      if(!updates.length){ out.textContent="割当できる新しいIDはありませんでした（すべて設定済み or 名前不一致）"; input.value=""; return; }
+      if(!confirm(`GMO店舗IDを割り当てます：\n\n${updates.map(u=>`${u.name} → ${u.newId}`).join("\n")}\n\nよろしいですか？`)){ out.textContent="キャンセルしました"; input.value=""; return; }
+      for(const u of updates){
+        await supaUpsertStore({ id:u.row.id, external:{ ...(u.row.external||{}), gmo_store_id:u.newId } });
+      }
+      out.style.color="var(--ok)"; out.textContent=`✅ ${updates.length}件にGMO店舗IDを割り当てました`;
+      await loadStores(); renderStoreList();
+    }catch(e){ console.warn(e); out.style.color="var(--ng)"; out.textContent="取込に失敗しました："+e.message; }
+    input.value="";
+  };
+  fr.readAsArrayBuffer(file);
+};
+
+async function supaUpsertStore(row){
+  // idがあればPATCH、無ければPOST
+  if(row.id){
+    const res = await fetch(`${SUPA_URL}/rest/v1/stores?id=eq.${row.id}`, { method:"PATCH", headers:{...SUPA_HEADERS, "Prefer":"return=representation"}, body: JSON.stringify(row) });
+    if(!res.ok) throw new Error("PATCH "+res.status);
+    return (await res.json())[0];
+  }
+  const res = await fetch(`${SUPA_URL}/rest/v1/stores`, { method:"POST", headers:{...SUPA_HEADERS, "Prefer":"return=representation"}, body: JSON.stringify({ ...row, client_id: SUPA_CLIENT_ID }) });
+  if(!res.ok) throw new Error("POST "+res.status);
+  return (await res.json())[0];
+}
 const storeByName = (name) => STORES.find(s => s.name === name) || STORES.find(s => name && (name.includes(s.name) || s.name.includes(name)));
 
 // ============ NGワード ============
@@ -1438,7 +1715,7 @@ function go(view){
   if(view==="home"){ renderLinks(); renderHomeSchedule(); renderNextAction(); }
   if(view==="schedule") renderSchedule();
   if(view==="create") renderCreate();
-  if(view==="settings"){ renderMyLinks(); renderRules(); renderTplList(); renderPatternList(); renderSlotsetList(); }
+  if(view==="settings"){ renderMyLinks(); renderRules(); renderTplList(); renderPatternList(); renderSlotsetList(); renderStoreList(); }
   if(view==="history") renderHistory();
 }
 window.go = go;
@@ -1839,6 +2116,7 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.getEle
 
 // ===== 全ポップ共通：背景タップ／Escで閉じる（下部シートを廃止し中央ポップに統一） =====
 const POP_MODALS = {
+  storeModal: ()=>closeStoreEdit(),
   themeModal: ()=>closeThemeModal(),
   patternModal: ()=>closePatternEdit(),
   slotsetModal: ()=>closeSlotsetEdit(),
@@ -2291,6 +2569,31 @@ function renderCStores(){
 window.toggleStore = (gmo,ch)=>{ cur.storeIds = ch ? [...cur.storeIds,gmo] : cur.storeIds.filter(x=>x!==gmo); };
 
 // --- Step1: 指示文 ---
+// 店舗の要点1行（指示文の各店舗行に使用）
+function storeHint(s){
+  const parts = [s.gyotai, s.usp, s.area].filter(Boolean);
+  const row = s._row || {};
+  if(row.access) parts.push(row.access);
+  if((row.search_keywords||[]).length) parts.push("検索W:"+row.search_keywords.join("・"));
+  if((row.nearby_areas||[]).length) parts.push("周辺:"+row.nearby_areas.join("・"));
+  return parts.join("／");
+}
+// 対象店舗のプロフィール一覧ブロック（{{店舗プロフィール}}）
+function storeProfileBlock(tgts){
+  const list = cur.scope==="category_common" ? STORES : STORES.filter(x=> cur.storeIds.includes(x.gmo));
+  const lines = list.map(s=>{
+    const row = s._row || {};
+    const bits = [];
+    if(s.usp) bits.push("強み:"+s.usp);
+    if(row.access||s.area) bits.push("立地:"+(row.access||s.area));
+    if((row.search_keywords||[]).length) bits.push("検索上位ワード:"+row.search_keywords.join("・"));
+    if((row.nearby_areas||[]).length) bits.push("周辺地域:"+row.nearby_areas.join("・"));
+    if(row.hours) bits.push("営業:"+row.hours+(row.closed_days?("（定休:"+row.closed_days+"）"):""));
+    return bits.length ? `・${s.name}（${s.gyotai}）｜${bits.join("｜")}` : null;
+  }).filter(Boolean);
+  if(!lines.length) return "";
+  return `## 店舗情報（本文に自然に反映・地名や検索ワードは不自然にならない範囲で）\n${lines.join("\n")}`;
+}
 // 指示文の変数（テンプレートの {{...}} に差し込む）
 function instrVars(){
   const tgts = targets();
@@ -2302,9 +2605,10 @@ function instrVars(){
     fmt += `====整体整骨====\n（整体整骨グループ共通の本文）\n====Peace====\n（Peaceグループ共通の本文）`;
   } else {
     targetDesc = `店舗別（下記${tgts.length}店舗をそれぞれ1本ずつ）`;
-    fmt += tgts.map(t=>{ const s=STORES.find(x=>x.gmo===t.key); return `====店舗:${s.name}====\n（${s.gyotai}／${s.usp}／${s.area}を反映した本文）`; }).join("\n");
+    fmt += tgts.map(t=>{ const s=STORES.find(x=>x.gmo===t.key); return `====店舗:${s.name}====\n（${storeHint(s)}を反映した本文）`; }).join("\n");
   }
   return {
+    "店舗プロフィール": storeProfileBlock(tgts),
     "テーマ": cur.themeTitle || cur.title || "（テーマ未入力）",
     "キャッチ": cur.catchTitle || "",
     "キーワード": cur.kw || "",
@@ -2317,7 +2621,7 @@ function instrVars(){
     "定例指示": rulesOf('post').map(r=>'・'+r.body).join('\n'),
   };
 }
-const TPL_KEYS = ["テーマ","キャッチ","キーワード","文脈","対象","投稿タイプ","投稿予定","ルール","フォーマット","定例指示"];
+const TPL_KEYS = ["テーマ","キャッチ","キーワード","文脈","対象","投稿タイプ","投稿予定","ルール","フォーマット","定例指示","店舗プロフィール"];
 const DEFAULT_TPL_BODY = `# あさばグループ MEO投稿 作成依頼
 
 ## テーマ / 共通タイトルの軸
@@ -2331,6 +2635,30 @@ const DEFAULT_TPL_BODY = `# あさばグループ MEO投稿 作成依頼
 ## 作成対象
 {{対象}}
 投稿タイプ：{{投稿タイプ}} ／ 投稿予定：{{投稿予定}}
+
+## 厳守ルール
+{{ルール}}
+
+## 出力フォーマット（この形を厳守。前後に説明文を書かない）
+{{フォーマット}}
+
+## 定例指示（毎回適用）
+{{定例指示}}`;
+const DEFAULT_TPL_BODY_FULL = `# あさばグループ MEO投稿 作成依頼
+
+## テーマ / 共通タイトルの軸
+{{テーマ}}
+盛り込みたいキーワード：{{キーワード}}
+共通タイトルはこの案を使用（より良くできるなら微調整OK・文字数は同程度で）：「{{キャッチ}}」
+
+## 今回の文脈・特別指示（テーマより優先で全体に反映）
+{{文脈}}
+
+## 作成対象
+{{対象}}
+投稿タイプ：{{投稿タイプ}} ／ 投稿予定：{{投稿予定}}
+
+{{店舗プロフィール}}
 
 ## 厳守ルール
 {{ルール}}
@@ -2355,39 +2683,8 @@ function buildInstruction(){
   return buildInstructionDefault();
 }
 function buildInstructionDefault(){
-  const tgts = targets();
-  const dateStr = cur.timing==="immediate" ? "即時投稿" : (cur.date?fmtJp(cur.date):"（日付未定）");
-  let fmt = `====タイトル====\n（15字前後の共通タイトル）\n====画像====\n（画像生成プロンプト。形式：「場面・構図15〜25字」「タイトル」＋上の共通タイトル＋「文字はタイトルのみにしてください」）\n`;
-  let targetDesc;
-  if(cur.scope==="category_common"){
-    targetDesc = `カテゴリ共通（整体整骨グループ 共通1本 ＋ マシンピラティスPeace 共通1本）`;
-    fmt += `====整体整骨====\n（整体整骨グループ共通の本文）\n====Peace====\n（Peaceグループ共通の本文）`;
-  } else {
-    targetDesc = `店舗別（下記${tgts.length}店舗をそれぞれ1本ずつ）`;
-    fmt += tgts.map(t=>{ const s=STORES.find(x=>x.gmo===t.key); return `====店舗:${s.name}====\n（${s.gyotai}／${s.usp}／${s.area}を反映した本文）`; }).join("\n");
-  }
-  return `# あさばグループ MEO投稿 作成依頼
-
-## テーマ / 共通タイトルの軸
-${cur.themeTitle || cur.title || "（テーマ未入力）"}${cur.kw ? `
-盛り込みたいキーワード：${cur.kw}` : ""}${cur.catchTitle ? `
-共通タイトルはこの案を使用（より良くできるなら微調整OK・文字数は同程度で）：「${cur.catchTitle}」` : ""}
-
-${cur.context ? `## 今回の文脈・特別指示（テーマより優先で全体に反映）
-${cur.context}
-
-` : ""}## 作成対象
-${targetDesc}
-投稿タイプ：${cur.postType} ／ 投稿予定：${dateStr}
-
-## 厳守ルール
-${RULES}
-
-## 出力フォーマット（この形を厳守。前後に説明文を書かない）
-${fmt}${rulesOf('post').length ? `
-
-## 定例指示（毎回適用）
-${rulesOf('post').map(r=>'・'+r.body).join('\n')}` : ""}`;
+  // 既定レイアウトも同じテンプレ機構を通す（instrVarsと二重メンテしない）
+  return applyTpl(DEFAULT_TPL_BODY_FULL, instrVars());
 }
 function viewInstruction(){
   const text = buildInstruction();
