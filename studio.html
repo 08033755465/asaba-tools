@@ -6,6 +6,8 @@
 <title>MEO投稿 統合ツール</title>
 <link rel="icon" type="image/png" href="/app-icon.png">
 <link rel="apple-touch-icon" href="/app-icon.png">
+<link rel="manifest" href="/studio-manifest.json">
+<meta name="theme-color" content="#2F6D80">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -47,7 +49,7 @@
   .nav { position:fixed; left:0; right:0; bottom:0; z-index:40; background:rgba(255,255,255,.97); backdrop-filter:blur(8px); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
   .nav-in { max-width:720px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); }
   .nav button { border:0; background:transparent; padding:8px 0 7px; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; font-weight:700; color:var(--muted); cursor:pointer; min-height:48px; }
-  .nav button .ic { border-radius:99px; padding:2px 14px; transition:background .15s ease; }
+  .nav button .ic { border-radius:99px; padding:3px 14px 1px; transition:background .15s ease; display:inline-flex; }
   .nav button.on { color:var(--brand); }
   .nav button.on .ic { background:var(--pbg); }
   .nav .ic { font-size:19px; line-height:1; }
@@ -158,6 +160,12 @@
   @keyframes shimmer { 0%{background-position:-200px 0} 100%{background-position:200px 0} }
   .skl { height:38px; border-radius:10px; margin-bottom:8px; background:linear-gradient(90deg,#eef1f5 25%,#f8fafc 50%,#eef1f5 75%); background-size:400px 100%; animation:shimmer 1.2s infinite linear; }
   .skl.short { width:60%; }
+  @media (min-width:1000px){
+    .wrap { max-width:960px; }
+    .nav-in { max-width:960px; }
+    .ringrow { grid-template-columns:repeat(4,1fr); }
+    .storepick { grid-template-columns:repeat(4,1fr) !important; }
+  }
   .fbar { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
   .fchip { font-size:10.5px; font-weight:600; border:1px solid var(--line); background:#fff; color:var(--muted);
     border-radius:99px; padding:4px 9px; cursor:pointer; white-space:nowrap; transition:all .12s ease; }
@@ -219,6 +227,27 @@
   .lkitem .lk:active { transform:scale(.96); }
   .gitem { transition: transform .1s ease, box-shadow .15s ease; }
   .gitem:active { transform:scale(.96); }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#E6EEF1; --line:#2E4148; --muted:#93A8B0; --bg:#12242B;
+      --brand:#5FA8BC; --blue:#5FA8BC; --pbg:#1C333B;
+      --grad:linear-gradient(165deg,#14282A 0%,#12242B 45%,#132430 100%);
+    }
+    .card, .popcard, .daypop, .ringcell, .gt-wrap, .gt-lab, .bd-sum div { background:#1A2F37 !important; border-color:#2E4148 !important; }
+    .gt-lab.head, .gt-legend { background:#16292F !important; }
+    .cal-grid, .cal-cell { background:#1A2F37; border-color:#243940 !important; }
+    .cal-cell.other::before { background:rgba(0,0,0,.25); }
+    .cal-cell:hover, .bd-row:hover, .dp-row:hover { background:#20363E; }
+    .seg { background:#0E1D23; }
+    .seg button.on, .fchip, .act, .pill { background:#243B44; color:var(--ink); border-color:#2E4148; }
+    .act.primary, .fchip.on { background:var(--brand); color:#0E1D23; }
+    input, select, textarea { background:#16292F; color:var(--ink); border-color:#2E4148; }
+    .nav { background:rgba(18,36,43,.97); }
+    .note { background:#1C333B; color:#B9D3DB; }
+    .skl { background:linear-gradient(90deg,#20363E 25%,#2A434C 50%,#20363E 75%); background-size:400px 100%; }
+    .donut-hero { background:linear-gradient(135deg,#1C333B,#1A2F37); }
+    .day-item, .schedcard { border-color:#243940; }
+  }
   @media (prefers-reduced-motion: reduce){ .popcard{ animation:none; } .btn,.pill,.cal-cell,.gitem{ transition:none; } }
 </style>
 </head>
@@ -234,6 +263,7 @@
     <div class="seg mt" id="schedViewSeg">
       <button data-sview="list" class="on" onclick="setSchedView('list')">📋 リスト</button>
       <button data-sview="calendar" onclick="setSchedView('calendar')">📆 カレンダー</button>
+      <button data-sview="week" onclick="setSchedView('week')">📆 週</button>
       <button data-sview="board" onclick="setSchedView('board')">📊 進行状況</button>
     </div>
     <div id="schedBody" class="mt"></div>
@@ -685,8 +715,10 @@
   <div id="dayPop" class="daypop" onclick="event.stopPropagation()">
     <div class="daypop-grab"></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-      <h2 id="dayModalTitle" style="margin:0; font-size:17px;">7月26日</h2>
-      <button class="pill" onclick="closeDayModal()">閉じる</button>
+      <button class="pill" onclick="dayModalMove(-1)">◀ 前日</button>
+      <h2 id="dayModalTitle" style="margin:0; font-size:16px;">7月26日</h2>
+      <button class="pill" onclick="dayModalMove(1)">翌日 ▶</button>
+      <button class="pill" onclick="closeDayModal()">✕</button>
     </div>
     <div class="row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
       <button class="btn btn-primary" style="flex:1; min-width:130px; padding:9px;" onclick="addFromDay('post')">＋ 投稿予定</button>
@@ -801,10 +833,10 @@
 <!-- 下部ナビ -->
 <nav class="nav">
   <div class="nav-in">
-    <button data-tab="home" class="on" onclick="go('home')"><span class="ic">📅</span>予定</button>
-    <button data-tab="create" onclick="go('create')"><span class="ic">✍️</span>作成</button>
-    <button data-tab="history" onclick="go('history')"><span class="ic">📚</span>履歴</button>
-    <button data-tab="settings" onclick="go('settings')"><span class="ic">⚙️</span>設定</button>
+    <button data-tab="home" class="on" onclick="go('home')" aria-current="page"><span class="ic" style="position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span id="navBadge" style="display:none; position:absolute; top:-6px; right:-12px; background:var(--p5); color:#fff; font-size:9px; font-weight:700; border-radius:99px; padding:1px 5px; line-height:1.4;"></span></span>予定</button>
+    <button data-tab="create" onclick="go('create')"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>作成</button>
+    <button data-tab="history" onclick="go('history')"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>履歴</button>
+    <button data-tab="settings" onclick="go('settings')"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>設定</button>
   </div>
 </nav>
 
@@ -1298,6 +1330,30 @@ function persistSched(rec){
   save(LS.sched, schedule);
   if(window.fs) window.fs.setSched(rec).catch(e=>console.warn("sched sync", e));
 }
+let UNDO = null;   // {type,rec,timer}
+function offerUndo(type, rec){
+  if(UNDO && UNDO.timer) clearTimeout(UNDO.timer);
+  UNDO = {type, rec};
+  const t = document.getElementById("toast");
+  t.innerHTML = `🗑️ 削除しました <button onclick="undoDelete()" style="margin-left:8px;border:0;background:#fff;color:var(--brand);border-radius:99px;padding:3px 12px;font-weight:700;font-size:12px;cursor:pointer;">元に戻す</button>`;
+  t.classList.add("show");
+  t.style.pointerEvents = "auto";
+  UNDO.timer = setTimeout(()=>{ t.classList.remove("show"); t.style.pointerEvents="none"; UNDO=null; }, 6000);
+}
+window.undoDelete = ()=>{
+  if(!UNDO) return;
+  const {type, rec} = UNDO;
+  clearTimeout(UNDO.timer); UNDO=null;
+  const t = document.getElementById("toast"); t.classList.remove("show"); t.style.pointerEvents="none";
+  if(type==='sched'){
+    persistSched(rec);
+    // 画像リンクも復元
+    if(rec.imageId && window.fs) window.fs.linkImage(rec.imageId, { linkedScheduleId:rec.id, linkedScheduleTitle:rec.catchTitle||rec.title||"" }).catch(()=>{});
+  }
+  if(type==='event') persistEvent(rec);
+  renderSchedule(); if(typeof renderNextAction==="function") renderNextAction();
+  toast("↩︎ 元に戻しました");
+};
 function removeSchedRec(id){
   // 予定を消す前に、紐付いていた画像側のリンクも解除（孤立防止）
   const s0 = schedule.find(x=>x.id===id);
@@ -1305,6 +1361,7 @@ function removeSchedRec(id){
   schedule = schedule.filter(x=>x.id!==id);
   save(LS.sched, schedule);
   if(window.fs) window.fs.delSched(id).catch(e=>console.warn("sched del", e));
+  if(s0) offerUndo('sched', s0);
 }
 // ===== 画像⇔予定リンクの共通操作（全経路がここを通る） =====
 // 紐付け：旧画像の解除→画像側→予定側 の順で両側を必ず揃える
@@ -1353,10 +1410,12 @@ function persistEvent(rec){
   if(typeof renderSchedule==="function") renderSchedule();
 }
 function removeEvent(id){
+  const rec = events.find(x=>x.id===id);
   events = events.filter(x=>x.id!==id);
   save(LS_EVENTS, events);
   if(window.fs) window.fs.delEvent(id).catch(e=>console.warn("event del", e));
   if(typeof renderSchedule==="function") renderSchedule();
+  if(rec) offerUndo('event', rec);
 }
 // ===== 指示テンプレート =====
 const LS_TPL = "meo_studio_templates";
@@ -1870,7 +1929,7 @@ function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg
 function go(view){
   if(view==="schedule") view="home";   // 予定はホームに統合
   document.querySelectorAll("[data-view]").forEach(s=> s.hidden = s.dataset.view!==view);
-  document.querySelectorAll(".nav button").forEach(b=> b.classList.toggle("on", b.dataset.tab===view));
+  document.querySelectorAll(".nav button").forEach(b=>{ const on=b.dataset.tab===view; b.classList.toggle("on", on); if(on) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
   window.scrollTo(0,0);
   if(view==="home"){ renderLinks(); renderNextAction(); renderSchedule(); }
   if(view==="create") renderCreate();
@@ -1955,7 +2014,8 @@ function abBadge(s){
   const icon = pt?.icon ? pt.icon : "";
   return `<span class="pill" style="background:${bg}; color:#2F5560;">${icon}${esc(s.abType)}</span> `;
 }
-function dowJp(date){ if(!date) return ""; const d=new Date(date+"T00:00:00"); return ["日","月","火","水","木","金","土"][d.getDay()]; }
+const DOW_JA = DOW_JP;
+function dowJp(date){ if(!date) return ""; const d=new Date(date+"T00:00:00"); return DOW_JA[d.getDay()]; }
 function schedWhen(s){ return `${fmtJp(s.date)}${s.date?`(${dowJp(s.date)})`:""} ${s.time||""}`; }
 // 予定に紐付いた画像のサムネURLをギャラリーから解決（大きな画像データは予定に保存しない）
 function galUrlById(id){ if(!id) return ""; const g=(window.__gallery||[]).find(x=>x.id===id); return g?g.imageUrl:""; }
@@ -1990,7 +2050,9 @@ window.renderSchedule = ()=>{
   const body = document.getElementById("schedBody");
   if(!list || !body) return;
   document.querySelectorAll('#schedViewSeg button').forEach(b=> b.classList.toggle('on', b.dataset.sview===SCHED_VIEW));
-  if(SCHED_VIEW==='board'){
+  if(SCHED_VIEW==='week'){
+    list.style.display='none'; body.style.display='block'; renderWeekView();
+  } else if(SCHED_VIEW==='board'){
     list.style.display='none'; body.style.display='block'; renderBoard();
   } else if(SCHED_VIEW==='calendar'){
     list.style.display='none'; body.style.display='block'; renderCalendar();
@@ -2020,11 +2082,14 @@ function renderSchedList(){
   const unposted = monthPosts.filter(s=>!postStatusOf(s)).length;
   const summary = `<div class="hint" style="margin-bottom:6px;">この月：${monthPosts.length}件 ・ ❌画像未作成 ${noImg}件 ・ 未投稿 ${unposted}件
     <button class="pill" style="margin-left:6px;" onclick="SCHED_SHOW_ALL=!SCHED_SHOW_ALL; renderSchedule();">${SCHED_SHOW_ALL?"📅 この月だけ表示":"📜 すべて表示"}</button></div>`;
+  const q = (window.SCHED_Q||"").trim().toLowerCase();
+  const list2 = q ? all.filter(x=> ((x.catchTitle||"")+(x.title||"")+(x.kw||"")).toLowerCase().includes(q)).filter(schedMatchFilter) : list;
   const filtered = (SCF.theme||SCF.image||SCF.post);
-  box.innerHTML = (SCHED_SHOW_ALL?"":monthHeader()) + summary + filterBar()
+  const searchBox = `<input value="${esc(window.SCHED_Q||"")}" placeholder="🔍 テーマ名で検索（全期間）" style="margin-bottom:8px;" oninput="SCHED_Q=this.value; clearTimeout(window._sqt); window._sqt=setTimeout(renderSchedList,250);">`;
+  box.innerHTML = (q?"":(SCHED_SHOW_ALL?"":monthHeader())) + searchBox + (q?`<div class="hint" style="margin-bottom:6px;">検索結果：${list2.length}件（全期間）</div>`:summary) + filterBar()
     + (filtered?`<div class="hint" style="margin-bottom:6px;">絞り込み中：${list.length}件 / 全${listAll.length}件</div>`:"")
-    + (list.length ? list.map(s=>schedCard(s)).join("")
-       : (window.__READY.sched||schedule.length ? `<p class="hint">${filtered?"条件に合う予定はありません":"この月の予定はありません。「＋投稿予定を追加」から登録できます"}</p>` : `<div class="skl"></div><div class="skl"></div><div class="skl short"></div>`));
+    + ((q?list2:list).length ? (q?list2:list).map(s=>schedCard(s)).join("")
+       : (window.__READY.sched||schedule.length ? `<p class="hint">${q?"一致する予定はありません":(filtered?"条件に合う予定はありません":"この月の予定はありません。「＋投稿予定を追加」から登録できます")}</p>` : `<div class="skl"></div><div class="skl"></div><div class="skl short"></div>`));
 }
 // 予定カード（1行に凝縮 → タップで詳細＋操作を開く）
 let SC_OPEN = null;
@@ -2063,6 +2128,7 @@ function schedCard(s){
       ${s.postNote?`<div class="muted small">📝 ${esc(s.postNote)}</div>`:""}
       <div class="actbar">
         <button class="act primary" onclick="startFromSched('${s.id}')">✍️ 投稿を作る</button>
+        <button class="act" onclick="imageFirst('${s.id}')" title="画像の準備から始める（本文はあとで）">🖼️ 画像から進める</button>
         <button class="act" onclick="reExport('${s.id}')" title="この投稿を編集してもう一度出力する">📤 再出力</button>
         ${ist==='linked'
           ? `<button class="act warn" onclick="unlinkSchedImageUI('${s.id}')">🖼️ 画像を外す</button>`
@@ -2087,7 +2153,7 @@ window.reExport = async (schedId)=>{
 };
 // ===== つぎにやること（初心者向けガイド） =====
 window.goCalendar = ()=>{ setSchedView('calendar'); go('home'); };
-window.imageFirst = (id)=>{ startFromSched(id); cur.step = 3; renderCreate(); window.scrollTo(0,0); };
+window.imageFirst = async (id)=>{ await startFromSched(id); cur.step = 3; renderCreate(); window.scrollTo(0,0); };
 function nextAction(){
   const today = todayISO();
   const list = sortedSched();
@@ -2112,7 +2178,16 @@ function nextAction(){
     desc:`${when}「${who}」は出力済みです。GMOに入れたら完了にしましょう`,
     label:"✅ 投稿状態を記録する", fn:`openPostStatus('${nx.id}')` };
 }
+// ナビの未投稿バッジ（今日まで＝やり残し件数）
+function renderNavBadge(){
+  const el = document.getElementById("navBadge"); if(!el) return;
+  const today = todayISO();
+  const n = schedule.filter(s=> !isRetired(s) && !postStatusOf(s) && s.date && s.date <= today).length;
+  el.style.display = n ? "block" : "none";
+  el.textContent = n>9 ? "9+" : n;
+}
 window.renderNextAction = ()=>{
+  renderNavBadge();
   const box = document.getElementById("nextAction"); if(!box) return;
   const a = nextAction();
   // 4ステップの流れの中で「いまどこか」を見せる
@@ -2443,11 +2518,13 @@ function renderCalendar(){
     const shown = items.slice(0,4).join("");
     const more = items.length>4 ? `<div class="cal-more">他${items.length-4}件</div>` : "";
     const dnumCls = dow===0?"sun":(dow===6?"sat":"");
-    cells += `<div class="cal-cell${ds===today?" today":""}" onclick="openDayModal('${ds}')">
+    cells += `<div class="cal-cell${ds===today?" today":""}" onclick="openDayModal('${ds}')"
+      ontouchstart="calCellDown('${ds}')" ontouchend="calCellUp()" ontouchmove="calCellUp()"
+      onmousedown="calCellDown('${ds}')" onmouseup="calCellUp()" onmouseleave="calCellUp()">
       <div class="cal-dnum ${dnumCls}">${d}</div>${shown}${more}</div>`;
   }
   box.innerHTML = monthHeader() + `
-    <div class="cal-dow">${["日","月","火","水","木","金","土"].map((d,i)=>`<div class="${i===0?'sun':i===6?'sat':''}">${d}</div>`).join("")}</div>
+    <div class="cal-dow">${DOW_JA.map((d,i)=>`<div class="${i===0?'sun':i===6?'sat':''}">${d}</div>`).join("")}</div>
     <div class="cal-grid">${cells}</div>
     <div class="cal-legend">
       <span><span class="dot" style="background:#DCE9EE"></span>A投稿</span>
@@ -2558,6 +2635,7 @@ function schedMatchFilter(s){
   if(SCF.post==="ng"   && !(st==="canceled"||st==="mistake")) return false;
   return true;
 }
+window.SCHED_Q = "";
 window.setSchedFilter = (k,v)=>{ SCF[k] = (SCF[k]===v) ? "" : v; save('meo_studio_scf', SCF); renderSchedule(); };
 function filterBar(){
   const b=(k,v,label,icon)=>`<button class="fchip${SCF[k]===v?' on':''}" onclick="setSchedFilter('${k}','${v}')">${icon}${label}</button>`;
@@ -2674,7 +2752,7 @@ function ganttHtml(list, today){
     const dt=new Date(CAL_Y,CAL_M,i+1), w=dt.getDay();
     const ds=`${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`;
     return `<div class="gt-c ${w===0||w===6?'we':''} ${ds===today?'today':''}">
-      <span>${["日","月","火","水","木","金","土"][w]}</span><b>${i+1}</b></div>`;
+      <span>${DOW_JA[w]}</span><b>${i+1}</b></div>`;
   }).join("");
   const rows = list.map(s=>{
     const p = schedProgress(s);
@@ -2727,6 +2805,61 @@ function eventsHtml(evs, today){
         </div></div>`; }).join("")}
   </div>`;
 }
+// カレンダー長押し→その日で予定追加
+let _cellPress=null, _cellLong=false;
+window.calCellDown = (ds)=>{
+  _cellLong=false;
+  clearTimeout(_cellPress);
+  _cellPress = setTimeout(()=>{
+    _cellLong=true;
+    if(navigator.vibrate) try{navigator.vibrate(10);}catch(e){}
+    openSchedEdit(null, ds);
+  }, 550);
+};
+window.calCellUp = ()=>{ clearTimeout(_cellPress); };
+// 長押し後のclickは無視
+document.addEventListener("click", e=>{ if(_cellLong){ e.stopPropagation(); e.preventDefault(); _cellLong=false; } }, true);
+// ===== 週表示（アジェンダ形式・今週から） =====
+let WEEK_OFFSET = 0;
+window.weekMove = (n)=>{ WEEK_OFFSET += n; renderWeekView(); };
+window.weekToday = ()=>{ WEEK_OFFSET = 0; renderWeekView(); };
+function renderWeekView(){
+  const box = document.getElementById("schedBody"); if(!box) return;
+  const today = todayISO();
+  const base = new Date(); base.setDate(base.getDate() - base.getDay() + WEEK_OFFSET*7);  // 日曜はじまり
+  const days = Array.from({length:7},(_,i)=>{ const d=new Date(base); d.setDate(d.getDate()+i);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; });
+  const label = `${Number(days[0].slice(5,7))}/${Number(days[0].slice(8))} 〜 ${Number(days[6].slice(5,7))}/${Number(days[6].slice(8))}`;
+  const rows = days.map(ds=>{
+    const dow = new Date(ds+"T00:00:00").getDay();
+    const posts = schedule.filter(x=> actualDate(x)===ds && !isRetired(x)).filter(schedMatchFilter);
+    const evs = (events||[]).filter(e=> e.date===ds);
+    const items = posts.map(x=>{
+      const p = schedProgress(x);
+      const st = postStatusOf(x);
+      const mark = st ? (PS_META[st]||{}).icon : IMG_META[imgState(x)].icon;
+      return `<div class="dp-row" style="padding:5px 0;" onclick="event.stopPropagation();openDayModal('${ds}')">
+        ${ringSvg(p.pct, st==='posted'?STEP_COLOR.post:STEP_COLOR.image, 30, 4)}
+        <div style="min-width:0; flex:1;"><div class="sc-title" style="font-size:12px;">${mark}${esc(x.catchTitle||x.title||"（無題）")}</div>
+        <div class="rs">${x.time||""} ${abBadgeText(x)}</div></div></div>`;
+    }).join("") + evs.map(e=>{ const m=EV_META[e.type]||EV_META.other;
+      return `<div class="dp-row" style="padding:5px 0;" onclick="event.stopPropagation();openDayModal('${ds}')">
+        <div style="width:30px;text-align:center;">${m.icon}</div>
+        <div class="sc-title" style="font-size:12px;">${esc(e.title||m.label)}</div></div>`; }).join("");
+    return `<div class="card" style="padding:9px 13px; ${ds===today?'border:2px solid var(--blue);':''}" onclick="openDayModal('${ds}')">
+      <div style="display:flex; gap:8px; align-items:baseline;">
+        <b style="font-size:14px; color:${dow===0?'var(--ng)':dow===6?'var(--blue)':'var(--ink)'};">${Number(ds.slice(8))}日(${dowJp(ds)})</b>
+        ${ds===today?'<span class="stat" style="background:var(--pbg);color:var(--brand);">きょう</span>':''}
+      </div>
+      ${items || '<div class="hint" style="margin:2px 0 0;">予定なし（タップで追加）</div>'}
+    </div>`;
+  }).join("");
+  box.innerHTML = `<div class="cal-head">
+      <div class="cal-nav"><button class="pill" onclick="weekMove(-1)">◀</button><button class="pill" onclick="weekToday()">今週</button><button class="pill" onclick="weekMove(1)">▶</button></div>
+      <b style="white-space:nowrap;">${label}</b><span></span>
+    </div>` + filterBar() + rows;
+}
+function abBadgeText(s){ return s.abType ? s.abType : ""; }
 window.calMove = (n)=>{
   const now = Date.now();
   if(now < CAL_COOLDOWN) return;
@@ -2770,6 +2903,17 @@ window.openDayModal = (ds)=>{
   const el = document.getElementById("dayModal");
   el.style.display = "block";
   setTimeout(()=> el.classList.add("show"), 10);
+};
+window.dayModalMove = (n)=>{
+  if(!DAY_MODAL_DATE) return;
+  const d = new Date(DAY_MODAL_DATE+"T00:00:00"); d.setDate(d.getDate()+n);
+  const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  // 月をまたいだらカレンダーも追随
+  if(d.getFullYear()!==CAL_Y || d.getMonth()!==CAL_M){ CAL_Y=d.getFullYear(); CAL_M=d.getMonth(); renderSchedule(); }
+  DAY_MODAL_DATE = ds;
+  const [y,m,dd] = ds.split("-").map(Number);
+  document.getElementById("dayModalTitle").textContent = `${m}月${dd}日(${dowJp(ds)})`;
+  renderDayModalBody();
 };
 window.closeDayModal = ()=>{
   const el = document.getElementById("dayModal");
@@ -2895,6 +3039,7 @@ function renderDayModalBody(){
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
         <button class="pill" onclick="startFromSched('${s.id}')">✍️作成</button>
+        <button class="pill" onclick="imageFirst('${s.id}')">🖼️画像から</button>
         <button class="pill" onclick="reExport('${s.id}')">📤再出力</button>
         <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
         ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:""}
@@ -3266,6 +3411,54 @@ function maybeShowDraftBanner(){
 }
 setTimeout(maybeShowDraftBanner, 600);
 
+// 明日が投稿日なのに未出力/未投稿の予定があれば知らせる（1日1回）
+function maybeRemindTomorrow(){
+  const t = new Date(); t.setDate(t.getDate()+1);
+  const ds = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
+  const targets = schedule.filter(s=> s.date===ds && !isRetired(s) && !postStatusOf(s));
+  if(!targets.length) return;
+  const key = "meo_remind_" + ds;
+  if(localStorage.getItem(key)) return;
+  localStorage.setItem(key, "1");
+  const undone = targets.filter(s=>!s.done).length;
+  toast(`🔔 明日は投稿日：${targets.length}件${undone?`（うち未出力${undone}件）`:""}`);
+}
+window.addEventListener('sched-ready', ()=>setTimeout(maybeRemindTomorrow, 1500), {once:true});
+
+// ===== 初回オンボーディング（3枚カード） =====
+function maybeShowTour(){
+  if(load("meo_tour_done", false)) return;
+  // 既存ユーザー（ヘルプ既読あり）はツアーをスキップ
+  if(localStorage.getItem("meo_studio_help_seen")){ save("meo_tour_done", true); return; }
+  const cards = [
+    {icon:"📅", t:"予定を立てる", b:"カレンダーの日付を長押し、または「＋投稿予定を追加」でテーマを登録。⚙️一括生成でパターンから自動で組めます"},
+    {icon:"🖼️✍️", t:"画像と本文を作る", b:"予定の「🖼️画像から進める」か「✍️投稿を作る」へ。AIへの指示文はコピーして貼るだけ"},
+    {icon:"📤✅", t:"出力して記録する", b:"XLSXをGMOにアップ→「投稿できた」で記録。進行状況タブでチーム全体の進みが見えます"},
+  ];
+  let idx = 0;
+  const div = document.createElement("div");
+  div.id = "tourWrap";
+  div.style.cssText = "position:fixed;inset:0;z-index:97;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;";
+  const draw = ()=>{
+    const c = cards[idx];
+    div.innerHTML = `<div class="popcard" style="background:#fff;width:calc(100% - 56px);max-width:340px;border-radius:18px;padding:24px;text-align:center;">
+      <div style="font-size:40px;">${c.icon}</div>
+      <div style="font-weight:800;font-size:17px;margin:8px 0 6px;">${c.t}</div>
+      <p class="hint" style="margin:0 0 14px;">${c.b}</p>
+      <div style="display:flex;justify-content:center;gap:5px;margin-bottom:14px;">${cards.map((_,i)=>`<span style="width:7px;height:7px;border-radius:50%;background:${i===idx?'var(--brand)':'#DCE7EA'};"></span>`).join("")}</div>
+      <button class="btn btn-primary" style="width:100%;" id="tourNext">${idx<cards.length-1?"つぎへ":"はじめる"}</button>
+      ${idx<cards.length-1?'<button class="btn btn-ghost mt" style="width:100%;" id="tourSkip">スキップ</button>':""}
+    </div>`;
+    div.querySelector("#tourNext").onclick = ()=>{ if(idx<cards.length-1){ idx++; draw(); } else end(); };
+    const sk = div.querySelector("#tourSkip"); if(sk) sk.onclick = end;
+  };
+  const end = ()=>{ save("meo_tour_done", true); try{localStorage.setItem("meo_studio_help_seen", STUDIO_VERSION);}catch(e){} div.remove(); };
+  draw();
+  document.body.appendChild(div);
+}
+// 合言葉を解いた後に表示（初回のみ）
+setTimeout(()=>{ if(localStorage.getItem("meo_unlocked")==="1") maybeShowTour(); }, 1200);
+
 // ===== 更新通知（新バージョンが出たらバナー表示→ワンタップで再読込） =====
 function checkUpdate(){
   fetch(location.pathname + "?_uc=" + Date.now(), {cache:"no-store"})
@@ -3307,7 +3500,7 @@ function targets(){
 }
 function renderStepBar(){
   document.getElementById("stepBar").innerHTML = STEPS.map((l,i)=>`
-    <div><div class="bar ${i<=cur.step?'on':''}"></div><div class="lb ${i===cur.step?'on':''}">${l}</div></div>`).join("");
+    <div style="cursor:pointer;" onclick="setStep(${i})" title="${l}へ移動"><div class="bar ${i<=cur.step?'on':''}"></div><div class="lb ${i===cur.step?'on':''}">${l}</div></div>`).join("");
 }
 function renderCreate(){
   renderStepBar();
@@ -4538,20 +4731,27 @@ function renderHistory(){
   box.innerHTML = head + filtered.map(p=>{
     const entries = Object.entries(p.contents||{});
     const dateStr = p.date ? `${p.date.replace(/-/g,"/")}${p.time?" "+p.time:""}` : "日付なし";
-    const blocks = entries.map(([k,v])=>`
+    const blocks = `<details class="mt"><summary>📄 本文を見る（${entries.length}件）</summary>` + entries.map(([k,v])=>`
       <div style="border-top:1px solid var(--line); padding-top:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
           <b class="small">${esc(contentLabel(k))}</b>
-          <button class="pill" onclick='copyStr(${JSON.stringify(v)})'>本文コピー</button>
+          <button class="pill" onclick='copyStr(${JSON.stringify(v)},event)'>本文コピー</button>
         </div>
         <div class="small muted" style="white-space:pre-wrap; margin-top:4px;">${esc(v)}</div>
-      </div>`).join("");
-    return `<div class="card">
+      </div>`).join("") + `</details>`;
+    const d2 = p.date ? p.date.split("-") : null;
+    return `<div class="card" style="padding:12px 15px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-        <div style="min-width:0;">
+        <div style="min-width:0; display:flex; gap:10px; align-items:flex-start;">
+          <div style="flex-shrink:0; text-align:center; background:var(--pbg); border-radius:10px; padding:5px 9px;">
+            <div style="font-size:16px; font-weight:800; line-height:1.1; color:var(--brand);">${d2?Number(d2[2]):"?"}</div>
+            <div style="font-size:9px; color:var(--muted);">${d2?`${Number(d2[1])}月`:"未定"}</div>
+          </div>
+          <div style="min-width:0;">
           <b>${esc(p.catchTitle || p.title || "（無題）")}</b>
           <div class="small muted">${esc(dateStr)} ・ ${esc(p.abType||"")}投稿 ・ ${esc(p.postType||"")}${p.themeTitle?` ・ テーマ：${esc(p.themeTitle)}`:""}</div>
           ${p.imageTitle?`<div class="small muted">🖼️ ${esc(p.imageTitle)}</div>`:""}
+          </div>
         </div>
         <button class="pill" style="color:var(--ng); flex-shrink:0;" onclick="delHistory('${p.id}')">削除</button>
       </div>
