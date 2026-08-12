@@ -388,7 +388,8 @@
     </div>
     <div id="storesList"></div>
     <div class="card">
-      <button class="btn btn-primary" onclick="openStoreCard()">＋ 店舗を追加</button>
+      <button class="btn btn-primary" onclick="openQuickFill()">⚡ かんたん入力（未記入だけ順に聞きます）</button>
+      <button class="btn btn-ghost mt" onclick="openStoreCard()">＋ 店舗を追加</button>
       <div class="mt" style="display:flex; gap:8px;">
         <button class="btn btn-ghost" style="flex:1;" onclick="openGyotaiMgr()">🏷 業態と項目を編集</button>
         <button class="btn btn-ghost" style="flex:1;" onclick="exportStoresXlsx()">📤 シートに書き出す</button>
@@ -589,6 +590,31 @@
       <button class="btn btn-ghost mt" style="color:var(--ng); border-color:#fecaca;" onclick="deleteStoreCard()">🗑 完全に削除</button>
       <p class="hint">※ 投稿に使わないだけなら「有効」のチェックを外してください（データは残ります）</p>
     </details>
+  </div>
+</div>
+
+<div id="quickFillModal" style="display:none; position:fixed; inset:0; z-index:78; background:rgba(0,0,0,.45); align-items:flex-end; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:100%; max-width:640px; border-radius:18px 18px 0 0; max-height:92dvh; overflow-y:auto; padding:16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <span class="pill" id="qfProgress">1 / 1</span>
+      <button class="pill" onclick="closeQuickFill()">やめる</button>
+    </div>
+    <div id="qfBar" class="mt" style="height:5px; background:var(--pbg,#EAF3F4); border-radius:99px; overflow:hidden;"><div id="qfBarIn" style="height:100%; width:0%; background:var(--brand); border-radius:99px; transition:width .2s ease;"></div></div>
+    <div id="qfBody" class="mt"></div>
+    <div class="mt" style="display:flex; gap:8px;">
+      <button class="btn btn-ghost" style="flex:0 0 auto; width:auto; padding:14px 16px;" onclick="qfSkip()">とばす</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="qfNext()">保存して次へ</button>
+    </div>
+  </div>
+</div>
+
+<div id="ideaModal" style="display:none; position:fixed; inset:0; z-index:77; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 20px); max-width:620px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <h2 id="ideaTitle" style="margin:0;">💡 投稿ネタの候補</h2>
+      <button class="pill" onclick="closeIdeas()">閉じる</button>
+    </div>
+    <div id="ideaBody" class="mt"></div>
   </div>
 </div>
 
@@ -1332,6 +1358,10 @@ window.renderStoresView = ()=>{
       <div class="mt" style="margin-top:8px;">${meterHtml(f.pct)}</div>
       ${st.usp?`<div class="muted" style="font-size:11.5px; margin-top:7px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${esc(st.usp)}</div>`:''}
       ${f.miss.length?`<div class="mt" style="font-size:11px; color:var(--warn); margin-top:7px;">⚠️ 未記入：${esc(f.miss.slice(0,4).join("・"))}${f.miss.length>4?` ほか${f.miss.length-4}件`:''}</div>`:''}
+      <div class="mt" style="display:flex; gap:6px; margin-top:9px;" onclick="event.stopPropagation()">
+        <button class="fchip" onclick="openIdeas('${esc(st.id)}')">💡 投稿ネタを出す</button>
+        ${f.miss.length?`<button class="fchip" onclick="openQuickFill('${esc(st.id)}')">⚡ 未記入を埋める</button>`:''}
+      </div>
     </div>`;
   }).join("");
 };
@@ -1530,6 +1560,201 @@ window.deleteGyotai = async ()=>{
   if(window.fs && window.fs.delGyotai) await window.fs.delGyotai(g.id);
   else { GYOTAI_TPL = GYOTAI_TPL.filter(x=>x.id!==g.id); try{ localStorage.setItem("meo_gyotai", JSON.stringify(GYOTAI_TPL)); }catch(e){} }
   editingGyotai=null; renderGyotaiMgr(); toast("🗑 削除しました");
+};
+
+// ============================================================
+// かんたん入力：未記入の項目を1問ずつ聞いていくモード（スマホ向け）
+// ============================================================
+let QF = { queue:[], i:0, dirty:new Map() };
+
+window.openQuickFill = (storeId)=>{
+  const list = storeId ? STORE_MASTER.filter(x=>x.id===storeId)
+                       : STORE_MASTER.filter(x=>x.isActive!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+  const q = [];
+  list.forEach(st=>{
+    fieldsFor(st.gyotai).forEach(fd=>{
+      if(!(fd.req||fd.key3)) return;
+      if(String(fieldVal(st,fd)).trim()) return;
+      if(fd.type==="gyotai") return;
+      q.push({ storeId:st.id, key:fd.key, extra:!!fd.extra });
+    });
+  });
+  if(!q.length){ toast("✅ 大事な項目はすべて埋まっています"); return; }
+  QF = { queue:q, i:0, dirty:new Map() };
+  document.getElementById("quickFillModal").style.display="flex";
+  renderQuickFill();
+};
+window.closeQuickFill = ()=>{ document.getElementById("quickFillModal").style.display="none"; QF={queue:[],i:0,dirty:new Map()}; renderStoresView(); };
+
+function qfCur(){
+  const it = QF.queue[QF.i]; if(!it) return null;
+  const st = STORE_MASTER.find(x=>x.id===it.storeId); if(!st) return null;
+  const fd = fieldsFor(st.gyotai).find(f=>f.key===it.key && !!f.extra===it.extra);
+  return fd ? { st, fd } : null;
+}
+
+// 同じ業態の他店に入っている値＝そのままタップで使える候補
+function qfSuggest(st, fd){
+  const vals = STORE_MASTER.filter(x=> x.id!==st.id && x.gyotai===st.gyotai)
+    .map(x=> String(fieldVal(x,fd)||"").trim()).filter(Boolean);
+  const uniq = [...new Set(vals)];
+  const count = {}; vals.forEach(v=> count[v]=(count[v]||0)+1);
+  return uniq.sort((a,b)=>count[b]-count[a]).slice(0,4);
+}
+
+function renderQuickFill(){
+  const c = qfCur();
+  if(!c){ closeQuickFill(); toast("✅ 入力おつかれさまでした"); return; }
+  const { st, fd } = c;
+  const total = QF.queue.length;
+  document.getElementById("qfProgress").textContent = `${QF.i+1} / ${total}`;
+  document.getElementById("qfBarIn").style.width = Math.round(QF.i/total*100)+"%";
+  const sug = qfSuggest(st, fd);
+  const val = QF.dirty.get(QF.i) ?? "";
+  let input;
+  if(fd.type==="select"){
+    input = `<select id="qfInput">${(fd.opts||[""]).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  } else if(fd.type==="area"){
+    input = `<textarea id="qfInput" style="min-height:96px;" placeholder="${esc(fd.ph||"")}">${esc(val)}</textarea>`;
+  } else {
+    input = `<input id="qfInput" value="${esc(val)}" placeholder="${esc(fd.ph||"")}" ${fd.type==="tel"?'inputmode="tel"':''}>`;
+  }
+  document.getElementById("qfBody").innerHTML = `
+    <div class="muted" style="font-size:11.5px;">${esc(st.name)}<span class="pill" style="margin-left:6px;">${esc(st.gyotai||"")}</span></div>
+    <h2 style="margin:6px 0 2px; font-size:17px;">${esc(fd.label)}</h2>
+    <p class="hint" style="margin-bottom:8px;">${fd.req?"入力が必要な項目です":"投稿づくりに効く項目です"}${fd.ph?"　例："+esc(fd.ph):""}</p>
+    ${input}
+    ${sug.length?`<p class="hint mt" style="margin-top:9px;">同じ業態の他店の内容（タップで入ります）</p>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:5px;">
+        ${sug.map(v=>`<button class="fchip" style="max-width:100%; text-align:left; white-space:normal;" onclick="qfUse(${esc(JSON.stringify(v)).replace(/"/g,'&quot;')})">${esc(v.length>44?v.slice(0,44)+"…":v)}</button>`).join("")}
+      </div>`:""}
+    <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400; font-size:12.5px;">
+      <input type="checkbox" id="qfAll" style="width:auto;"> 同じ業態（${esc(st.gyotai||"")}）で未記入の店にも同じ内容を入れる
+    </label>`;
+}
+window.qfUse = (v)=>{ const el=document.getElementById("qfInput"); if(el){ el.value=v; el.focus(); } };
+window.qfSkip = ()=>{ QF.i++; renderQuickFill(); };
+
+window.qfNext = async ()=>{
+  const c = qfCur(); if(!c) return;
+  const { st, fd } = c;
+  const v = (document.getElementById("qfInput")?.value||"").trim();
+  const all = document.getElementById("qfAll")?.checked;
+  if(!v){ QF.i++; renderQuickFill(); return; }
+  const rec = JSON.parse(JSON.stringify(st)); setFieldVal(rec, fd, v); delete rec._base;
+  await saveStoreRec(rec, {force:true});
+  if(all){
+    const others = STORE_MASTER.filter(x=> x.id!==st.id && x.gyotai===st.gyotai && !String(fieldVal(x,fd)).trim());
+    for(const o of others){ const r2 = JSON.parse(JSON.stringify(o)); setFieldVal(r2, fd, v); delete r2._base; await saveStoreRec(r2,{force:true}); }
+    // 埋まった分をキューから外す
+    const done = new Set(others.map(o=>o.id));
+    QF.queue = QF.queue.filter((q,idx)=> idx<=QF.i || !(done.has(q.storeId) && q.key===fd.key));
+    if(others.length) toast(`⚡ ${others.length}店にもまとめて入れました`);
+  }
+  QF.i++; renderQuickFill();
+};
+
+// ============================================================
+// 投稿ネタの自動提案（店舗タブに入れた内容から組み立てます）
+// ============================================================
+function splitList(v){ return String(v||"").split(/[・,、\n\/／]+/).map(x=>x.trim()).filter(Boolean); }
+// 文章っぽい項目は「・」で切らない（「肩こり・頭痛」「膝・腰」を壊さないため）
+function splitPhrase(v){ return String(v||"").split(/[,、\n\/／]+/).map(x=>x.trim()).filter(Boolean); }
+// 「30〜40代のママ」→そのまま／「デスクワーク」→「デスクワークの方」のように整える
+function personWord(v){
+  let t = String(v||"").trim();
+  if(!t) return "";
+  if(/(の)?(お?悩み|不調)$/.test(t)) return t.replace(/(の)?(お?悩み|不調)$/,"") + "でお悩みの方";
+  if(/(方|人|さん|ママ|層|世代|男性|女性|者|員|生)$/.test(t)) return t;
+  return t + "の方";
+}
+function seasonWord(){
+  const m = new Date().getMonth()+1;
+  return ({1:"寒さの続くこの時期",2:"寒暖差の大きいこの時期",3:"季節の変わり目",4:"新生活の時期",5:"連休明けのこの時期",
+    6:"梅雨のこの時期",7:"暑さの本格化するこの時期",8:"夏の疲れが出る時期",9:"夏の疲れが残る時期",
+    10:"朝晩が冷えてくる時期",11:"冷えが気になる時期",12:"年末の忙しい時期"})[m];
+}
+
+// 型：必要な材料がそろっている店舗にだけ出ます
+const NETA_PATTERNS = [
+  { need:["troubles"], kw:m=>splitList(m.keywords)[0]||"", make:(m,st)=>`${seasonWord()}に増える「${splitPhrase(m.troubles)[0]||"その不調"}」。その理由` },
+  { need:["troubles"], kw:m=>splitList(m.keywords)[1]||"", make:(m,st)=>`${splitPhrase(m.troubles)[1]||splitPhrase(m.troubles)[0]}でお困りの方へ。今日からできること1つ` },
+  { need:["troubles"], make:(m,st)=>`${splitPhrase(m.troubles)[0]}の原因は、そこじゃないかもしれません` },
+  { need:["usp"], make:(m,st)=>`${splitPhrase(m.usp)[0]}——${st.name.replace(/^.*[_ ]/,"")}が大切にしていること` },
+  { need:["usp"], make:(m,st)=>`${splitPhrase(m.usp)[1]||splitPhrase(m.usp)[0]}。ここにこだわる理由` },
+  { need:["target"], make:(m,st)=>`${personWord(splitPhrase(m.target)[0])}へ。よくいただくご相談と、その向き合い方` },
+  { need:["target","troubles"], make:(m,st)=>`${personWord(splitPhrase(m.target)[0])}が${splitPhrase(m.troubles)[0]}になりやすい、意外な習慣` },
+  { need:["customerWords"], make:(m,st)=>`${splitPhrase(m.customerWords)[0].replace(/^[「『]|[」』]$/g,"")}——よくいただくご相談です` },
+  { need:["price"], make:(m,st)=>`初回で受けられる内容を、全部お見せします` },
+  { need:["cases"], make:(m,st)=>`${splitPhrase(m.cases)[0].slice(0,26)}——実際にあった変化` },
+  { need:["staff"], make:(m,st)=>`スタッフ紹介：${splitPhrase(m.staff)[0].slice(0,20)}` },
+  { need:["access"], make:(m,st)=>`${m.access}。道順を写真でご案内します` },
+  { need:["parking"], cond:m=>m.parking==="有", make:(m,st)=>`お車でお越しの方へ。駐車場のご案内${m.parkingNote?`（${m.parkingNote}）`:""}` },
+  { need:["hours"], make:(m,st)=>`何時に来るのがおすすめ？時間帯別の過ごしやすさ` },
+  { need:["nearbyAreas"], make:(m,st)=>`${splitList(m.nearbyAreas).slice(0,3).join("・")}からお越しの方へ` },
+  { need:["landmarks"], make:(m,st)=>`${m.landmarks}のすぐそばです。はじめての方への目印` },
+  { need:["keywords"], make:(m,st)=>`「${splitList(m.keywords)[0]}」で探している方へ` },
+  { need:["events"], make:(m,st)=>`${splitPhrase(m.events)[0].slice(0,26)}のお知らせ` },
+  { need:["competitors"], make:(m,st)=>`ほかとの違いを、正直にお伝えします` },
+  { need:[], make:(m,st)=>`${seasonWord()}の体、こんなサインが出ていませんか` },
+  { need:[], make:(m,st)=>`${st.area}にお住まいの方へ。${seasonWord()}に気をつけたいこと` },
+  { need:["photos"], make:(m,st)=>`院内・スタジオの様子をご紹介します` },
+];
+
+let ideaStoreId = null;
+window.openIdeas = (storeId)=>{
+  ideaStoreId = storeId;
+  document.getElementById("ideaModal").style.display="flex";
+  renderIdeas();
+};
+window.closeIdeas = ()=> document.getElementById("ideaModal").style.display="none";
+
+function buildIdeas(st){
+  const m = st;
+  const out = [];
+  NETA_PATTERNS.forEach((p,i)=>{
+    if(p.need.some(k=> !String(m[k]||"").trim())) return;
+    if(p.cond && !p.cond(m)) return;
+    let t; try{ t = p.make(m, st); }catch(e){ return; }
+    if(!t || out.some(x=>x.title===t)) return;
+    out.push({ title:t, kw: (p.kw? p.kw(m):"") || splitList(m.keywords)[i % Math.max(1,splitList(m.keywords).length)] || "" });
+  });
+  return out;
+}
+
+function renderIdeas(){
+  const st = STORE_MASTER.find(x=>x.id===ideaStoreId);
+  const box = document.getElementById("ideaBody");
+  if(!st){ box.innerHTML = `<p class="hint">店舗が見つかりません</p>`; return; }
+  document.getElementById("ideaTitle").textContent = "💡 " + st.name;
+  const f = storeFill(st);
+  const ideas = buildIdeas(st);
+  box.innerHTML = `
+    <p class="hint">店舗タブに入れた内容から組み立てた候補です。記入率が上がるほど候補が増えます（現在 ${f.pct}%）</p>
+    ${f.miss.length?`<button class="fchip mt" onclick="closeIdeas(); openQuickFill('${esc(st.id)}')">⚡ 未記入の${f.miss.length}項目を埋める → 候補を増やす</button>`:""}
+    <div class="mt">${ideas.map((it,i)=>`
+      <div class="listitem">
+        <div class="small" style="min-width:0;">
+          <b style="font-size:13px;">${esc(it.title)}</b>
+          ${it.kw?`<br><span class="muted" style="font-size:11px;">狙うワード：${esc(it.kw)}</span>`:""}
+        </div>
+        <button class="pill" onclick="useIdea(${i})">この案で作る</button>
+      </div>`).join("") || `<p class="hint">候補を出すには、強み・お客様の層・多いお悩みのどれかを入力してください</p>`}</div>`;
+  window.__ideas = ideas;
+}
+
+window.useIdea = async (i)=>{
+  const st = STORE_MASTER.find(x=>x.id===ideaStoreId);
+  const it = (window.__ideas||[])[i]; if(!st||!it) return;
+  if(curHasWork()){
+    if(!(await askPop({title:"作成中の内容があります", body:"この案で作り始めると、いま作成中の本文は消えます（下書きには残ります）", okLabel:"この案で作る"}))) return;
+  }
+  closeIdeas();
+  freshCur({ title:it.title, themeTitle:it.title, catchTitle:"", kw:it.kw||"",
+             date:"", time:defaultTime("A"), abType:"A", postType:"最新情報", timing:"scheduled",
+             scope:"per_store", storeIds:[String(st.gmoId)] });
+  go("create");
+  toast("この案で作成をはじめます");
 };
 
 // ============================================================
@@ -3431,6 +3656,8 @@ document.getElementById("ask_input").addEventListener("keydown", e=>{ if(e.key==
 const POP_MODALS = {
   askModal:   ()=>askClose(null),
   storeModal: ()=>closeStoreCard(),
+  quickFillModal: ()=>closeQuickFill(),
+  ideaModal: ()=>closeIdeas(),
   gyotaiModal: ()=>closeGyotaiMgr(),
   themeModal: ()=>closeThemeModal(),
   patternModal: ()=>closePatternEdit(),
@@ -5273,13 +5500,18 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-08-09.2";
+const STUDIO_VERSION = "2026-08-09.3";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>🏪 店舗タブを新設</b>：全店舗の情報を一覧で確認・その場で編集。記入率と未記入の項目がひと目でわかります</li>
+        <li><b>⚡ かんたん入力</b>：未記入の項目だけを1問ずつ聞くモード。同じ業態の他店の内容をタップで入れられます</li>
+        <li><b>💡 投稿ネタの自動提案</b>：店舗の強み・お客様の層・お悩みから、その店に合う投稿テーマの候補を出します</li>
+        <li><b>🏷 業態を自由に追加</b>：整骨院・整体院・ピラティス以外の業態も、入力項目ごと作れます</li>
+        <li><b>📥📤 記入シート連携</b>：Excelシートで集めた情報をまとめて取り込み／今の内容を書き出し</li>
         <li><b>デザイン刷新</b>：ティール×コーラルの新配色・グラデーション背景</li>
         <li><b>進行状況が2ビュー</b>：◐円グラフ（達成リング）と▤ガントチャート切替</li>
         <li><b>投稿状態の記録</b>：投稿済み／取消／誤投稿／🗂今後未使用＋実際の投稿日・メモ</li>
