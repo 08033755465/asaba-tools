@@ -282,15 +282,21 @@
       <div class="row mt">
         <button class="btn btn-ghost" style="width:100%;" onclick="openImportPost()">📥 出力ファイルから予定を復元</button>
       </div>
-      <div class="row mt">
-        <button class="btn btn-ghost" style="width:100%;" onclick="openGalFrame('')">🖼️ サムネイル・ギャラリーを開く</button>
-      </div>
       <div class="mt">
         <p class="hint">1行1件「投稿予定日[タブ or カンマ]タイトル」で貼り付け</p>
         <textarea id="schedBulk" placeholder="2026/07/13, 深呼吸と自律神経&#10;2026/07/16, 夏バテと胃腸の疲れ"></textarea>
         <button class="btn btn-ghost mt" onclick="importSchedBulk()">取り込む</button>
       </div>
     </details>
+
+    <div class="card" style="padding:13px;">
+      <button class="btn btn-ghost" style="width:100%; text-align:left; display:flex; align-items:center; gap:11px; padding:13px 14px;" onclick="openGalFrame('')">
+        <span style="font-size:21px; flex:0 0 auto;">🎨</span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px;">サムネイルツールをひらく</span>
+          <span style="display:block; font-size:11px; font-weight:400; color:var(--muted); margin-top:1px;">投稿につかう画像をつくる・ギャラリーを見る</span>
+        </span></button>
+    </div>
 
     <details class="mt"><summary>🔗 リンク集</summary>
       <div id="linkList" class="mt"></div>
@@ -322,6 +328,16 @@
       <button class="btn btn-ghost mt" onclick="addMyLink()">追加</button>
       <div id="myLinkList" class="mt"></div>
       <p class="hint">※サムネイルツールのチーム共有リンクは自動で表示されます。ここは自分用の追加分です</p>
+    </div>
+    <div class="card">
+      <h2>📌 よく使うリンク</h2>
+      <p class="hint">ここに登録すると、作成画面のボタンから直接ひらけます（チーム全員に共有されます）</p>
+      <label class="mt">📁 画像フォルダ（Googleドライブ）</label>
+      <input id="role_drive_photos" placeholder="https://drive.google.com/drive/folders/...">
+      <label class="mt">🚀 GMOの画像アップロード画面</label>
+      <input id="role_gmo_upload" placeholder="https://...">
+      <button class="btn btn-ghost mt" onclick="saveRoleLinks()">保存</button>
+      <div id="roleLinkStatus" class="hint mt"></div>
     </div>
     <div class="card">
       <h2>🏪 店舗マスタ</h2>
@@ -435,6 +451,8 @@
         <select id="sm_postType"><option>最新情報</option><option>イベント</option><option>クーポン</option></select>
       </div>
     </div>
+    <label class="mt">投稿ボタン</label>
+    <select id="sm_btnType"><option value="">店舗の設定にしたがう（既定：予約）</option></select>
     <label class="mt">タイミング</label>
     <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
     <label class="mt">キーワード（症状・訴求KW／指示文に反映）</label>
@@ -455,8 +473,8 @@
       <button data-scope="category_common" class="on">カテゴリ共通</button>
       <button data-scope="per_store">店舗別</button>
     </div>
-    <div id="sm_storeWrap" style="display:none;" class="mt">
-      <label>対象店舗</label>
+    <div id="sm_storeWrap" class="mt">
+      <label id="sm_storeLabel">対象店舗</label>
       <div id="sm_stores" style="max-height:200px; overflow-y:auto; border:1px solid var(--line); border-radius:10px; padding:8px;"></div>
     </div>
     <div class="btn-row mt">
@@ -775,6 +793,8 @@
         <select id="rd_postType"><option>最新情報</option><option>イベント</option><option>クーポン</option></select>
       </div>
     </div>
+    <label class="mt">投稿ボタン</label>
+    <select id="rd_btnType"><option value="">店舗の設定にしたがう（既定：予約）</option></select>
     <div class="row mt" id="rd_dtRow">
       <div><label>予約投稿日</label><input type="date" id="rd_date"></div>
       <div><label>投稿時間</label><input type="time" id="rd_time"></div>
@@ -920,7 +940,7 @@ try {
   // チーム共有リンク
   onSnapshot(collection(db, ...basePath('links')), (s) => {
     const arr = [];
-    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, name:v.name||'', url:v.url||'', createdAt:v.createdAt||0 }); });
+    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, name:v.name||'', url:v.url||'', sub:v.sub||'', role:v.role||'', createdAt:v.createdAt||0 }); });
     arr.sort((a,b)=> b.createdAt - a.createdAt);
     window.__teamLinks = arr;
     window.dispatchEvent(new Event('links-ready'));
@@ -1124,6 +1144,8 @@ const STORE_CORE = [
   { g:"リンク", key:"webUrl",      label:"WEBサイト",          type:"url",  ph:"https://..." },
   { g:"リンク", key:"instagram",   label:"Instagram",          type:"text", ph:"@xxxx" },
   { g:"リンク", key:"otherUrl",    label:"その他リンク",       type:"url" },
+  { g:"リンク", key:"btnType",     label:"投稿ボタンの種類",   type:"select", opts:["","予約","オンライン注文","購入","詳細","登録","今すぐ電話","なし"] },
+  { g:"リンク", key:"driveUrl",    label:"この店の写真フォルダ（Drive）", type:"url", ph:"https://drive.google.com/drive/folders/..." },
   { g:"連携ID", key:"gmoId",       label:"GMO店舗ID",          type:"text", req:1, ph:"117528" },
   { g:"連携ID", key:"gbpStoreCode",label:"GBP店舗コード",      type:"text" },
   { g:"連携ID", key:"gbpCategory", label:"GBPメインカテゴリ",  type:"text", ph:"整骨院" },
@@ -1144,6 +1166,8 @@ const STORE_CORE = [
   { g:"投稿づくり", key:"memo",         label:"その他メモ",             type:"area" },
 ];
 const STORE_GROUPS = ["基本","営業","リンク","連携ID","投稿づくり","業態ごとの項目"];
+// GMOの一括投稿テンプレートが受け付けるボタンの種類（これ以外を入れると取込エラーになります）
+const BTN_TYPES = ["なし","予約","オンライン注文","購入","詳細","登録","今すぐ電話"];
 const CORE_BY_KEY = {}; STORE_CORE.forEach(f=> CORE_BY_KEY[f.key]=f);
 
 // ---- 業態テンプレの初期値（アプリ内で自由に追加・編集できます） ----
@@ -1179,6 +1203,24 @@ window.__storeSeed = STORES.map((s,i)=>({
 }));
 window.__gyotaiSeed = GYOTAI_SEED;
 
+const BTN_HINT = "ボタンのURLは店舗の「予約リンク」を使います。「詳細」を選んだときだけWEBサイトURLがあればそちらを、「なし」ならURLなしで出力します。";
+// 配信対象の店舗。storeIdsが空＝全店（昔の予定データとの互換ルール）
+function storesOf(d){
+  const ids = (d && d.storeIds) || [];
+  return ids.length ? STORES.filter(s=> ids.includes(s.gmo)) : STORES.slice();
+}
+function btnTypeOptions(v){
+  return `<option value="" ${v?"":"selected"}>店舗の設定にしたがう（既定：予約）</option>` +
+    BTN_TYPES.map(t=>`<option ${v===t?"selected":""}>${t}</option>`).join("");
+}
+// この店舗・この投稿で使うボタンの種類とURLを決める
+function btnFor(d, s){
+  const m = s._m || {};
+  const type = (d && d.btnType) || m.btnType || "予約";
+  if(type==="なし") return { type, url:"" };
+  if(type==="詳細" && m.webUrl) return { type, url:m.webUrl };
+  return { type, url: s.url || "" };
+}
 function gyotaiTpl(name){ return GYOTAI_TPL.find(g=>g.name===name) || null; }
 function gyotaiToCat(g){ const t=gyotaiTpl(g); return t && t.groupKey ? t.groupKey : "other"; }
 function rebuildCatLabel(){
@@ -2601,7 +2643,7 @@ function go(view){
   window.scrollTo(0,0);
   if(view==="home"){ renderLinks(); renderNextAction(); renderSchedule(); }
   if(view==="create") renderCreate();
-  if(view==="settings"){ renderMyLinks(); renderRules(); renderTplList(); renderPatternList(); renderSlotsetList(); }
+  if(view==="settings"){ renderMyLinks(); renderRoleLinks(); renderRules(); renderTplList(); renderPatternList(); renderSlotsetList(); }
   if(view==="stores") renderStoresView();
   if(view==="history") renderHistory();
 }
@@ -2642,7 +2684,53 @@ window.renameTeamLink = async (id)=>{
     .then(()=> toast("✏️ 名前を変更しました："+nm))
     .catch(e=>{ console.warn("setLink", e); toast("変更に失敗しました"); });
 };
-window.addEventListener("links-ready", ()=>{ document.getElementById("fbLinkStatus").textContent=""; renderLinks(); });
+// ===== 役割つきリンク（画像フォルダ・GMOアップロード） =====
+const LINK_ROLES = { drive_photos:"📁 画像フォルダ（Googleドライブ）", gmo_upload:"🚀 GMOの画像アップロード画面" };
+function roleLink(role){
+  const team = window.__teamLinks || [];
+  const hit = team.find(l=> l.role===role && l.url);
+  if(hit) return hit;
+  const mine = myLinks.find(l=> l.role===role && l.url);
+  if(mine) return mine;
+  // 昔の登録（名前で判別していた頃）にも対応
+  const all = [...team, ...myLinks];
+  const t = l => (l.name||"")+(l.sub||"");
+  if(role==="drive_photos") return all.find(l=> /共通画像|店舗写真|写真フォルダ|画像フォルダ|ドライブ|drive/i.test(t(l)));
+  if(role==="gmo_upload")   return all.find(l=> /アップロード|upload|メディア|media|ライブラリ/i.test(t(l))) || all.find(l=> /GMO|gmo|meo/.test(t(l)+(l.url||"")));
+  return null;
+}
+window.renderRoleLinks = ()=>{
+  for(const role in LINK_ROLES){
+    const el = document.getElementById("role_"+role); if(!el) continue;
+    const l = roleLink(role);
+    el.value = l ? (l.url||"") : "";
+  }
+};
+window.saveRoleLinks = async ()=>{
+  const st = document.getElementById("roleLinkStatus");
+  if(!window.fs || !window.fs.addLink){ st.style.color="var(--ng)"; st.textContent="チーム共有に接続できていません。少し待って再度お試しください"; return; }
+  let n = 0;
+  const team = window.__teamLinks || [];
+  for(const role in LINK_ROLES){
+    const url = (document.getElementById("role_"+role)?.value||"").trim();
+    // ①役割で登録済み ②同じURLの既存リンク（昔の名前だけの登録）— どちらも新規追加せず更新する
+    const byRole = team.find(l=> l.role===role);
+    const byUrl  = !byRole && url ? team.find(l=> (l.url||"")===url) : null;
+    const exist  = byRole || byUrl;
+    try{
+      if(url && exist){
+        if(exist.url!==url || exist.role!==role){ await window.fs.setLink(exist.id, { url, role }); n++; }
+      }
+      else if(url && !exist){ await window.fs.addLink({ name:LINK_ROLES[role], url, sub:"", role, createdAt:Date.now() }); n++; }
+      else if(!url && byRole){ await window.fs.setLink(byRole.id, { role:"" }); n++; }  // 役割だけ外す（リンク自体は残す）
+    }catch(e){ console.warn("roleLink", e); }
+  }
+  st.style.color = n ? "var(--ok)" : "var(--muted)";
+  st.textContent = n ? `✅ 保存しました（${n}件）` : "変更はありませんでした";
+  if(n) toast("💾 リンクを保存しました");
+};
+
+window.addEventListener("links-ready", ()=>{ document.getElementById("fbLinkStatus").textContent=""; renderLinks(); renderRoleLinks(); });
 window.addEventListener("links-error", (e)=>{ document.getElementById("fbLinkStatus").textContent="共有リンクの読み込みに失敗（設定タブから自分用リンクを追加できます）"; renderLinks(); });
 
 function renderMyLinks(){
@@ -2802,7 +2890,8 @@ function schedCard(s){
         ${ist==='linked'
           ? `<button class="act warn" onclick="unlinkSchedImageUI('${s.id}')">🖼️ 画像を外す</button>`
           : `<button class="act" onclick="quickLinkImage('${s.id}')">🖼️ 画像を選ぶ</button>`}
-        <button class="act" onclick="openImgPrompt('${s.id}')">🎨 画像を作る</button>
+        <button class="act" onclick="openImgPrompt('${s.id}')" title="ChatGPT用の画像プロンプトを作る">🎨 AIで作る</button>
+        ${ist!=='linked'?`<button class="act" onclick="openGalFrame('${s.id}')" title="サムネイルツールで画像を作る・選ぶ">🖼️ サムネツール</button>`:''}
         <button class="act" onclick="openPostStatus('${s.id}')">${st?'✏️ 状態を直す':'✅ 投稿できた'}</button>
         <button class="act" onclick="openSchedEdit('${s.id}')">⚙️ 予定を編集</button>
       </div>
@@ -3820,11 +3909,12 @@ window.openSchedEdit = (id, presetDate)=>{
   document.getElementById("sm_imgmemo").value = s?.imageMemo || "";
   document.getElementById("sm_context").value = s?.context || "";
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
+  document.getElementById("sm_btnType").innerHTML = btnTypeOptions(s?.btnType || "");
   document.getElementById("sm_timing").value = s?.timing || "scheduled";
   const scope = s ? (s.scope || "category_common") : "per_store";  // 新規は店舗別が既定
   document.querySelectorAll("#sm_scope button").forEach(b=> b.classList.toggle("on", b.dataset.scope===scope));
-  document.getElementById("sm_storeWrap").style.display = scope==="per_store" ? "block" : "none";
-  renderSmStores(s ? (s.storeIds || []) : STORES.map(x=>x.gmo));  // 新規は全店選択
+  document.getElementById("sm_storeLabel").textContent = scopeTexts(scope, STORES.length).label;
+  renderSmStores((s && s.storeIds && s.storeIds.length) ? s.storeIds : STORES.map(x=>x.gmo));  // 既定は全店選択
   smImage = s?.imageTitle ? { title:s.imageTitle, id:s.imageId||null, url:galUrlById(s.imageId) } : null;
   smPrevImageId = s?.imageId || null;  // 解除・差し替え時に旧画像側のリンクを消すため保持
   renderSmImgLinked();
@@ -3969,7 +4059,7 @@ function renderSmStores(selected){
 document.getElementById("sm_scope").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(!b) return;
   document.querySelectorAll("#sm_scope button").forEach(x=> x.classList.toggle("on", x===b));
-  document.getElementById("sm_storeWrap").style.display = b.dataset.scope==="per_store" ? "block" : "none";
+  document.getElementById("sm_storeLabel").textContent = scopeTexts(b.dataset.scope, STORES.length).label;
 });
 window.saveSchedEdit = ()=>{
   const title = document.getElementById("sm_title").value.trim();
@@ -3990,6 +4080,7 @@ window.saveSchedEdit = ()=>{
     imageId: smImage ? (smImage.id||"") : "",
     imageUrl: "", // 旧仕様で保存された重い画像データを消去（サムネはギャラリーから解決）
     postType: document.getElementById("sm_postType").value,
+    btnType: document.getElementById("sm_btnType").value,
     timing: document.getElementById("sm_timing").value,
     scope, storeIds, done:false,
   };
@@ -4149,7 +4240,7 @@ function checkUpdate(){
 setInterval(checkUpdate, 5*60*1000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkUpdate(); });
 setTimeout(checkUpdate, 20*1000);
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", btnType:"", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = async (id)=>{
@@ -4160,15 +4251,16 @@ window.startFromSched = async (id)=>{
   if(typeof closeDayModal==="function") closeDayModal();
   freshCur({ schedId:id, title:s.catchTitle||s.title, themeTitle:s.title, catchTitle:s.catchTitle||"",
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
-             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", timing:s.timing||"scheduled",
+             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", timing:s.timing||"scheduled",
              scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
              imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
 };
 function targets(){
-  return cur.scope==="category_common"
-    ? catList().map(c=>({key:c.key,label:c.label+" 共通"}))
-    : STORES.filter(s=> cur.storeIds.includes(s.gmo)).map(s=>({key:s.gmo,label:s.name}));
+  const list = storesOf(cur);
+  if(cur.scope!=="category_common") return list.map(s=>({key:s.gmo,label:s.name}));
+  const cats = [...new Set(list.map(s=>s.cat))];
+  return catList().filter(c=> cats.includes(c.key)).map(c=>({key:c.key,label:c.label+" 共通"}));
 }
 function renderStepBar(){
   document.getElementById("stepBar").innerHTML = STEPS.map((l,i)=>`
@@ -4208,6 +4300,9 @@ function viewTarget(){
       <div><label>投稿タイプ</label><select id="c_postType">${["最新情報","イベント","クーポン"].map(t=>`<option ${cur.postType===t?"selected":""}>${t}</option>`).join("")}</select></div>
       <div><label>タイミング</label><select id="c_timing"><option value="scheduled" ${cur.timing==="scheduled"?"selected":""}>予約投稿</option><option value="immediate" ${cur.timing==="immediate"?"selected":""}>即時投稿</option></select></div>
     </div>
+    <label class="mt">投稿ボタン</label>
+    <select id="c_btnType">${btnTypeOptions(cur.btnType||"")}</select>
+    <p class="hint">${BTN_HINT}</p>
     <label class="mt">キーワード（症状・訴求KW／指示文に反映・任意）</label>
     <input id="c_kw" value="${esc(cur.kw||"")}" placeholder="例：肩こり・首こり・手足の冷え">
     <label class="mt">対象</label>
@@ -4215,25 +4310,38 @@ function viewTarget(){
       <button data-scope="category_common" class="${cur.scope==="category_common"?"on":""}">カテゴリ共通</button>
       <button data-scope="per_store" class="${cur.scope==="per_store"?"on":""}">店舗別</button>
     </div>
-    <div id="c_storeWrap" style="display:${cur.scope==="per_store"?"block":"none"};" class="mt">
+    <div id="c_storeWrap" class="mt">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <label style="margin:0;">対象店舗</label>
+        <label style="margin:0;" id="c_storeLabel"></label>
         <button class="pill" onclick="allStores()">全選択/解除</button>
       </div>
       <div id="c_stores" style="max-height:230px; overflow-y:auto; border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px;"></div>
     </div>
-    <p class="hint">カテゴリ共通＝整体整骨とPeaceで各1本、全16店舗に自動展開。店舗別＝選んだ店舗ごとに1本。</p>
+    <p class="hint" id="c_scopeHint"></p>
   </div>
   ${nav(null, 1, "次へ →")}`;
 }
-window.allStores = ()=>{ storePickerAll("c_stores"); cur.storeIds = storePickerValues("c_stores"); };
+window.allStores = ()=>{ storePickerAll("c_stores"); cur.storeIds = storePickerValues("c_stores"); renderScopeHint(); };
+function scopeTexts(scope, n){
+  return scope==="category_common"
+    ? { label:"配信する店舗（外したい店だけチェックを外す）",
+        hint:`カテゴリ共通＝グループごとに本文1本を書いて、選んだ${n}店舗へ同じ内容を配ります。` }
+    : { label:"対象店舗",
+        hint:`店舗別＝選んだ${n}店舗ぶん、それぞれ違う本文を書きます。` };
+}
+window.renderScopeHint = ()=>{
+  const lb=document.getElementById("c_storeLabel"), ht=document.getElementById("c_scopeHint");
+  if(!lb||!ht) return;
+  const t = scopeTexts(cur.scope, storesOf(cur).length);
+  lb.textContent = t.label; ht.textContent = t.hint;
+};
 function renderCStores(){
   const box = document.getElementById("c_stores"); if(!box) return;
   box.innerHTML = storePickerHTML("c_stores", cur.storeIds||[]);
   storePickerCount("c_stores");
   // 変更をcurへ反映
   box.querySelectorAll('input').forEach(i=>{
-    i.addEventListener('change', ()=>{ cur.storeIds = storePickerValues("c_stores"); });
+    i.addEventListener('change', ()=>{ cur.storeIds = storePickerValues("c_stores"); renderScopeHint(); });
   });
 }
 window.toggleStore = (gmo,ch)=>{ cur.storeIds = ch ? [...cur.storeIds,gmo] : cur.storeIds.filter(x=>x!==gmo); };
@@ -4250,7 +4358,7 @@ function storeHint(s){
 }
 // 対象店舗のプロフィール一覧ブロック（{{店舗プロフィール}}）— 店舗タブの内容がそのまま流れます
 function storeProfileBlock(tgts){
-  const list = cur.scope==="category_common" ? STORES : STORES.filter(x=> cur.storeIds.includes(x.gmo));
+  const list = storesOf(cur);
   const lines = list.map(s=>{
     const m = s._m || {};
     const bits = [];
@@ -4548,6 +4656,16 @@ function updateChips(key){
   nb.innerHTML = v.ng.length?`<div class="ngbox">${v.ng.map(n=>`「${n[0]}」→「${n[1]}」`).join("<br>")}</div>`:(v.dash.length?`<div class="ngbox">横棒は『』で表現を</div>`:"");
 }
 
+// 用途が一目でわかる大きめボタン（アイコン＋見出し＋説明）
+function bigBtn(cls, icon, title, desc, onclick){
+  return `<button class="btn ${cls}" style="width:100%; text-align:left; display:flex; align-items:center; gap:11px; padding:13px 14px; margin-bottom:8px;" onclick="${onclick}">
+    <span style="font-size:21px; flex:0 0 auto;">${icon}</span>
+    <span style="min-width:0;">
+      <span style="display:block; font-size:14px;">${title}</span>
+      <span style="display:block; font-size:11px; font-weight:400; opacity:.8; margin-top:1px;">${desc}</span>
+    </span></button>`;
+}
+
 // --- Step3: 画像タイトル選択（Firebaseギャラリー） ---
 function viewImage(){
   const ready = !!cur.imageTitle;
@@ -4559,19 +4677,24 @@ function viewImage(){
     <button class="btn btn-primary" style="width:100%;" onclick="setStep(1)">✍️ 本文を作りに行く</button>
   </div>`:""}
   <div class="card">
-    <div class="row" style="display:flex; gap:8px; flex-wrap:wrap;">
-      <button class="btn btn-blue" style="flex:1; min-width:170px;" onclick="openImgPrompt()">🎨 画像プロンプトを作る</button>
-      <button class="btn btn-ghost" style="flex:1; min-width:170px;" onclick="openGalFrame(cur.schedId||'')">🖼️ サムネツールを開く</button>
-      <button class="btn btn-ghost" style="flex:1; min-width:170px;" onclick="return openCommonPhotos()">📁 店舗写真フォルダ（Drive）</button>
-    </div>
-    <p class="hint">AI画像：プロンプトをコピー→ChatGPTで生成→サムネツールで文字入れ→ギャラリー保存<br>
-    店舗写真：📁で写真を保存→サムネイルツールでギャラリーに登録（文字入れ無しOK）→ 下の一覧から選択</p>
+    <div class="small" style="font-weight:700; margin-bottom:8px;">画像はどうやって用意しますか？</div>
+    ${bigBtn("btn-blue","🎨","AIで画像をつくる","画像プロンプトをコピーしてChatGPTへ","openImgPrompt()")}
+    ${bigBtn("btn-ghost","🖼️","サムネイルツールをひらく","写真に文字を入れて合成 → ギャラリーに保存","openGalFrame(cur.schedId||'')")}
+    ${bigBtn("btn-ghost","📁","Driveの写真フォルダをひらく","あさば様の共有フォルダから写真を選ぶ","return openCommonPhotos()")}
+    ${bigBtn("btn-ghost","📤","スマホの写真をアップする","下の「画像を追加」からそのまま登録できます","document.getElementById('c_imgUpload').click()")}
   </div>
   <div class="card" style="border:1px solid var(--line);">
     <div class="small" style="font-weight:700; margin-bottom:6px;">📤 画像をチームギャラリーに追加</div>
     <p class="hint" style="margin:0 0 8px;">スマホの写真・ChatGPTで作った画像をここから直接アップできます（チーム全員に共有＋この投稿に自動で紐付け）</p>
     <input type="file" id="c_imgUpload" accept="image/*" style="font-size:12px;" onchange="uploadToGallery(this)">
     <div id="c_upStatus" class="hint" style="margin-top:6px;"></div>
+    <label class="mt">🔗 Driveの画像リンクから追加</label>
+    <div style="display:flex; gap:6px;">
+      <input id="c_driveUrl" placeholder="https://drive.google.com/file/d/... を貼り付け" style="flex:1;">
+      <button class="btn btn-ghost" style="width:auto; padding:0 14px;" onclick="addDriveImage()">追加</button>
+    </div>
+    <p class="hint" style="margin-top:5px;">※ Drive側の共有を「リンクを知っている全員が閲覧可」にしてください。そうしないと画像が表示されません</p>
+    <div id="c_driveStatus" class="hint" style="margin-top:4px;"></div>
   </div>
   <div class="card">
     <p class="small muted">チームギャラリーから選ぶと、CSVの画像列に「◯◯.jpg」が入ります。</p>
@@ -4691,6 +4814,38 @@ window.uploadToGallery = async (input)=>{
     console.warn(e);
     st.style.color="var(--ng)"; st.textContent="アップロードに失敗しました（画像が大きすぎる可能性があります）";
   }
+};
+// GoogleドライブのURLからファイルIDを取り出す
+function driveFileId(url){
+  const u = String(url||"");
+  const m = u.match(/\/file\/d\/([-\w]{20,})/) || u.match(/[?&]id=([-\w]{20,})/) || u.match(/\/d\/([-\w]{20,})/);
+  return m ? m[1] : "";
+}
+window.addDriveImage = async ()=>{
+  const st = document.getElementById("c_driveStatus");
+  const raw = (document.getElementById("c_driveUrl")?.value||"").trim();
+  const id = driveFileId(raw);
+  if(!id){ st.style.color="var(--ng)"; st.textContent="Driveの画像リンクではないようです（フォルダのURLではなく、画像1枚のリンクを貼ってください）"; return; }
+  if(!window.fs || !window.fs.addImage){ st.style.color="var(--ng)"; st.textContent="チームギャラリーに接続できていません"; return; }
+  st.style.color="var(--muted)"; st.textContent="登録中…";
+  try{
+    const url = `https://drive.google.com/thumbnail?id=${id}&sz=w1200`;
+    const base = (cur.imageTitle && cur.imageTitle.replace(/\.[^.]+$/,"")) || (cur.catchTitle||cur.themeTitle||cur.title||"画像");
+    const mmdd = cur.date ? cur.date.slice(5) : todayISO().slice(5);
+    const name = safeImgName(`${base}_${mmdd}`);
+    const rec = { imageUrl:url, titleText:"", folderName:name.replace(/\.jpg$/,""),
+      accountId:"", accountName:"", categoryId:"", categoryName:"",
+      date:mmdd, memo:"Drive", source:"drive", driveFileId:id, createdAt:Date.now(),
+      linkedScheduleId: cur.schedId||"", linkedScheduleTitle: cur.catchTitle||cur.title||"" };
+    const ref = await window.fs.addImage(rec);
+    cur.imageTitle = name; cur.imageId = ref.id; cur.imageUrl = url;
+    const el=document.getElementById("c_imageTitle"); if(el) el.value=name;
+    refreshImageWarn();
+    if(cur.schedId){ linkSchedImage(cur.schedId, { id: ref.id }, name); }
+    document.getElementById("c_driveUrl").value="";
+    st.style.color="var(--ok)"; st.textContent=`✅ ギャラリーに追加しました：${name}`;
+    toast("🖼️ Driveの画像を追加しました");
+  }catch(e){ console.warn(e); st.style.color="var(--ng)"; st.textContent="追加に失敗しました："+e.message; }
 };
 window.onImageTitleInput = (v)=>{ cur.imageTitle=v; refreshImageWarn(); };
 // 作成中の画像を外す（予定に紐付いていれば両側解除）
@@ -4865,7 +5020,7 @@ window.resetStoreContent = (gmo)=>{
   if(cur.overrides && cur.overrides[gmo]){ delete cur.overrides[gmo].content; if(!Object.keys(cur.overrides[gmo]).length) delete cur.overrides[gmo]; }
   renderCreate(); toast("共通の本文に戻しました");
 };
-function exportStores(){ return cur.scope==="category_common" ? STORES : STORES.filter(s=>cur.storeIds.includes(s.gmo)); }
+function exportStores(){ return storesOf(cur); }
 function validateExport(){
   const errs=[];
   if(!cur.title.trim()) errs.push("共通タイトルが未入力です");
@@ -4917,9 +5072,13 @@ async function preExportImageCheck(){
 }
 // 任意の投稿データ（作成中cur or 履歴レコード）から出力行を作る
 function exportStoresFrom(d){
-  if((d.scope||"category_common")==="category_common") return STORES;
-  const ids=(d.storeIds&&d.storeIds.length)?d.storeIds:Object.keys(d.contents||{});
-  return STORES.filter(s=> ids.includes(s.gmo));
+  if(d.storeIds && d.storeIds.length) return STORES.filter(s=> d.storeIds.includes(s.gmo));
+  // 店舗別で storeIds が無い古いデータは、本文のキーから対象を割り出す
+  if((d.scope||"category_common")!=="category_common"){
+    const ids = Object.keys(d.contents||{});
+    return STORES.filter(s=> ids.includes(s.gmo));
+  }
+  return STORES.slice();
 }
 function contentFromFor(d,store){ return (d.scope||"category_common")==="category_common" ? ((d.contents||{})[store.cat]||"") : ((d.contents||{})[store.gmo]||""); }
 function buildRowsFrom(d){
@@ -4936,7 +5095,7 @@ function buildRowsFrom(d){
     c[COL.TITLE]=d.title||"";
     c[COL.CONTENT]= ov.content!==undefined ? ov.content : contentFromFor(d,s);
     c[COL.IMAGE]= ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||"");
-    c[COL.BTYPE]="予約"; c[COL.BURL]=s.url;
+    const b = btnFor(d, s); c[COL.BTYPE]=b.type; c[COL.BURL]=b.url;
     rows.push(c);
   });
   return rows;
@@ -5030,6 +5189,7 @@ window.redlHistory = (id)=>{
     `<b>${esc(p.catchTitle||p.title||"（無題）")}</b> ・ 対象 ${stores}店舗`;
   document.getElementById("rd_timing").value = p.timing==="immediate" ? "immediate" : "scheduled";
   document.getElementById("rd_postType").value = p.postType||"最新情報";
+  document.getElementById("rd_btnType").innerHTML = btnTypeOptions(p.btnType||"");
   document.getElementById("rd_date").value = p.date||"";
   document.getElementById("rd_time").value = p.time||"";
   document.getElementById("rd_image").value = p.imageTitle||"";
@@ -5065,6 +5225,7 @@ window.redlGo = (kind)=>{
   const img = document.getElementById("rd_image").value.trim();
   const d = { ...REDL_REC,
     timing, postType: document.getElementById("rd_postType").value,
+    btnType: document.getElementById("rd_btnType").value,
     date: timing==="immediate" ? "" : date,
     time: timing==="immediate" ? "" : time,
     imageTitle: img ? safeImgName(img) : "" };
@@ -5112,19 +5273,18 @@ window.openGmoSheet = ()=>{
 };
 // あさば様からの店舗写真など「共通画像フォルダ」（Googleドライブ）を開く
 window.openCommonPhotos = ()=>{
-  const links=[...(window.__teamLinks||[]), ...myLinks];
-  const l = links.find(x=> /共通画像|店舗写真|写真フォルダ|画像フォルダ/.test((x.name||"")+(x.sub||"")));
-  if(l){ window.open(l.url,"_blank"); }
-  else { toast("「共通画像フォルダ」の名前でGoogleドライブのリンクを登録してください（チーム共有がおすすめ）"); go("settings"); }
+  // 対象が1店だけで、その店に専用フォルダがあればそちらを優先
+  const sel = (typeof storesOf==="function" && typeof cur!=="undefined") ? storesOf(cur) : [];
+  if(sel.length===1 && sel[0]._m && sel[0]._m.driveUrl){ window.open(sel[0]._m.driveUrl,"_blank"); return false; }
+  const l = roleLink("drive_photos");
+  if(l && l.url){ window.open(l.url,"_blank"); }
+  else { toast("設定タブ →「📌 よく使うリンク」に画像フォルダのURLを登録してください"); go("settings"); }
   return false;
 };
 window.openGmoUpload = ()=>{
-  const links=[...(window.__teamLinks||[]), ...myLinks, ...(typeof BUILTIN_LINKS!=='undefined'?BUILTIN_LINKS:[])];
-  const t = l => (l.name||"")+(l.sub||"")+(l.url||"");
-  const upload = links.find(l=> /画像|アップロード|upload|メディア|media|ライブラリ/i.test(t(l)));
-  const gmo = upload || links.find(l=> /GMO|gmo|meo|投稿/.test(t(l)));
-  if(gmo){ window.open(gmo.url,"_blank"); }
-  else { toast("GMO画像アップロードのURLを設定タブ→リンクに登録してください"); go("settings"); }
+  const l = roleLink("gmo_upload");
+  if(l && l.url){ window.open(l.url,"_blank"); }
+  else { toast("設定タブ →「📌 よく使うリンク」にGMOアップロードのURLを登録してください"); go("settings"); }
   return false;
 };
 
@@ -5139,8 +5299,12 @@ function bindCreate(){
   const sc=document.getElementById("c_scope");
   if(sc){ sc.onclick=e=>{ const b=e.target.closest("button"); if(!b)return;
     cur.scope=b.dataset.scope; sc.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-    document.getElementById("c_storeWrap").style.display = cur.scope==="per_store"?"block":"none"; }; }
-  if(document.getElementById("c_stores")) renderCStores();
+    if(!(cur.storeIds||[]).length) cur.storeIds = STORES.map(x=>x.gmo);   // 既定は全店
+    renderCStores(); renderScopeHint(); }; }
+  if(document.getElementById("c_stores")){
+    if(!(cur.storeIds||[]).length) cur.storeIds = STORES.map(x=>x.gmo);
+    renderCStores(); renderScopeHint();
+  }
   // 貼付けエディタの検証チップ初期化
   if(cur.step===2 && cur._parsed) targets().forEach(t=>updateChips(t.key));
 }
@@ -5500,13 +5664,17 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-08-09.3";
+const STUDIO_VERSION = "2026-08-09.4";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>投稿ボタンを選べます</b>：予約／詳細／今すぐ電話など7種類。店舗ごとの既定＋投稿ごとの上書き</li>
+        <li><b>カテゴリ共通でも店舗を選べます</b>：既定は全店選択。外したい店のチェックだけ外してください</li>
+        <li><b>🎨 サムネイルツールの入口をわかりやすく</b>：ホームに常設＋画像の用意方法を4択で表示</li>
+        <li><b>📁 Googleドライブ連携</b>：設定に画像フォルダを登録／Driveの画像リンクからギャラリーに追加</li>
         <li><b>🏪 店舗タブを新設</b>：全店舗の情報を一覧で確認・その場で編集。記入率と未記入の項目がひと目でわかります</li>
         <li><b>⚡ かんたん入力</b>：未記入の項目だけを1問ずつ聞くモード。同じ業態の他店の内容をタップで入れられます</li>
         <li><b>💡 投稿ネタの自動提案</b>：店舗の強み・お客様の層・お悩みから、その店に合う投稿テーマの候補を出します</li>
