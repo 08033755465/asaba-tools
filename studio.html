@@ -140,6 +140,24 @@
   /* ===== ガントチャート ===== */
   .gt-wrap { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
   .gt-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  /* ===== 店舗の一覧表 ===== */
+  .stbl-wrap { border:1px solid var(--line); border-radius:14px; overflow:auto; background:#fff; max-height:72dvh; -webkit-overflow-scrolling:touch; }
+  .stbl { border-collapse:separate; border-spacing:0; min-width:max-content; font-size:11.5px; }
+  .stbl th, .stbl td { padding:7px 9px; border-bottom:1px solid #f1f5f9; border-right:1px solid #f6f8f9; text-align:left; vertical-align:top; }
+  .stbl th { position:sticky; top:0; z-index:3; background:var(--pbg,#EAF3F4); color:var(--brand); font-weight:700; font-size:10.5px; white-space:nowrap; }
+  .stbl td { max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+  .stbl .c0 { position:sticky; left:0; z-index:2; background:#fff; font-weight:700; white-space:normal; max-width:132px; min-width:118px; box-shadow:2px 0 0 rgba(47,109,128,.07); }
+  .stbl th.c0 { z-index:4; background:var(--pbg,#EAF3F4); }
+  .stbl tr.off td { opacity:.5; }
+  .stbl td.miss { background:#FFFBEB; }
+  .stbl td.emp { color:#c8d3d8; }
+  .stbl tr:hover td:not(.c0) { background:#F6FAFB; }
+  @media (prefers-color-scheme: dark){
+    .stbl-wrap, .stbl .c0 { background:#1A2F37 !important; }
+    .stbl th, .stbl th.c0 { background:#22404A !important; }
+    .stbl td.miss { background:#33342A !important; }
+    .stbl tr:hover td:not(.c0) { background:#22404A; }
+  }
   .gt-grid { min-width:max-content; }
   .gt-r { display:flex; align-items:center; border-bottom:1px solid #f1f5f9; }
   .gt-r:last-child { border-bottom:0; }
@@ -398,9 +416,16 @@
         <span class="pill" id="storesCount"></span>
       </div>
       <p class="hint" id="storesHint">読み込み中…</p>
+      <div class="seg mt" id="storeViewSeg">
+        <button data-sv="card" onclick="setStoreView('card')">🗂 カード</button>
+        <button data-sv="table" onclick="setStoreView('table')">📋 一覧表</button>
+      </div>
       <input id="storeQ" placeholder="🔍 店舗名・エリア・強みで探す" oninput="renderStoresView()" class="mt">
       <div id="storeFilters" class="mt" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
       <div id="storeAreaFilters" style="display:flex; gap:6px; overflow-x:auto; padding:6px 0 2px; -webkit-overflow-scrolling:touch;"></div>
+      <div id="storeColBtn" style="display:none;" class="mt">
+        <button class="fchip" onclick="openColPicker()">⚙️ 表示する列</button>
+      </div>
     </div>
     <div id="storesList"></div>
     <div class="card">
@@ -412,7 +437,7 @@
       </div>
       <details class="mt"><summary>📥 記入シート（xlsx）を取り込む</summary>
         <p class="hint mt">「①基本情報」「②投稿ネタ素材」のシートを、GMO店舗IDで照合して反映します</p>
-        <input type="file" accept=".xlsx" onchange="importStoresXlsx(this)">
+        <input type="file" accept=".xlsx,.csv" onchange="importStoresXlsx(this)">
         <label class="mt">GMO一括投稿テンプレから店舗IDを割り当てる</label>
         <input type="file" accept=".xlsx" onchange="importGmoIdsXlsx(this)">
         <div id="storeImportResult" class="hint mt"></div>
@@ -608,6 +633,21 @@
       <button class="btn btn-ghost mt" style="color:var(--ng); border-color:#fecaca;" onclick="deleteStoreCard()">🗑 完全に削除</button>
       <p class="hint">※ 投稿に使わないだけなら「有効」のチェックを外してください（データは残ります）</p>
     </details>
+  </div>
+</div>
+
+<div id="colModal" style="display:none; position:fixed; inset:0; z-index:79; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 20px); max-width:520px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <h2 style="margin:0;">⚙️ 表示する列</h2>
+      <button class="pill" onclick="closeColPicker()">閉じる</button>
+    </div>
+    <p class="hint">一覧表に出す項目をえらべます（店舗名はいつも表示されます）</p>
+    <div class="mt" style="display:flex; gap:8px;">
+      <button class="fchip" onclick="colPickPreset('few')">よく見る12項目</button>
+      <button class="fchip" onclick="colPickPreset('all')">すべて</button>
+    </div>
+    <div id="colPickBody" class="mt"></div>
   </div>
 </div>
 
@@ -1132,6 +1172,7 @@ const STORE_CORE = [
   { g:"基本",   key:"brand",       label:"ブランド・屋号",     type:"text", ph:"マシンピラティスPeace" },
   { g:"基本",   key:"gyotai",      label:"業態",               type:"gyotai", req:1 },
   { g:"基本",   key:"area",        label:"エリア（地名）",     type:"text", req:1, ph:"東川口" },
+  { g:"基本",   key:"city",        label:"市区町村",           type:"text", ph:"川口市" },
   { g:"基本",   key:"address",     label:"住所",               type:"text", key3:1, ph:"埼玉県川口市東川口1-31-4" },
   { g:"基本",   key:"phone",       label:"電話番号",           type:"tel",  key3:1, ph:"048-229-1224" },
   { g:"基本",   key:"openedAt",    label:"開業日",             type:"date" },
@@ -1163,6 +1204,7 @@ const STORE_CORE = [
   { g:"投稿づくり", key:"events",       label:"イベント・季節の予定",   type:"area" },
   { g:"投稿づくり", key:"competitors",  label:"気になる他店",           type:"area" },
   { g:"投稿づくり", key:"ngNotes",      label:"投稿NG・注意点",         type:"area" },
+  { g:"投稿づくり", key:"reviewWords",  label:"口コミ返信で使う言葉",   type:"area" },
   { g:"投稿づくり", key:"memo",         label:"その他メモ",             type:"area" },
 ];
 const STORE_GROUPS = ["基本","営業","リンク","連携ID","投稿づくり","業態ごとの項目"];
@@ -1328,6 +1370,44 @@ let SFILT = { gyotai:"", area:"", miss:false };
 try{ SFILT = Object.assign(SFILT, JSON.parse(localStorage.getItem("meo_sfilt")||"{}")); }catch(e){}
 function saveSFilt(){ try{ localStorage.setItem("meo_sfilt", JSON.stringify(SFILT)); }catch(e){} }
 
+let STORE_VIEW = load("meo_store_view", "card");
+const COL_DEFAULT = ["gyotai","area","usp","target","troubles","keywords","hours","closedDays","parking","phone"];
+let STORE_COLS = load("meo_store_cols", COL_DEFAULT.slice());
+window.setStoreView = (v)=>{ STORE_VIEW = v; save("meo_store_view", v); renderStoresView(); };
+
+// 表に出せる項目（共通項目＋いま登録されている業態の固有項目）
+function tableFields(){
+  const ex = [];
+  GYOTAI_TPL.forEach(g=> (g.fields||[]).forEach(f=>{ if(!ex.some(x=>x.key===f.key)) ex.push({ ...f, extra:1 }); }));
+  return STORE_CORE.filter(f=>f.key!=="name").concat(ex);
+}
+window.openColPicker = ()=>{ renderColPicker(); document.getElementById("colModal").style.display="flex"; };
+window.closeColPicker = ()=>{ document.getElementById("colModal").style.display="none"; };
+function renderColPicker(){
+  const box = document.getElementById("colPickBody");
+  const groups = [...new Set(tableFields().map(f=>f.g||"業態ごとの項目"))];
+  box.innerHTML = groups.map(g=>`<div class="mt"><b style="font-size:12px; color:var(--brand);">${esc(g)}</b>
+    <div class="storepick-grid mt">${tableFields().filter(f=>(f.g||"業態ごとの項目")===g).map(f=>`
+      <label class="storepick-chip ${STORE_COLS.includes(f.key)?"on":""}">
+        <input type="checkbox" value="${esc(f.key)}" ${STORE_COLS.includes(f.key)?"checked":""} onchange="toggleCol(this)">
+        <span>${esc(f.label)}</span></label>`).join("")}</div></div>`).join("");
+}
+window.toggleCol = (el)=>{
+  el.closest(".storepick-chip").classList.toggle("on", el.checked);
+  STORE_COLS = el.checked ? [...STORE_COLS, el.value] : STORE_COLS.filter(k=>k!==el.value);
+  save("meo_store_cols", STORE_COLS); renderStoresView();
+};
+window.colPickPreset = (kind)=>{
+  STORE_COLS = kind==="all" ? tableFields().map(f=>f.key) : COL_DEFAULT.slice();
+  save("meo_store_cols", STORE_COLS); renderColPicker(); renderStoresView();
+};
+window.showCell = (id, key)=>{
+  const st = STORE_MASTER.find(x=>x.id===id); if(!st) return;
+  const f = tableFields().find(x=>x.key===key); if(!f) return;
+  askPop({ title:`${st.name}｜${f.label}`, body: String(fieldVal(st,f)||"（未記入）"), okLabel:"編集する" })
+    .then(ok=>{ if(ok) openStoreCard(id); });
+};
+
 window.setSFilt = (k, v)=>{ SFILT[k] = (SFILT[k]===v ? (k==="miss"?false:"") : v); saveSFilt(); renderStoresView(); };
 window.clearSFilt = ()=>{ SFILT={gyotai:"",area:"",miss:false}; saveSFilt();
   const q=document.getElementById("storeQ"); if(q) q.value=""; renderStoresView(); };
@@ -1376,7 +1456,11 @@ window.renderStoresView = ()=>{
     return true;
   });
 
+  document.querySelectorAll("#storeViewSeg button").forEach(b=> b.classList.toggle("on", b.dataset.sv===STORE_VIEW));
+  const cb = document.getElementById("storeColBtn"); if(cb) cb.style.display = STORE_VIEW==="table" ? "block" : "none";
+
   if(!rows.length){ box.innerHTML = `<div class="card"><p class="hint">該当する店舗がありません</p></div>`; return; }
+  if(STORE_VIEW==="table"){ box.innerHTML = storeTableHTML(rows); return; }
 
   box.innerHTML = rows.map(st=>{
     const f = storeFill(st);
@@ -1407,6 +1491,27 @@ window.renderStoresView = ()=>{
     </div>`;
   }).join("");
 };
+
+function storeTableHTML(rows){
+  const all = tableFields();
+  const cols = STORE_COLS.map(k=> all.find(f=>f.key===k)).filter(Boolean);
+  const head = `<tr><th class="c0">店舗名</th><th>記入率</th>${cols.map(f=>`<th>${esc(f.label)}</th>`).join("")}</tr>`;
+  const body = rows.map(st=>{
+    const fl = storeFill(st);
+    const tds = cols.map(f=>{
+      const v = String(fieldVal(st,f)||"");
+      const need = (f.req||f.key3) && !v.trim();
+      const cls = need ? "miss" : (v ? "" : "emp");
+      return `<td class="${cls}" title="${esc(v)}" onclick="event.stopPropagation(); showCell('${esc(st.id)}','${esc(f.key)}')">${v?esc(v):"—"}</td>`;
+    }).join("");
+    return `<tr class="${st.isActive===false?"off":""}" onclick="openStoreCard('${esc(st.id)}')">
+      <td class="c0">${esc(st.name||"（名前未設定）")}${st.isActive===false?'<br><span class="pill">今後未使用</span>':''}</td>
+      <td style="white-space:nowrap; font-weight:700; color:${fl.pct>=80?'var(--ok)':fl.pct>=50?'var(--p2)':'var(--warn)'};">${fl.pct}%</td>
+      ${tds}</tr>`;
+  }).join("");
+  return `<div class="stbl-wrap"><table class="stbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <p class="hint" style="margin-top:7px;">横にスクロールできます／行をタップで編集／セルをタップで全文表示</p>`;
+}
 
 // ============================================================
 // 店舗タブ：詳細・編集
@@ -1802,19 +1907,26 @@ window.useIdea = async (i)=>{
 // ============================================================
 // 記入シート（xlsx）との行き来
 // ============================================================
-const SHEET_MAP_BASE = { "店舗名":"name","ブランド・屋号":"brand","業態":"gyotai","エリア":"area","エリア（地名）":"area",
+const SHEET_MAP_BASE = { "店舗名":"name","ブランド・屋号":"brand","エリア（地名）":"area","市区町村":"city","エリア":"city",
   "住所":"address","電話番号":"phone","開業日":"openedAt",
   "営業時間":"hours","定休日":"closedDays","駐車場":"parking","駐車場の台数・場所":"parkingNote","駐車場のメモ":"parkingNote",
   "最寄駅からのアクセス":"access","アクセス":"access",
   "WEBサイトURL":"webUrl","WEBサイト":"webUrl","予約リンク":"reserveUrl","Instagram":"instagram","その他リンク":"otherUrl",
-  "GBP店舗コード":"gbpStoreCode","GBPメインカテゴリ":"gbpCategory" };
+  "GBP店舗コード":"gbpStoreCode","GBPメインカテゴリ":"gbpCategory",
+  // 店舗マスターシート（ONE T RAST様）の列名
+  "サイトURL":"webUrl","LINEリンク":"reserveUrl","備考・特記事項":"memo" };
 const SHEET_MAP_NETA = { "この店舗ならではの強み":"usp","よく来られるお客様の層":"target","多いお悩み":"troubles",
   "お客様がよく言う言葉":"customerWords","初回料金":"price","料金・キャンペーン":"price",
   "検索で上位に出したい言葉":"keywords","狙う検索ワード":"keywords",
   "近くの地域名":"nearbyAreas","近くの目印":"landmarks","目印・ランドマーク":"landmarks",
   "スタッフ紹介":"staff","お客様の変化":"cases","使える写真":"photos","イベント":"events",
   "近隣で気になっている他店":"competitors","気になる他店":"competitors",
-  "投稿してほしくない内容":"ngNotes","投稿NG":"ngNotes","その他":"memo" };
+  "投稿してほしくない内容":"ngNotes","投稿NG":"ngNotes","その他":"memo",
+  // 店舗マスターシート（ONE T RAST様）の列名
+  "メインターゲット":"target","最強USP":"usp","MEO重点KW":"keywords","口コミ返信ワード":"reviewWords",
+  "備考・特記事項":"memo" };
+// 同じ項目に複数列が対応するとき（最強USP①＋②など）のつなぎ文字
+const JOIN_SEP = { usp:"／", keywords:"・", target:"、" };
 
 // 見出し → 項目キー。長い見出しから順に照合するので「駐車場」と「駐車場のメモ」を取り違えません
 function mapHeader(h, dict){
@@ -1834,6 +1946,37 @@ function mapExtraHeader(h){
   return null;
 }
 
+// 店舗名から「地名」だけ取り出す（表記ゆれ吸収）
+const BRAND_RE = /^(あさば整骨院|あさば整体院|マシンピラティス\s*Peace|マシンピラティス|Peace|深層睡眠整体院|深層睡眠)/;
+function storeKeyName(name){
+  return String(name||"").replace(/[\s　_]/g,"").replace(BRAND_RE,"").replace(/店$/,"").trim();
+}
+function gyotaiGroupOf(g){
+  const t = String(g||"");
+  if(/ピラティス|Peace/i.test(t)) return "pilates";
+  if(/深層睡眠/.test(t)) return "sleep";
+  return "seitai_seikotsu";
+}
+// 名前＋業態グループで既存店舗を探す
+function findStoreByName(name, gyotai){
+  const key = storeKeyName(name);
+  if(!key) return null;
+  const cands = STORE_MASTER.filter(x=> storeKeyName(x.name)===key);
+  if(!cands.length) return null;
+  const raw = String(gyotai||"").trim();
+  // 業態がわかるときはグループ一致を必須にする（「深層睡眠整体院 三ノ輪店」を整体院に混ぜないため）
+  const grp = gyotaiGroupOf(raw || name);
+  const hit = cands.find(x=> gyotaiGroupOf(x.gyotai)===grp);
+  if(hit) return hit;
+  if(raw || BRAND_RE.test(String(name||"").replace(/[\s　_]/g,""))) return null;
+  return cands.length===1 ? cands[0] : null;
+}
+// 取り込みで上書きしたくない値（先に直した内容を戻さないため）
+const IMPORT_SKIP = [{ nameKey:"八潮", group:"pilates", key:"usp" }];
+function importSkipped(st, key){
+  return IMPORT_SKIP.some(r=> r.key===key && storeKeyName(st.name)===r.nameKey && gyotaiGroupOf(st.gyotai)===r.group);
+}
+
 window.importStoresXlsx = (input)=>{
   const file = input.files && input.files[0]; if(!file) return;
   const out = document.getElementById("storeImportResult");
@@ -1841,48 +1984,74 @@ window.importStoresXlsx = (input)=>{
   fr.onload = async (ev)=>{
     try{
       const wb = XLSX.read(ev.target.result, {type:"array"});
-      const changes = {};   // gmoId -> {key:value}
+      const changes = new Map();  // storeId -> {key:value}
+      const unknown = [];
       let hitSheets = 0;
+
       wb.SheetNames.forEach(sn=>{
-        const dict = /基本情報/.test(sn) ? SHEET_MAP_BASE : (/ネタ|素材/.test(sn) ? SHEET_MAP_NETA : null);
-        if(!dict) return;
-        hitSheets++;
+        // ①基本情報／②投稿ネタ素材（当ツールの書式）と、店舗マスターシート（店舗名だけの書式）の両方に対応
+        const isBase = /基本情報/.test(sn), isNeta = /ネタ|素材/.test(sn), isMaster = /店舗情報一覧|店舗マスタ/.test(sn) || wb.SheetNames.length===1;
+        if(!isBase && !isNeta && !isMaster) return;
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header:1, defval:""});
-        let hi = aoa.findIndex(r=> r.some(c=>/GMO店舗ID/.test(String(c))));
+        const hi = aoa.findIndex(r=> r.some(c=>/GMO店舗ID|^店舗名$/.test(String(c).trim())));
         if(hi<0) return;
-        const head = aoa[hi];
-        const idCol = head.findIndex(c=>/GMO店舗ID/.test(String(c)));
+        hitSheets++;
+        const head = aoa[hi].map(c=>String(c||"").trim());
+        const idCol = head.findIndex(c=>/GMO店舗ID/.test(c));
+        const nmCol = head.findIndex(c=> c==="店舗名");
+        const gyCol = head.findIndex(c=> c==="業態");
+        const dict  = isNeta ? SHEET_MAP_NETA : (isBase ? SHEET_MAP_BASE : null);
+
         aoa.slice(hi+1).forEach(r=>{
-          const gid = String(r[idCol]||"").replace(/\.0$/,"").trim();
-          if(!gid || !/^\d+$/.test(gid)) return;   // 記入例行などは除外
+          let st = null;
+          if(idCol>=0){
+            const gid = String(r[idCol]||"").replace(/\.0$/,"").trim();
+            if(!/^\d+$/.test(gid)) return;               // 記入例行などは除外
+            st = STORE_MASTER.find(x=>String(x.gmoId)===gid);
+            if(!st){ unknown.push(gid); return; }
+          } else {
+            const nm = String(r[nmCol]||"").trim();
+            if(!nm) return;
+            st = findStoreByName(nm, gyCol>=0 ? r[gyCol] : "");
+            if(!st){ unknown.push(nm); return; }
+          }
+          const c = changes.get(st.id) || {};
           head.forEach((h,ci)=>{
-            if(ci===idCol) return;
+            if(ci===idCol || ci===nmCol) return;
             const v = String(r[ci]==null?"":r[ci]).trim();
-            if(!v) return;
-            const key = mapHeader(h, dict);
-            if(key){ (changes[gid] = changes[gid]||{})[key] = v; return; }
+            if(!v || v==="未登録" || v==="-") return;
+            // ①②の書式はシート別の辞書、店舗マスターは両方から探す
+            const key = dict ? mapHeader(h, dict) : (mapHeader(h, SHEET_MAP_BASE) || mapHeader(h, SHEET_MAP_NETA));
+            if(key){
+              if(key==="gyotai") return;                  // 業態はシートで上書きしない
+              if(importSkipped(st, key)) return;          // 直した内容を戻さない
+              c[key] = c[key] ? c[key] + (JOIN_SEP[key]||"／") + v : v;   // ①②のように複数列ある項目は連結
+              return;
+            }
             const xk = mapExtraHeader(h);
-            if(xk){ const c = (changes[gid] = changes[gid]||{}); (c.extra = c.extra||{})[xk] = v; }
+            if(xk){ c.extra = c.extra||{}; c.extra[xk] = v; }
           });
+          if(Object.keys(c).length) changes.set(st.id, c);
         });
       });
-      if(!hitSheets){ out.style.color="var(--ng)"; out.textContent="「①基本情報」「②投稿ネタ素材」のシートが見つかりませんでした"; input.value=""; return; }
-      const ids = Object.keys(changes);
-      if(!ids.length){ out.textContent="反映できる内容がありませんでした（GMO店舗IDの列と、記入された行を確認してください）"; input.value=""; return; }
-      const targets = ids.map(gid=>({ gid, st: STORE_MASTER.find(x=>String(x.gmoId)===gid), n:Object.keys(changes[gid]).length }));
-      const known = targets.filter(t=>t.st), unknown = targets.filter(t=>!t.st);
-      const body = known.map(t=>`${t.st.name}：${t.n}項目`).join("\n") +
-        (unknown.length?`\n\n⚠️ 見つからない店舗ID：${unknown.map(t=>t.gid).join("、")}`:"");
-      if(!(await askPop({ title:`${known.length}店舗に反映しますか？`, body, okLabel:"反映する" }))){ out.textContent="キャンセルしました"; input.value=""; return; }
-      for(const t of known){
-        const rec = JSON.parse(JSON.stringify(t.st));
-        const ch = Object.assign({}, changes[t.gid]);
+
+      if(!hitSheets){ out.style.color="var(--ng)"; out.textContent="読み取れるシートが見つかりませんでした（「店舗名」またはGMO店舗IDの列が必要です）"; input.value=""; return; }
+      if(!changes.size){ out.textContent="反映できる内容がありませんでした"; input.value=""; return; }
+      const list = [...changes.entries()].map(([id,ch])=>({ st:STORE_MASTER.find(x=>x.id===id), n:Object.keys(ch).length }));
+      const uq = [...new Set(unknown)];
+      const body = list.map(t=>`${t.st.name}：${t.n}項目`).join("\n") +
+        (uq.length?`\n\n⚠️ 見つからなかった店舗：${uq.join("、")}`:"");
+      if(!(await askPop({ title:`${list.length}店舗に反映しますか？`, body, okLabel:"反映する" }))){ out.textContent="キャンセルしました"; input.value=""; return; }
+      for(const [id,ch0] of changes){
+        const src = STORE_MASTER.find(x=>x.id===id); if(!src) continue;
+        const rec = JSON.parse(JSON.stringify(src));
+        const ch = Object.assign({}, ch0);
         if(ch.extra){ rec.extra = Object.assign({}, rec.extra||{}, ch.extra); delete ch.extra; }
         Object.assign(rec, ch);
         delete rec._base;
         await saveStoreRec(rec, {force:true});
       }
-      out.style.color="var(--ok)"; out.textContent=`✅ ${known.length}店舗に反映しました`;
+      out.style.color="var(--ok)"; out.textContent=`✅ ${list.length}店舗に反映しました`;
       renderStoresView();
     }catch(e){ console.warn(e); out.style.color="var(--ng)"; out.textContent="取込に失敗しました："+e.message; }
     input.value="";
@@ -3745,6 +3914,7 @@ document.getElementById("ask_input").addEventListener("keydown", e=>{ if(e.key==
 const POP_MODALS = {
   askModal:   ()=>askClose(null),
   storeModal: ()=>closeStoreCard(),
+  colModal: ()=>closeColPicker(),
   quickFillModal: ()=>closeQuickFill(),
   ideaModal: ()=>closeIdeas(),
   gyotaiModal: ()=>closeGyotaiMgr(),
@@ -5664,13 +5834,15 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-08-09.4";
+const STUDIO_VERSION = "2026-08-09.5";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>📋 店舗の一覧表ビュー</b>：全店の中身を横並びで見比べられます（列も選べます）</li>
+        <li><b>店舗マスターの取り込み</b>：スプレッドシートを店舗名で照合してまとめて反映</li>
         <li><b>投稿ボタンを選べます</b>：予約／詳細／今すぐ電話など7種類。店舗ごとの既定＋投稿ごとの上書き</li>
         <li><b>カテゴリ共通でも店舗を選べます</b>：既定は全店選択。外したい店のチェックだけ外してください</li>
         <li><b>🎨 サムネイルツールの入口をわかりやすく</b>：ホームに常設＋画像の用意方法を4択で表示</li>
