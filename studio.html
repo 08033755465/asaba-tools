@@ -363,6 +363,12 @@
       <button class="btn btn-ghost mt" onclick="go('stores')">🏪 店舗タブをひらく</button>
     </div>
     <div class="card">
+      <h2>📐 投稿の型（書き方の構成）</h2>
+      <p class="hint">「どう書くか」の引き出しです。作成画面と投稿パターンから選べます</p>
+      <div id="formatList" class="mt"></div>
+      <button class="btn btn-ghost mt" onclick="openFormatEdit('')">＋ 型を追加</button>
+    </div>
+    <div class="card">
       <h2>🔄 投稿パターン（チーム共有）</h2>
       <p class="hint">「何を出すか」のシリーズ定義。切り口・色・使うテンプレを設定し、スケジュール一括生成で使います</p>
       <div id="patternList" class="mt"></div>
@@ -478,6 +484,8 @@
     </div>
     <label class="mt">投稿ボタン</label>
     <select id="sm_btnType"><option value="">店舗の設定にしたがう（既定：予約）</option></select>
+    <label class="mt">投稿の型</label>
+    <select id="sm_formatId"></select>
     <label class="mt">タイミング</label>
     <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
     <label class="mt">キーワード（症状・訴求KW／指示文に反映）</label>
@@ -522,7 +530,7 @@
       <p class="hint" style="line-height:2;">
         <code>{{テーマ}}</code> <code>{{キャッチ}}</code> <code>{{キーワード}}</code> <code>{{文脈}}</code>
         <code>{{対象}}</code> <code>{{投稿タイプ}}</code> <code>{{投稿予定}}</code>
-        <code>{{ルール}}</code> <code>{{フォーマット}}</code> <code>{{定例指示}}</code><br>
+        <code>{{ルール}}</code> <code>{{構成}}</code> <code>{{フォーマット}}</code> <code>{{定例指示}}</code><br>
         ※<code>{{フォーマット}}</code>は「====タイトル====」などの出力形式です。貼り付け解析に必要なので残してください。
       </p>
     </details>
@@ -552,6 +560,7 @@
     <div class="row mt">
       <div><label>比率の重み（比率方式で使用）</label><input id="pt_weight" type="number" min="1" max="9" value="1"></div>
       <div><label>使う指示テンプレ</label><select id="pt_tpl"></select></div>
+      <div><label>既定の投稿の型</label><select id="pt_format"></select></div>
     </div>
     <label class="mt">使う画像テンプレ</label>
     <select id="pt_imgtpl"></select>
@@ -633,6 +642,34 @@
       <button class="btn btn-ghost mt" style="color:var(--ng); border-color:#fecaca;" onclick="deleteStoreCard()">🗑 完全に削除</button>
       <p class="hint">※ 投稿に使わないだけなら「有効」のチェックを外してください（データは残ります）</p>
     </details>
+  </div>
+</div>
+
+<div id="formatModal" style="display:none; position:fixed; inset:0; z-index:76; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 20px); max-width:620px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:18px calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <h2 id="fmtModalTitle" style="margin:0;">📐 投稿の型</h2>
+      <button class="pill" onclick="closeFormatEdit()">閉じる</button>
+    </div>
+    <label class="mt">型の名前 <span style="color:var(--ng)">*</span></label>
+    <input id="fmt_name" placeholder="例：型1 季節×症状「気づき」型">
+    <label class="mt">流れ（1行ずつ）</label>
+    <textarea id="fmt_structure" style="min-height:120px;" placeholder="①タイトル&#10;②〜&#10;③〜"></textarea>
+    <label class="mt">この型が効く理由</label>
+    <textarea id="fmt_why" style="min-height:56px;"></textarea>
+    <label class="mt">⚠️ 使うときの注意（指示文に必ず入ります）</label>
+    <textarea id="fmt_caution" style="min-height:56px;" placeholder="例：「根本改善」「疾患」は使わない"></textarea>
+    <label class="mt">出典・参考にした店舗（任意）</label>
+    <input id="fmt_source" placeholder="例：柏の葉キャンパス駅前接骨院">
+    <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
+      <input type="checkbox" id="fmt_enabled" checked style="width:auto;"> 使う（選択肢に出す）
+    </label>
+    <div class="mt" style="display:flex; gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveFormatEdit()">💾 保存</button>
+      <button class="btn btn-ghost" style="width:auto; padding:14px 16px;" onclick="closeFormatEdit()">キャンセル</button>
+    </div>
+    <details class="mt" id="fmt_delWrap"><summary style="font-size:12px; color:var(--muted);">この型を削除する</summary>
+      <button class="btn btn-ghost mt" style="color:var(--ng); border-color:#fecaca;" onclick="deleteFormat()">🗑 削除</button></details>
   </div>
 </div>
 
@@ -1105,6 +1142,25 @@ try {
     }
   } catch (e) { console.warn('store seed error', e); }
 
+  window.fs.saveFormat = (rec) => setDoc(doc(db, ...basePath('studio_formats'), rec.id), rec);
+  window.fs.delFormat  = (id)  => deleteDoc(doc(db, ...basePath('studio_formats'), id));
+  try {
+    const fs2 = await getDocs(collection(db, ...basePath('studio_formats')));
+    const fHave = new Set(); let fSeeded = false;
+    fs2.forEach(d => { if (d.id === '__seed') fSeeded = true; else fHave.add(d.id); });
+    if (!fSeeded && Array.isArray(window.__formatSeed)) {
+      for (const r of window.__formatSeed) { if (!fHave.has(r.id)) await setDoc(doc(db, ...basePath('studio_formats'), r.id), r); }
+      await setDoc(doc(db, ...basePath('studio_formats'), '__seed'), { done: true, at: Date.now() });
+    }
+  } catch (e) { console.warn('format seed error', e); }
+
+  onSnapshot(collection(db, ...basePath('studio_formats')), (s) => {
+    const arr = []; s.forEach(d => { if (!d.id.startsWith('__')) arr.push({ ...d.data(), id: d.id }); });
+    arr.sort((a,b)=> (a.order||0) - (b.order||0));
+    window.__formats = arr;
+    window.dispatchEvent(new Event('formats-ready'));
+  }, (e)=> console.warn('formats read error', e));
+
   onSnapshot(collection(db, ...basePath('studio_gyotai')), (s) => {
     const arr = []; s.forEach(d => { if (!d.id.startsWith('__')) arr.push({ ...d.data(), id: d.id }); });
     arr.sort((a,b)=> (a.order||0) - (b.order||0));
@@ -1190,6 +1246,10 @@ const STORE_CORE = [
   { g:"連携ID", key:"gmoId",       label:"GMO店舗ID",          type:"text", req:1, ph:"117528" },
   { g:"連携ID", key:"gbpStoreCode",label:"GBP店舗コード",      type:"text" },
   { g:"連携ID", key:"gbpCategory", label:"GBPメインカテゴリ",  type:"text", ph:"整骨院" },
+  { g:"連携ID", key:"gbpCategoryRec", label:"推奨カテゴリ（検証用メモ）", type:"text", ph:"接骨院" },
+  { g:"連携ID", key:"reviewCount", label:"Google口コミ数",       type:"text", warnBelow:100, ph:"290" },
+  { g:"連携ID", key:"rating",      label:"Google評価",           type:"text", ph:"4.8" },
+  { g:"連携ID", key:"reviewCheckedAt", label:"口コミ数の確認日", type:"date" },
   { g:"投稿づくり", key:"usp",          label:"この店舗ならではの強み", type:"area", key3:1, ph:"他店とちがう点を3つまで" },
   { g:"投稿づくり", key:"target",       label:"よく来られるお客様の層", type:"area", key3:1, ph:"30〜40代の子育て中のママ、デスクワークの会社員" },
   { g:"投稿づくり", key:"troubles",     label:"多いお悩み・ニーズ TOP3", type:"area", key3:1, ph:"腰痛、肩こり・頭痛、産後の骨盤" },
@@ -1371,7 +1431,7 @@ try{ SFILT = Object.assign(SFILT, JSON.parse(localStorage.getItem("meo_sfilt")||
 function saveSFilt(){ try{ localStorage.setItem("meo_sfilt", JSON.stringify(SFILT)); }catch(e){} }
 
 let STORE_VIEW = load("meo_store_view", "card");
-const COL_DEFAULT = ["gyotai","area","usp","target","troubles","keywords","hours","closedDays","parking","phone"];
+const COL_DEFAULT = ["gyotai","area","reviewCount","rating","usp","target","troubles","keywords","hours","closedDays","parking","phone"];
 let STORE_COLS = load("meo_store_cols", COL_DEFAULT.slice());
 window.setStoreView = (v)=>{ STORE_VIEW = v; save("meo_store_view", v); renderStoresView(); };
 
@@ -1500,7 +1560,9 @@ function storeTableHTML(rows){
     const fl = storeFill(st);
     const tds = cols.map(f=>{
       const v = String(fieldVal(st,f)||"");
-      const need = (f.req||f.key3) && !v.trim();
+      const num = f.warnBelow!=null ? Number(String(v).replace(/[^0-9.]/g,"")) : NaN;
+      const low = f.warnBelow!=null && v.trim() && !isNaN(num) && num < f.warnBelow;
+      const need = ((f.req||f.key3) && !v.trim()) || low;
       const cls = need ? "miss" : (v ? "" : "emp");
       return `<td class="${cls}" title="${esc(v)}" onclick="event.stopPropagation(); showCell('${esc(st.id)}','${esc(f.key)}')">${v?esc(v):"—"}</td>`;
     }).join("");
@@ -2121,7 +2183,12 @@ window.exportStoresXlsx = ()=>{
 const storeByName = (name) => STORES.find(s => s.name === name) || STORES.find(s => name && (name.includes(s.name) || s.name.includes(name)));
 
 // ============ NGワード ============
-const NG = [["治す","整える"],["治る","変わる"],["治療","施術・アプローチ"],["完治","卒業"],["根治","根本にアプローチ"],["改善する","整えていく"],["改善します","サポートします"],["効きます","働きかけます"],["必ず","（削除）"],["絶対に良くなる","（削除）"],["診断","チェック・分析"],["医学的効果","（削除）"]];
+const NG = [["治す","整える"],["治る","変わる"],["治療","施術・アプローチ"],["完治","卒業"],["根治","根本にアプローチ"],["改善する","整えていく"],["改善します","サポートします"],["効きます","働きかけます"],["必ず","（削除）"],["絶対に良くなる","（削除）"],["診断","チェック・分析"],["医学的効果","（削除）"],
+  ["根本改善","根本にアプローチ"],["根本から","土台から"],["疾患","状態"],["再発しにくい","繰り返しにくい"],
+  ["治ります","変わります"],["効果があります","働きかけます"],["改善されます","整っていきます"],["無料になります","（条件を明記）"]];
+// 裏付けが要る実績数値／個人が特定されうる記述（赤ではなく黄色の注意として出します）
+const CLAIM_RE = /(年間|月間|累計)?\s*[0-9０-９][0-9０-９,，]*\s*(件|名|人|例)(以上)?(の)?\s*(実績|症例|対応|施術)/;
+const PRIVACY_RE = /[0-9０-９]{2,3}\s*(kg|ｋｇ|キロ|cm|ｃｍ|センチ)/i;
 
 // ============ 52列ヘッダー（新テンプレ 2026-07更新） ============
 const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","A_掲載期間の設定（Apple記載欄）の予約投稿日 ","A_掲載期間の設定（Apple記載欄）の予約投稿終了日","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","A_アクションボタン（Apple）","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","Apple","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
@@ -2146,11 +2213,121 @@ const RULES = `【文体・トーン】
 ・Peace（ピラティス）＝インナーマッスル、体幹、呼吸、マシンピラティスで習慣化
 
 【構成・分量】
-・①悩みの状況描写 ②なぜ起きるかの視点 ③今日からのセルフケア1つ ④業態別ベネフィット ⑤店舗の強みをさりげなく ⑥来院ハードルを下げる情報 ⑦自然なCTA
+{{構成本文}}
 ・各250〜400字。絵文字は1投稿2〜3個。
 ・「初めての方には特別価格の初回体験あり」の趣旨を毎回自然に織り込む（末尾に唐突はNG）。
 ・CTAは毎回パターンを変える。電話番号（数字）は本文に書かない。LINE予約を主軸の導線にする。
 ・地名は文脈に自然に。共通投稿は無理に入れない/代表数店に留める。`;
+
+const DEFAULT_STRUCTURE = "・①悩みの状況描写 ②なぜ起きるかの視点 ③今日からのセルフケア1つ ④業態別ベネフィット ⑤店舗の強みをさりげなく ⑥来院ハードルを下げる情報 ⑦自然なCTA";
+// 選ばれた型に合わせて生成ルールの【構成・分量】を差し替える
+function structureText(formatId){
+  const f = formatById(formatId);
+  if(!f) return DEFAULT_STRUCTURE;
+  return `・この投稿は「${f.name}」の構成で書いてください。\n` +
+    String(f.structure||"").split("\n").map(l=>"　"+l).join("\n") +
+    (f.why?`\n・この型が効く理由：${f.why}`:"") +
+    (f.caution?`\n・⚠️この型の注意：${f.caution}`:"");
+}
+function rulesText(formatId){ return RULES.replace("{{構成本文}}", structureText(formatId)); }
+
+// ============================================================
+// 投稿の型（構成）— どう書くかの引き出し。設定タブで追加・編集できます
+// 出典：docs/競合分析_上位12件_2026-08.md
+// ============================================================
+const FORMAT_SEED = [
+  { id:"f_season", order:1, enabled:true, name:"型1 季節×症状「気づき」型", source:"柏の葉キャンパス駅前／柏南口接骨院",
+    structure:"①【季節の状況＋不調を1行に圧縮したタイトル】\n②季節特有の生活シーンの描写\n③その生活が体に起こす変化\n④自院の向き合い方\n⑤立地の通いやすさ\n⑥相談ハードルを下げる締め",
+    why:"症状ではなく「季節の行動」から入るので、まだ不調を自覚していない層に届く。【】で始めるとマップのカード1行目が読まれやすい。",
+    caution:"他業種・他院を否定する書き方（「その場しのぎではなく」等）は真似しない。" },
+  { id:"f_symptom", order:2, enabled:true, name:"型2 症状名「解説」型＋チェックリスト", source:"新松戸ゆりのき通り整骨院",
+    structure:"①「◯◯にある店名です」で開始\n②【症状名とは？】の短い説明\n③当てはまる人のチェックリスト4項目\n④その症状が起きる生活背景\n⑤自院のアプローチ\n⑥アクセス・営業時間を末尾に固定",
+    why:"検索需要のある症状名を毎回1つ狙い撃ちできる。投稿が検索の資産になる。",
+    caution:"出典の競合は「根本改善」「疾患」「治療」を多用している。これらは使用不可。構造だけを使い、言葉は「整える」「アプローチする」に置き換える。" },
+  { id:"f_story", order:3, enabled:true, name:"型3 来院者エピソード「物語」型", source:"CUREPRO八潮店",
+    structure:"①日常の一場面をタイトルに\n②悩みの描写\n③会話の再現\n④体の状態とその背景\n⑤今日からできる具体的な提案\n⑥前向きな締め＋エリア名",
+    why:"売り込み感が薄く最後まで読まれる。セルフケア提案が具体的で保存されやすい。",
+    caution:"個人が特定される書き方は禁止。「M様は体重が61キロ」のような属性・数値は書かない。「こんなご相談をいただくことがあります」と一般化する。" },
+  { id:"f_rhythm", order:4, enabled:true, name:"型4 悩み提起→原因→解決「縦リズム」型（最推奨）", source:"骨盤専門サロンREFLA 南流山店",
+    structure:"①問いかけ型のタイトル\n②読者の心の声を「」で2〜3行\n③原因の解説を短い改行でリズムよく\n④◎や・で3つ列挙\n⑤まとめの1行\n⑥自院のアプローチ\n⑦相談を促す一文",
+    why:"1行が短くスマホのマップ画面で圧倒的に読みやすい。調査した12件でもっとも文章の質が高く、あさば様のトーン（共感優先・寄り添い）に最も近い。",
+    caution:"特になし。迷ったらこの型。" },
+  { id:"f_menu", order:5, enabled:true, name:"型5 メニュー訴求「箇条書き」型", source:"ほねラボ整骨院／CUREPRO三郷中央店",
+    structure:"①【メニュー名】\n②▶ベネフィットを3〜4行\n③補足の一言\n④CTA",
+    why:"軽いサブテーマ（B投稿）やイベント枠に向く。短くて作りやすい。",
+    caution:"「年間1,000件以上の実績」など裏付けの必要な数値は書かない。" },
+];
+window.__formatSeed = FORMAT_SEED;
+let FORMATS = [];
+try{ const c = JSON.parse(localStorage.getItem("meo_formats")||"[]"); if(c.length) FORMATS = c; }catch(e){}
+if(!FORMATS.length) FORMATS = FORMAT_SEED.slice();
+window.addEventListener("formats-ready", ()=>{
+  FORMATS = (window.__formats||[]).slice();
+  if(!FORMATS.length) FORMATS = FORMAT_SEED.slice();
+  try{ localStorage.setItem("meo_formats", JSON.stringify(FORMATS)); }catch(e){}
+  if(typeof renderFormatList==="function") renderFormatList();
+});
+function formatById(id){ return FORMATS.find(f=>f.id===id) || null; }
+let editingFormatId = null;
+window.renderFormatList = ()=>{
+  const box = document.getElementById("formatList"); if(!box) return;
+  box.innerHTML = FORMATS.length ? FORMATS.map(f=>`
+    <div class="listitem"><div class="small" style="min-width:0;">
+      <b>${esc(f.name)}</b>${f.enabled===false?' <span class="pill">未使用</span>':''}<br>
+      <span class="muted" style="font-size:11px;">${esc(String(f.structure||"").replace(/\n/g,"→").slice(0,46))}…</span>
+      ${f.source?`<br><span class="muted" style="font-size:10px;">出典：${esc(f.source)}</span>`:""}
+    </div><button class="pill" onclick="openFormatEdit('${esc(f.id)}')">編集</button></div>`).join("")
+    : `<p class="hint">まだ型がありません</p>`;
+};
+window.openFormatEdit = (id)=>{
+  editingFormatId = id || null;
+  const f = id ? formatById(id) : null;
+  document.getElementById("fmtModalTitle").textContent = f ? "📐 型を編集" : "📐 型を追加";
+  document.getElementById("fmt_name").value = f?.name || "";
+  document.getElementById("fmt_structure").value = f?.structure || "";
+  document.getElementById("fmt_why").value = f?.why || "";
+  document.getElementById("fmt_caution").value = f?.caution || "";
+  document.getElementById("fmt_source").value = f?.source || "";
+  document.getElementById("fmt_enabled").checked = f ? f.enabled!==false : true;
+  document.getElementById("fmt_delWrap").style.display = f ? "block" : "none";
+  document.getElementById("formatModal").style.display="flex";
+};
+window.closeFormatEdit = ()=>{ document.getElementById("formatModal").style.display="none"; editingFormatId=null; };
+window.saveFormatEdit = async ()=>{
+  const name = document.getElementById("fmt_name").value.trim();
+  if(!name){ toast("型の名前を入れてください"); return; }
+  const prev = editingFormatId ? formatById(editingFormatId) : null;
+  await saveFormatRec({
+    id: editingFormatId || ("f_"+Date.now().toString(36)),
+    name, structure: document.getElementById("fmt_structure").value.trim(),
+    why: document.getElementById("fmt_why").value.trim(),
+    caution: document.getElementById("fmt_caution").value.trim(),
+    source: document.getElementById("fmt_source").value.trim(),
+    enabled: document.getElementById("fmt_enabled").checked,
+    order: prev?.order ?? (FORMATS.length+1),
+  });
+  closeFormatEdit(); toast("💾 保存しました");
+};
+window.deleteFormat = async ()=>{
+  const f = formatById(editingFormatId); if(!f) return;
+  if(!(await askPop({ title:`型「${f.name}」を削除しますか？`, body:"この型を使っている投稿の設定は「おまかせ」に戻ります。", okLabel:"削除する", danger:true }))) return;
+  if(window.fs && window.fs.delFormat) await window.fs.delFormat(f.id);
+  else { FORMATS = FORMATS.filter(x=>x.id!==f.id); try{ localStorage.setItem("meo_formats", JSON.stringify(FORMATS)); }catch(e){} renderFormatList(); }
+  closeFormatEdit(); toast("🗑 削除しました");
+};
+function formatOptions(v){
+  return `<option value="" ${v?"":"selected"}>おまかせ（標準の構成）</option>` +
+    FORMATS.filter(f=>f.enabled!==false).map(f=>`<option value="${esc(f.id)}" ${v===f.id?"selected":""}>${esc(f.name)}</option>`).join("");
+}
+async function saveFormatRec(rec){
+  if(window.fs && window.fs.saveFormat) await window.fs.saveFormat(rec);
+  else {
+    const i = FORMATS.findIndex(x=>x.id===rec.id);
+    if(i>=0) FORMATS[i]=rec; else FORMATS.push(rec);
+    try{ localStorage.setItem("meo_formats", JSON.stringify(FORMATS)); }catch(e){}
+    if(typeof renderFormatList==="function") renderFormatList();
+  }
+}
 
 // ============ 状態 ============
 const LS = { sched:"meo_studio_schedule", mylinks:"meo_studio_mylinks", draft:"meo_studio_draft", seed:"meo_studio_seed_v1" };
@@ -2323,8 +2500,8 @@ let patterns = load(LS_PATTERNS, []);
 let slotsets = load(LS_SLOTSETS, []);
 // 既定シード（A/Bの現行運用と互換）
 const DEFAULT_PATTERNS = [
-  { id:"pat_A", label:"A", name:"メイン（症状訴求）", angle:"体の悩み・症状に寄り添い、来院動機をつくる", postType:"最新情報", scope:"per_store", storeIds:[], tplId:"", imgTplId:"", color:"#DCE9EE", icon:"💪", weight:1, enabled:true, order:1, createdAt:1 },
-  { id:"pat_B", label:"B", name:"サブ（豆知識・習慣）", angle:"軽い豆知識・生活習慣の話で親しみをつくる", postType:"最新情報", scope:"per_store", storeIds:[], tplId:"", imgTplId:"", color:"#F7E3D8", icon:"💡", weight:1, enabled:true, order:2, createdAt:2 },
+  { id:"pat_A", label:"A", name:"メイン（症状訴求）", angle:"体の悩み・症状に寄り添い、来院動機をつくる", postType:"最新情報", formatId:"f_season", scope:"per_store", storeIds:[], tplId:"", imgTplId:"", color:"#DCE9EE", icon:"💪", weight:1, enabled:true, order:1, createdAt:1 },
+  { id:"pat_B", label:"B", name:"サブ（豆知識・習慣）", angle:"軽い豆知識・生活習慣の話で親しみをつくる", postType:"最新情報", formatId:"f_rhythm", scope:"per_store", storeIds:[], tplId:"", imgTplId:"", color:"#F7E3D8", icon:"💡", weight:1, enabled:true, order:2, createdAt:2 },
 ];
 const DEFAULT_SLOTSETS = [
   { id:"ss_normal", name:"通常期（週2）", slots:[{dow:5,time:"16:00",patterns:["pat_A"]},{dow:1,time:"07:00",patterns:["pat_B"]}], interval:1, enabled:true, createdAt:1 },
@@ -2475,6 +2652,7 @@ window.openPatternEdit = (id)=>{
   document.getElementById("pt_color").value = pt?.color || "#DCE9EE";
   document.getElementById("pt_weight").value = pt?.weight || 1;
   document.getElementById("pt_enabled").checked = pt ? pt.enabled!==false : true;
+  document.getElementById("pt_format").innerHTML = formatOptions(pt?.formatId || "");
   const tplSel = document.getElementById("pt_tpl");
   tplSel.innerHTML = `<option value="">標準（自動生成）</option>` + (templates||[]).filter(t=>t.kind!=='image').map(t=>`<option value="${esc(t.id)}" ${pt?.tplId===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
   const imgSel = document.getElementById("pt_imgtpl");
@@ -2497,6 +2675,7 @@ window.savePatternEdit = ()=>{
     postType: document.getElementById("pt_postType").value,
     scope: prev?.scope || "per_store", storeIds: prev?.storeIds || [],
     tplId: document.getElementById("pt_tpl").value || "",
+    formatId: document.getElementById("pt_format").value || "",
     imgTplId: document.getElementById("pt_imgtpl").value || "",
     color: document.getElementById("pt_color").value,
     icon: document.getElementById("pt_icon").value.trim(),
@@ -2685,7 +2864,7 @@ window.genCommit = ()=>{
       persistSched({ id:uid(), title:"", catchTitle:"", date:r.date, time:r.time||"",
         abType: pt.label, kw:"", imageMemo:"", context:"",
         imageTitle:"", imageId:"", imageUrl:"",
-        postType: pt.postType||"最新情報", timing:"scheduled",
+        postType: pt.postType||"最新情報", formatId: pt.formatId||"", timing:"scheduled",
         scope: pt.scope||"per_store", storeIds: (pt.storeIds&&pt.storeIds.length)?pt.storeIds.slice():STORES.map(x=>x.gmo),
         done:false, posted:false, postedAt:"" });
       n++;
@@ -2812,7 +2991,7 @@ function go(view){
   window.scrollTo(0,0);
   if(view==="home"){ renderLinks(); renderNextAction(); renderSchedule(); }
   if(view==="create") renderCreate();
-  if(view==="settings"){ renderMyLinks(); renderRoleLinks(); renderRules(); renderTplList(); renderPatternList(); renderSlotsetList(); }
+  if(view==="settings"){ renderMyLinks(); renderRoleLinks(); renderRules(); renderTplList(); renderFormatList(); renderPatternList(); renderSlotsetList(); }
   if(view==="stores") renderStoresView();
   if(view==="history") renderHistory();
 }
@@ -3915,6 +4094,7 @@ const POP_MODALS = {
   askModal:   ()=>askClose(null),
   storeModal: ()=>closeStoreCard(),
   colModal: ()=>closeColPicker(),
+  formatModal: ()=>closeFormatEdit(),
   quickFillModal: ()=>closeQuickFill(),
   ideaModal: ()=>closeIdeas(),
   gyotaiModal: ()=>closeGyotaiMgr(),
@@ -4080,6 +4260,7 @@ window.openSchedEdit = (id, presetDate)=>{
   document.getElementById("sm_context").value = s?.context || "";
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
   document.getElementById("sm_btnType").innerHTML = btnTypeOptions(s?.btnType || "");
+  document.getElementById("sm_formatId").innerHTML = formatOptions(s?.formatId || "");
   document.getElementById("sm_timing").value = s?.timing || "scheduled";
   const scope = s ? (s.scope || "category_common") : "per_store";  // 新規は店舗別が既定
   document.querySelectorAll("#sm_scope button").forEach(b=> b.classList.toggle("on", b.dataset.scope===scope));
@@ -4251,6 +4432,7 @@ window.saveSchedEdit = ()=>{
     imageUrl: "", // 旧仕様で保存された重い画像データを消去（サムネはギャラリーから解決）
     postType: document.getElementById("sm_postType").value,
     btnType: document.getElementById("sm_btnType").value,
+    formatId: document.getElementById("sm_formatId").value,
     timing: document.getElementById("sm_timing").value,
     scope, storeIds, done:false,
   };
@@ -4410,7 +4592,7 @@ function checkUpdate(){
 setInterval(checkUpdate, 5*60*1000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkUpdate(); });
 setTimeout(checkUpdate, 20*1000);
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", btnType:"", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", btnType:"", formatId:"", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = async (id)=>{
@@ -4421,7 +4603,7 @@ window.startFromSched = async (id)=>{
   if(typeof closeDayModal==="function") closeDayModal();
   freshCur({ schedId:id, title:s.catchTitle||s.title, themeTitle:s.title, catchTitle:s.catchTitle||"",
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
-             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", timing:s.timing||"scheduled",
+             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", formatId:s.formatId||"", timing:s.timing||"scheduled",
              scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
              imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
@@ -4473,6 +4655,9 @@ function viewTarget(){
     <label class="mt">投稿ボタン</label>
     <select id="c_btnType">${btnTypeOptions(cur.btnType||"")}</select>
     <p class="hint">${BTN_HINT}</p>
+    <label class="mt">投稿の型（書き方の構成）</label>
+    <select id="c_formatId">${formatOptions(cur.formatId||"")}</select>
+    <p class="hint" id="c_formatHint"></p>
     <label class="mt">キーワード（症状・訴求KW／指示文に反映・任意）</label>
     <input id="c_kw" value="${esc(cur.kw||"")}" placeholder="例：肩こり・首こり・手足の冷え">
     <label class="mt">対象</label>
@@ -4491,6 +4676,12 @@ function viewTarget(){
   </div>
   ${nav(null, 1, "次へ →")}`;
 }
+window.renderFormatHint = ()=>{
+  const el = document.getElementById("c_formatHint"); if(!el) return;
+  const f = formatById(cur.formatId);
+  el.innerHTML = f ? `${esc(f.why||"")}${f.caution?`<br><span style="color:var(--warn)">⚠️ ${esc(f.caution)}</span>`:""}`
+                   : "選ばなければ、いつもの7ステップ構成で作ります";
+};
 window.allStores = ()=>{ storePickerAll("c_stores"); cur.storeIds = storePickerValues("c_stores"); renderScopeHint(); };
 function scopeTexts(scope, n){
   return scope==="category_common"
@@ -4573,12 +4764,13 @@ function instrVars(){
     "対象": targetDesc,
     "投稿タイプ": cur.postType || "最新情報",
     "投稿予定": dateStr,
-    "ルール": RULES,
+    "ルール": rulesText(cur.formatId),
+    "構成": structureText(cur.formatId),
     "フォーマット": fmt,
     "定例指示": rulesOf('post').map(r=>'・'+r.body).join('\n'),
   };
 }
-const TPL_KEYS = ["テーマ","キャッチ","キーワード","文脈","対象","投稿タイプ","投稿予定","ルール","フォーマット","定例指示","店舗プロフィール"];
+const TPL_KEYS = ["テーマ","キャッチ","キーワード","文脈","対象","投稿タイプ","投稿予定","ルール","構成","フォーマット","定例指示","店舗プロフィール"];
 const DEFAULT_TPL_BODY = `# あさばグループ MEO投稿 作成依頼
 
 ## テーマ / 共通タイトルの軸
@@ -4814,16 +5006,23 @@ window.onEditContent = (key,val)=>{ cur.contents[key]=val; updateChips(key); sav
 const EMOJI_RE=/\p{Extended_Pictographic}/gu, DASH_RE=/――|——|--|ーー|─/g, PHONE_RE=/0\d{1,4}-\d{1,4}-\d{3,4}/;
 function validate(t){ t=t||"";
   const chars=Array.from(t.replace(/\n/g,"")).length, emoji=(t.match(EMOJI_RE)||[]).length,
-    ng=NG.filter(n=>t.includes(n[0])), dash=[...new Set(t.match(DASH_RE)||[])], phone=PHONE_RE.test(t);
-  return {chars,emoji,ng,dash,phone,charOk:chars>=250&&chars<=400,emojiOk:emoji>=2&&emoji<=3,ok:!ng.length&&!dash.length&&!phone};
+    ng=NG.filter(n=>t.includes(n[0])), dash=[...new Set(t.match(DASH_RE)||[])], phone=PHONE_RE.test(t),
+    claim=(t.match(CLAIM_RE)||[])[0]||"", privacy=(t.match(PRIVACY_RE)||[])[0]||"";
+  return {chars,emoji,ng,dash,phone,claim,privacy,charOk:chars>=250&&chars<=400,emojiOk:emoji>=2&&emoji<=3,ok:!ng.length&&!dash.length&&!phone};
 }
 function updateChips(key){
   const v=validate(cur.contents[key]||""); const c=document.querySelector(`[data-chips="${key}"]`); if(!c)return;
   c.innerHTML = `<span class="chip ${v.charOk?'ok':'warn'}">${v.chars}字</span><span class="chip ${v.emojiOk?'ok':'warn'}">絵文字${v.emoji}</span>`+
     (v.ng.length?`<span class="chip ng">NG${v.ng.length}</span>`:`<span class="chip ok">NGなし</span>`)+
-    (v.dash.length?`<span class="chip ng">横棒</span>`:``)+(v.phone?`<span class="chip ng">電話番号</span>`:``);
+    (v.dash.length?`<span class="chip ng">横棒</span>`:``)+(v.phone?`<span class="chip ng">電話番号</span>`:``)+
+    (v.claim?`<span class="chip warn">⚠️裏付けが要る数値</span>`:``)+(v.privacy?`<span class="chip warn">⚠️個人が特定されうる数値</span>`:``);
   const nb=document.querySelector(`[data-ngbox="${key}"]`);
-  nb.innerHTML = v.ng.length?`<div class="ngbox">${v.ng.map(n=>`「${n[0]}」→「${n[1]}」`).join("<br>")}</div>`:(v.dash.length?`<div class="ngbox">横棒は『』で表現を</div>`:"");
+  const notes = [];
+  if(v.ng.length) notes.push(v.ng.map(n=>`「${n[0]}」→「${n[1]}」`).join("<br>"));
+  if(v.dash.length) notes.push("横棒は『』で表現を");
+  if(v.claim) notes.push(`「${esc(v.claim)}」は裏付け資料がないと書けません（社内にデータがあるか確認してください）`);
+  if(v.privacy) notes.push(`「${esc(v.privacy)}」は本人が特定されるおそれがあります。数値は書かず一般化してください`);
+  nb.innerHTML = notes.length?`<div class="ngbox">${notes.join("<br>")}</div>`:"";
 }
 
 // 用途が一目でわかる大きめボタン（アイコン＋見出し＋説明）
@@ -5465,6 +5664,9 @@ function bindCreate(){
   const ti=document.getElementById("c_time"); if(ti) ti.oninput=e=>cur.time=e.target.value;
   const kw=document.getElementById("c_kw"); if(kw) kw.oninput=e=>cur.kw=e.target.value;
   const pt=document.getElementById("c_postType"); if(pt) pt.onchange=e=>cur.postType=e.target.value;
+  const bt=document.getElementById("c_btnType"); if(bt) bt.onchange=e=>cur.btnType=e.target.value;
+  const ff=document.getElementById("c_formatId");
+  if(ff){ ff.onchange=e=>{ cur.formatId=e.target.value; renderFormatHint(); }; renderFormatHint(); }
   const tm=document.getElementById("c_timing"); if(tm) tm.onchange=e=>cur.timing=e.target.value;
   const sc=document.getElementById("c_scope");
   if(sc){ sc.onclick=e=>{ const b=e.target.closest("button"); if(!b)return;
@@ -5834,13 +6036,16 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-08-09.5";
+const STUDIO_VERSION = "2026-08-10.1";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>📐 投稿の型を選べます</b>：競合調査から抽出した5つの構成（季節×症状／症状解説／エピソード／縦リズム／メニュー訴求）。設定タブで追加・編集も可能</li>
+        <li><b>NGチェックを強化</b>：根本改善・疾患・再発しにくい等を追加。裏付けの要る実績数値・個人が特定されうる数値も警告します</li>
+        <li><b>口コミ数と評価を店舗ごとに記録</b>：一覧表で口コミが少ない店が黄色で分かります</li>
         <li><b>📋 店舗の一覧表ビュー</b>：全店の中身を横並びで見比べられます（列も選べます）</li>
         <li><b>店舗マスターの取り込み</b>：スプレッドシートを店舗名で照合してまとめて反映</li>
         <li><b>投稿ボタンを選べます</b>：予約／詳細／今すぐ電話など7種類。店舗ごとの既定＋投稿ごとの上書き</li>
