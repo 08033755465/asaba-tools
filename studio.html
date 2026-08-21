@@ -1305,6 +1305,35 @@ window.__storeSeed = STORES.map((s,i)=>({
 }));
 window.__gyotaiSeed = GYOTAI_SEED;
 
+// リンクの用途。投稿ボタンの種類＋GBPプロフィール常時設置＋予備
+const LINK_USES = ["予約","オンライン注文","購入","詳細","登録","GBPダイレクト予約","その他"];
+const LINK_USE_NOTE = {
+  "GBPダイレクト予約": "GBPプロフィールに常時表示されるボタン。投稿には使いません",
+  "その他": "計測用の予備。投稿には使いません",
+};
+function linksOf(m){ return Array.isArray(m && m.linkBank) ? m.linkBank : []; }
+function activeLink(m, use){ return linksOf(m).find(l=> l.use===use && l.active && l.url) || null; }
+// 既存の「予約リンク」しか無い店舗は、リンク帳の1本目として取り込む（移行漏れ防止）
+function ensureLinkBank(st){
+  if(!st) return st;
+  if(!Array.isArray(st.linkBank)) st.linkBank = [];
+  if(!st.linkBank.length && st.reserveUrl){
+    st.linkBank.push({ id:"lk_"+Math.random().toString(36).slice(2,9), use:"予約", label:"予約リンク（登録済み）",
+      url: st.reserveUrl, active:true, from:"", to:"", note:"", createdAt:Date.now(), updatedAt:Date.now() });
+  }
+  return st;
+}
+// 使用中の予約リンクを reserveUrl に同期（既存の出力・連携がそのまま動くように）
+function syncReserveUrl(st){
+  const hit = activeLink(st, "予約");
+  if(hit) st.reserveUrl = hit.url;
+  return st;
+}
+function linkUpdatedAt(m){
+  const t = linksOf(m).reduce((a,l)=> Math.max(a, l.updatedAt||0, l.createdAt||0), 0);
+  return t ? new Date(t).toISOString().slice(0,10) : "";
+}
+
 const BTN_HINT = "ボタンのURLは店舗の「予約リンク」を使います。「詳細」を選んだときだけWEBサイトURLがあればそちらを、「なし」ならURLなしで出力します。";
 // 配信対象の店舗。storeIdsが空＝全店（昔の予定データとの互換ルール）
 function storesOf(d){
@@ -1319,9 +1348,11 @@ function btnTypeOptions(v){
 function btnFor(d, s){
   const m = s._m || {};
   const type = (d && d.btnType) || m.btnType || "予約";
-  if(type==="なし") return { type, url:"" };
-  if(type==="詳細" && m.webUrl) return { type, url:m.webUrl };
-  return { type, url: s.url || "" };
+  // 「なし」はボタン自体を出さない。「今すぐ電話」はGBPが電話番号を使うのでURL不要
+  if(type==="なし" || type==="今すぐ電話") return { type, url:"" };
+  const hit = activeLink(m, type);
+  const url = (hit && hit.url) || (type==="詳細" ? (m.webUrl||"") : "") || m.reserveUrl || s.url || "";
+  return { type, url };
 }
 function gyotaiTpl(name){ return GYOTAI_TPL.find(g=>g.name===name) || null; }
 function gyotaiToCat(g){ const t=gyotaiTpl(g); return t && t.groupKey ? t.groupKey : "other"; }
@@ -1338,8 +1369,11 @@ function fieldsFor(gyotai){
   const ex = (t && Array.isArray(t.fields) ? t.fields : []).map(f=>({ ...f, g:"業態ごとの項目", extra:1 }));
   return STORE_CORE.concat(ex);
 }
-function fieldVal(st, f){ return f.extra ? ((st.extra||{})[f.key]||"") : (st[f.key]||""); }
-function setFieldVal(st, f, v){ if(f.extra){ st.extra = st.extra||{}; st.extra[f.key]=v; } else st[f.key]=v; }
+function fieldVal(st, f){
+  if(f && f.calc){ try{ return f.calc(st)||""; }catch(e){ return ""; } }
+  return f.extra ? ((st.extra||{})[f.key]||"") : (st[f.key]||"");
+}
+function setFieldVal(st, f, v){ if(f.calc) return; if(f.extra){ st.extra = st.extra||{}; st.extra[f.key]=v; } else st[f.key]=v; }
 
 // 記入率と、未記入の重要項目
 function storeFill(st){
@@ -1431,15 +1465,23 @@ try{ SFILT = Object.assign(SFILT, JSON.parse(localStorage.getItem("meo_sfilt")||
 function saveSFilt(){ try{ localStorage.setItem("meo_sfilt", JSON.stringify(SFILT)); }catch(e){} }
 
 let STORE_VIEW = load("meo_store_view", "card");
-const COL_DEFAULT = ["gyotai","area","reviewCount","rating","usp","target","troubles","keywords","hours","closedDays","parking","phone"];
+const COL_DEFAULT = ["gyotai","area","_btnNow","_urlNow","_linkUpdated","reviewCount","rating","usp","target","troubles","keywords","hours","closedDays","parking","phone"];
 let STORE_COLS = load("meo_store_cols", COL_DEFAULT.slice());
 window.setStoreView = (v)=>{ STORE_VIEW = v; save("meo_store_view", v); renderStoresView(); };
 
 // 表に出せる項目（共通項目＋いま登録されている業態の固有項目）
+// リンク帳から計算して見せる列（編集はリンク管理から）
+const CALC_FIELDS = [
+  { g:"ボタンのリンク", key:"_btnNow",     label:"投稿ボタン",           calc:(st)=> st.btnType||"予約（既定）" },
+  { g:"ボタンのリンク", key:"_urlNow",     label:"使用中のボタンURL",     calc:(st)=> (activeLink(st, st.btnType||"予約")||{}).url || st.reserveUrl || "" },
+  { g:"ボタンのリンク", key:"_urlGbp",     label:"GBPダイレクト予約",     calc:(st)=> (activeLink(st,"GBPダイレクト予約")||{}).url || "" },
+  { g:"ボタンのリンク", key:"_linkCount",  label:"登録リンク数",         calc:(st)=> String(linksOf(st).length||"") },
+  { g:"ボタンのリンク", key:"_linkUpdated",label:"リンクの最終変更日",   calc:(st)=> linkUpdatedAt(st) },
+];
 function tableFields(){
   const ex = [];
   GYOTAI_TPL.forEach(g=> (g.fields||[]).forEach(f=>{ if(!ex.some(x=>x.key===f.key)) ex.push({ ...f, extra:1 }); }));
-  return STORE_CORE.filter(f=>f.key!=="name").concat(ex);
+  return STORE_CORE.filter(f=>f.key!=="name").concat(CALC_FIELDS).concat(ex);
 }
 window.openColPicker = ()=>{ renderColPicker(); document.getElementById("colModal").style.display="flex"; };
 window.closeColPicker = ()=>{ document.getElementById("colModal").style.display="none"; };
@@ -1582,7 +1624,7 @@ let editingStore = null;
 
 window.openStoreCard = (id)=>{
   const src = id ? STORE_MASTER.find(x=>x.id===id) : null;
-  editingStore = src ? JSON.parse(JSON.stringify(src))
+  editingStore = src ? ensureLinkBank(JSON.parse(JSON.stringify(src)))
     : { id:"s_"+Date.now().toString(36), name:"", gyotai:(GYOTAI_TPL[0]||{}).name||"", area:"",
         gmoId:"", extra:{}, isActive:true, order:(STORE_MASTER.length+1), updatedAt:0 };
   editingStore._base = src ? (src.updatedAt||0) : 0;
@@ -1606,6 +1648,7 @@ function renderStoreCard(){
   let html = "";
   STORE_GROUPS.forEach(g=>{
     const list = fields.filter(x=>x.g===g);
+    if(g==="リンク") { html += linkBankHTML(st); }
     if(!list.length) return;
     html += `<details class="mt" ${g==="基本"||g==="投稿づくり"?"open":""}>
       <summary style="font-weight:700; color:var(--brand);">${g}（${list.filter(x=>String(fieldVal(st,x)).trim()).length}/${list.length}）</summary>`;
@@ -1634,6 +1677,111 @@ function renderStoreCard(){
   document.getElementById("storeCardBody").innerHTML = html;
 }
 
+// ===== ボタンのリンク管理（複数候補＋使用期間） =====
+function fmtStamp(ms){ if(!ms) return ""; const d=new Date(ms); const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function linkBankHTML(st){
+  const bank = st.linkBank || [];
+  // いまの設定サマリー
+  const sums = LINK_USES.map(u=>{
+    const a = bank.find(l=> l.use===u && l.active && l.url);
+    if(!a) return null;
+    return `<div style="font-size:11.5px;">${esc(u)} → <b>${esc(a.label||a.url)}</b>${a.from?`（${esc(a.from)}〜${a.to?esc(a.to):""}）`:""}</div>`;
+  }).filter(Boolean).join("");
+  let html = `<details class="mt" open>
+    <summary style="font-weight:700; color:var(--brand);">🔗 ボタンのリンク管理（${bank.length}本）</summary>
+    <p class="hint" style="margin-top:6px;">候補をいくつでも登録し「これを使う」で切替。期間が自動で記録されるので、流入計測と突き合わせできます。<br>
+    ※「今すぐ電話」はURL不要（GBPが電話番号を使います）／「GBPダイレクト予約」「その他」は記録用で、投稿には使いません</p>
+    ${sums?`<div style="background:var(--pbg,#EAF3F4); border-radius:10px; padding:8px 10px; margin-top:6px;"><b style="font-size:11px; color:var(--brand);">いまの設定</b>${sums}</div>`:""}`;
+  LINK_USES.forEach(u=>{
+    const list = bank.filter(l=> l.use===u);
+    if(!list.length) return;
+    html += `<div class="mt" style="margin-top:10px;"><b style="font-size:12px;">${esc(u)}</b>${LINK_USE_NOTE[u]?`<span class="muted" style="font-size:10px;">（${esc(LINK_USE_NOTE[u])}）</span>`:""}`;
+    list.forEach(l=>{
+      const i = bank.indexOf(l);
+      html += `<div style="border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin-top:6px; ${l.active?"":"opacity:.55;"}">
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          ${l.active?'<span class="pill" style="background:var(--brand); color:#fff;">使用中</span>':''}
+          <b style="font-size:12px; min-width:0; overflow:hidden; text-overflow:ellipsis;">${esc(l.label||"（名前なし）")}</b>
+        </div>
+        <div class="muted" style="font-size:10.5px; word-break:break-all; margin-top:3px;">${esc(l.url||"")}</div>
+        <div class="muted" style="font-size:10px; margin-top:2px;">
+          ${l.from?`使用 ${esc(l.from)}〜${l.to?esc(l.to):""}　`:""}登録 ${fmtStamp(l.createdAt)}${l.updatedAt&&l.updatedAt!==l.createdAt?`　変更 ${fmtStamp(l.updatedAt)}`:""}
+        </div>
+        ${l.note?`<div class="muted" style="font-size:10.5px; margin-top:2px;">📝 ${esc(l.note)}</div>`:""}
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          ${l.active?"":`<button class="pill" onclick="lbUse(${i})">✅ これを使う</button>`}
+          <button class="pill" onclick="lbEdit(${i})">編集</button>
+          <button class="pill" style="color:var(--ng)" onclick="lbDel(${i})">削除</button>
+        </div></div>`;
+    });
+    html += `</div>`;
+  });
+  html += `<button class="btn btn-ghost mt" onclick="lbEdit(-1)">＋ リンクを追加</button>
+    <div id="lbEditBox"></div>
+  </details>`;
+  return html;
+}
+window.lbUse = (i)=>{
+  const st = collectStoreCard(); const bank = st.linkBank||[]; const l = bank[i]; if(!l) return;
+  const today = todayISO();
+  bank.forEach(x=>{ if(x!==l && x.use===l.use && x.active){ x.active=false; x.to=today; x.updatedAt=Date.now(); } });
+  l.active = true; if(!l.from) l.from = today; l.to = ""; l.updatedAt = Date.now();
+  syncReserveUrl(st);
+  renderStoreCard(); toast(`✅ ${l.use}のリンクを切り替えました（期間を記録）`);
+};
+window.lbDel = async (i)=>{
+  const st = collectStoreCard(); const bank = st.linkBank||[]; const l = bank[i]; if(!l) return;
+  if(!(await askPop({ title:"このリンクを削除しますか？", body:`${l.label||l.url}
+
+※使い終わっただけなら削除せず残すと、期間の記録として使えます`, okLabel:"削除する", danger:true }))) return;
+  bank.splice(i,1); syncReserveUrl(st); renderStoreCard();
+};
+window.lbEdit = (i)=>{
+  const st = editingStore; const bank = st.linkBank = st.linkBank||[];
+  const l = i>=0 ? bank[i] : null;
+  const box = document.getElementById("lbEditBox");
+  box.innerHTML = `<div style="border:2px solid var(--brand); border-radius:12px; padding:10px 12px; margin-top:8px; background:#fff;">
+    <b style="font-size:12px; color:var(--brand);">${l?"リンクを編集":"リンクを追加"}</b>
+    <label class="mt">用途</label>
+    <select id="lb_use">${LINK_USES.map(u=>`<option ${l&&l.use===u?"selected":""}>${u}</option>`).join("")}</select>
+    <label class="mt">名前（何のリンクかわかるように）</label>
+    <input id="lb_label" value="${esc(l?.label||"")}" placeholder="例：LINE予約_通常／LINE予約_夏キャンペーン">
+    <label class="mt">URL</label>
+    <input id="lb_url" value="${esc(l?.url||"")}" placeholder="https://...">
+    <div class="row mt">
+      <div><label>使用開始日</label><input type="date" id="lb_from" value="${esc(l?.from||"")}"></div>
+      <div><label>使用終了日</label><input type="date" id="lb_to" value="${esc(l?.to||"")}"></div>
+    </div>
+    <label class="mt">メモ（計測タグの意味など）</label>
+    <input id="lb_note" value="${esc(l?.note||"")}" placeholder="例：Instagram流入の計測用">
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="lbSave(${i})">この内容にする</button>
+      <button class="btn btn-ghost" style="width:auto; padding:14px 16px;" onclick="document.getElementById('lbEditBox').innerHTML=''">やめる</button>
+    </div></div>`;
+  box.scrollIntoView({block:"center"});
+};
+window.lbSave = (i)=>{
+  const st = collectStoreCard(); const bank = st.linkBank = st.linkBank||[];
+  const url = (document.getElementById("lb_url").value||"").trim();
+  if(!url){ toast("URLを入れてください"); return; }
+  const rec = {
+    id: i>=0 ? bank[i].id : "lk_"+Math.random().toString(36).slice(2,9),
+    use: document.getElementById("lb_use").value,
+    label: (document.getElementById("lb_label").value||"").trim(),
+    url,
+    from: document.getElementById("lb_from").value || "",
+    to: document.getElementById("lb_to").value || "",
+    note: (document.getElementById("lb_note").value||"").trim(),
+    active: i>=0 ? bank[i].active : !bank.some(x=>x.use===document.getElementById("lb_use").value && x.active),
+    createdAt: i>=0 ? bank[i].createdAt : Date.now(),
+    updatedAt: Date.now(),
+  };
+  if(i>=0) bank[i]=rec; else bank.push(rec);
+  syncReserveUrl(st);
+  renderStoreCard(); toast("💾 リンクを保存しました（店舗の保存も忘れずに）");
+};
+
 function collectStoreCard(){
   const st = editingStore; if(!st) return null;
   fieldsFor(st.gyotai).forEach(fd=>{
@@ -1652,6 +1800,7 @@ window.onStoreGyotaiChange = (v)=>{
 
 window.saveStoreCard = async ()=>{
   const st = collectStoreCard(); if(!st) return;
+  syncReserveUrl(st);
   if(!st.name){ toast("店舗名を入力してください"); return; }
   if(!st.gmoId){
     const ok = await askPop({ title:"GMO店舗IDが未設定です",
@@ -2174,6 +2323,16 @@ window.exportStoresXlsx = ()=>{
     const exLabels = [...new Set(GYOTAI_TPL.flatMap(g=>(g.fields||[]).map(f=>f.label)))];
     XLSX.utils.book_append_sheet(wb, mk(base), "①基本情報");
     XLSX.utils.book_append_sheet(wb, mk(neta, exLabels), "②投稿ネタ素材");
+    // ③リンク一覧：1行1リンク。流入計測データとの突き合わせ用
+    const lhead = ["GMO店舗ID","店舗名","用途","名前","URL","使用中","使用開始","使用終了","メモ","登録日時","変更日時"];
+    const lrows = [];
+    STORE_MASTER.slice().sort((a,b)=>(a.order||0)-(b.order||0)).forEach(st=>{
+      (st.linkBank||[]).forEach(l=>{
+        lrows.push([String(st.gmoId||""), st.name||"", l.use||"", l.label||"", l.url||"",
+          l.active?"○":"", l.from||"", l.to||"", l.note||"", fmtStamp(l.createdAt), fmtStamp(l.updatedAt)]);
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([lhead].concat(lrows)), "③リンク一覧");
     const d = new Date(), p = n=>String(n).padStart(2,"0");
     XLSX.writeFile(wb, `店舗情報_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}.xlsx`, {bookSST:true});
     toast("📤 書き出しました");
@@ -6036,13 +6195,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-08-10.1";
+const STUDIO_VERSION = "2026-08-19.1";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>🔗 ボタンのリンク管理</b>：店舗ごとに候補リンクを複数登録し「これを使う」で切替。使用期間・変更日時が自動で残るので流入計測と突き合わせできます。GBPダイレクト予約のリンクも別枠で記録</li>
         <li><b>📐 投稿の型を選べます</b>：競合調査から抽出した5つの構成（季節×症状／症状解説／エピソード／縦リズム／メニュー訴求）。設定タブで追加・編集も可能</li>
         <li><b>NGチェックを強化</b>：根本改善・疾患・再発しにくい等を追加。裏付けの要る実績数値・個人が特定されうる数値も警告します</li>
         <li><b>口コミ数と評価を店舗ごとに記録</b>：一覧表で口コミが少ない店が黄色で分かります</li>
