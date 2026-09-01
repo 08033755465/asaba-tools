@@ -924,6 +924,7 @@
         <label>人物パターン</label>
         <select id="im_people" onchange="applyPeople()">
           <option value="woman1">女性1人（基本）</option>
+          <option value="none">人物なし（情景のみ）</option>
           <option value="woman2">女性2人</option>
           <option value="family">3人家族</option>
           <option value="manual">手動入力</option>
@@ -5873,6 +5874,7 @@ const IMG_RULES = `Googleビジネスプロフィール（MEO）投稿用のサ�
 
 const PERSON_PRESETS = {
   woman1: "35〜45歳の日本人女性1人。髪型・服装・表情は毎回変える。",
+  none: "人物は描かない。情景・風景・モノだけで構成する（例：窓辺の朝日、雨上がりの道、湯のみと畳、公園の木漏れ日、玄関の靴、ヨガマットと観葉植物）。生活の気配は残しつつ、人は一切入れない。",
   woman2: "35〜45歳の日本人女性2人（友人同士の自然な雰囲気）。髪型・服装・表情はそれぞれ変え、服の色は互いに違う色に。",
   family: "3人家族（お父さん・お母さん・子ども4〜7歳）。全員日本人。服の色は全員違う色。母親を中心に。",
 };
@@ -5913,7 +5915,11 @@ function imgVars(){
     "タイトルの位置": pos + "（" + (TITLEPOS_LAYOUT[pos]||"") + "）",
     "季節": document.getElementById("im_season").value,
     "雰囲気": document.getElementById("im_mood").value.trim(),
-    "画像ルール": IMG_RULES,
+    "画像ルール": (document.getElementById("im_people").value==="none"
+      ? IMG_RULES.replace(/【人物】[\s\S]*?(?=【背景】)/,
+        "【人物】\n人物は入れない。情景・風景・モノだけで構成する。人の後ろ姿・シルエット・手足も入れない。\n※水彩タッチは「背景」に使用。\n\n")
+        .replace("人物とタイトルを重ねない", "主要なモチーフとタイトルを重ねない")
+      : IMG_RULES),
     "定例指示": rulesOf('image').map(r=>'・'+r.body).join('\n'),
   };
 }
@@ -5962,7 +5968,7 @@ window.saveAsImgTpl = async ()=>{
 };
 window.buildImgPrompt = ()=>{
   const tpl = currentImgTpl();
-  const out = tpl && tpl.body ? applyTpl(tpl.body, imgVars()) : (IMG_RULES + "\n\n" + imgInputBlock());
+  const out = tpl && tpl.body ? applyTpl(tpl.body, imgVars()) : (imgVars()["画像ルール"] + "\n\n" + imgInputBlock());
   document.getElementById("im_output").value = out;
 };
 window.applyPeople = ()=>{
@@ -5981,9 +5987,11 @@ window.openImgPrompt = (schedId)=>{
   const title = s ? (s.catchTitle || s.title) : (cur.title||"");
   const date = s ? s.date : cur.date;
   const isFamily = /家族|親子|子ども/.test(memo);
+  const noPerson = /人物なし|情景のみ|人を入れない|風景のみ/.test(memo);
+  const pk = noPerson ? "none" : (isFamily ? "family" : "woman1");
   document.getElementById("im_scene").value = memo || "（場面を入力：例 夏の公園の木陰で水を飲む）";
-  document.getElementById("im_people").value = isFamily ? "family" : "woman1";
-  document.getElementById("im_person").value = PERSON_PRESETS[isFamily ? "family" : "woman1"];
+  document.getElementById("im_people").value = pk;
+  document.getElementById("im_person").value = PERSON_PRESETS[pk];
   document.getElementById("im_title").value = title;
   document.getElementById("im_season").value = seasonOf(date);
   document.getElementById("im_mood").value = "明るい・爽やか・安心感・自然・健康的";
@@ -6195,13 +6203,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-08-19.1";
+const STUDIO_VERSION = "2026-08-19.2";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>🎨 画像の「人物なし（情景のみ）」</b>：画像プロンプトで人物を入れない指定が選べます。画像メモに「人物なし」と書くと自動で切り替わります</li>
         <li><b>🔗 ボタンのリンク管理</b>：店舗ごとに候補リンクを複数登録し「これを使う」で切替。使用期間・変更日時が自動で残るので流入計測と突き合わせできます。GBPダイレクト予約のリンクも別枠で記録</li>
         <li><b>📐 投稿の型を選べます</b>：競合調査から抽出した5つの構成（季節×症状／症状解説／エピソード／縦リズム／メニュー訴求）。設定タブで追加・編集も可能</li>
         <li><b>NGチェックを強化</b>：根本改善・疾患・再発しにくい等を追加。裏付けの要る実績数値・個人が特定されうる数値も警告します</li>
