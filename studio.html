@@ -5522,6 +5522,17 @@ window.dlPickedImageSafe = async ()=>{
 window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data-view="create"]').hidden && cur.step===3) renderGallery(document.getElementById("gsearch")?.value||""); });
 
 // --- Step4: 出力 ---
+// 出力される掲載期間を人が読める形で（時間が空欄なら先頭店舗の営業時間を例示）
+function evPreviewText(){
+  const list = exportStores();
+  const first = list[0];
+  const hr = hoursRange((first && first._m) || {});
+  const sd = cur.evStart || cur.date || todayISO();
+  const ed = cur.evEnd || monthEndOf(sd);
+  const stt = cur.evStartTime || hr.st, ett = cur.evEndTime || hr.et;
+  const auto = (!cur.evStartTime || !cur.evEndTime) && list.length>1 ? "（店舗ごとの営業時間）" : "";
+  return `${fmtDate(sd)} ${fmtTime(stt)} 〜 ${fmtDate(ed)} ${fmtTime(ett)}${auto}`;
+}
 function viewExport(){
   const errs = validateExport();
   const stores = exportStores();
@@ -5567,6 +5578,16 @@ function viewExport(){
       <div><label>予約投稿日</label><input type="date" value="${esc(cur.date)}" onchange="cur.date=this.value; renderCreate();"></div>
       <div><label>投稿時間</label><input type="time" value="${esc(cur.time||"")}" onchange="cur.time=this.value"></div>
     </div>`:""}
+    ${(cur.postType==="イベント"||cur.postType==="クーポン")?`
+    <div class="row mt">
+      <div><label>掲載開始日</label><input type="date" value="${esc(cur.evStart||"")}" onchange="cur.evStart=this.value; renderCreate();"></div>
+      <div><label>開始時間</label><input type="time" value="${esc(cur.evStartTime||"")}" onchange="cur.evStartTime=this.value; renderCreate();"></div>
+    </div>
+    <div class="row">
+      <div><label>掲載終了日</label><input type="date" value="${esc(cur.evEnd||"")}" onchange="cur.evEnd=this.value; renderCreate();"></div>
+      <div><label>終了時間</label><input type="time" value="${esc(cur.evEndTime||"")}" onchange="cur.evEndTime=this.value; renderCreate();"></div>
+    </div>
+    <p class="hint">実際に出力される掲載期間：<b>${esc(evPreviewText())}</b>　※時間を空欄にすると店舗ごとの営業時間が入ります</p>`:""}
     <label class="mt">画像名（全店共通）</label>
     <input value="${esc(cur.imageTitle)}" oninput="cur.imageTitle=this.value" placeholder="（なし）">
     ${cur.imageTitle?`<p class="hint">⚠️ GMOにアップした画像名と1文字でも違うと「不正値」になります <button class="pill" onclick='copyStr(${JSON.stringify(cur.imageTitle)})'>コピー</button></p>`:""}
@@ -6300,13 +6321,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.4";
+const STUDIO_VERSION = "2026-09-04.5";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>出力の直前でも掲載期間を直せます</b>：「5. 確認して出力」に開始日・開始時間・終了日・終了時間を追加。実際に出力される期間もその場で確認できます</li>
         <li><b>⏰ イベントの開始・終了時間を時計から選べます</b>：数字キーボードで「:」が打てず入力できなかったのを修正しました</li>
         <li><b>📝 本文を予定に保存できます</b>：作成した本文を予定に保存すると、次に開いたとき入った状態から始められます。貼り付け直しが不要になり、チーム全員で同じ本文を共有できます</li>
         <li><b>🎫 イベント・クーポン投稿の掲載期間</b>：開始日・開始時間・終了日・終了時間の4つを出力します（空欄なら「投稿日〜月末」「店舗の営業時間」が入ります）</li>
