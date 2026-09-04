@@ -2361,7 +2361,7 @@ const PRIVACY_RE = /[0-9０-９]{2,3}\s*(kg|ｋｇ|キロ|cm|ｃｍ|センチ)/i
 // ============ 52列ヘッダー（新テンプレ 2026-07更新） ============
 const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","A_掲載期間の設定（Apple記載欄）の予約投稿日 ","A_掲載期間の設定（Apple記載欄）の予約投稿終了日","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","A_アクションボタン（Apple）","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","Apple","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
 const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:25,CONTENT:26,IMAGE:28,BTYPE:32,BURL:33,EV_SDATE:36,EV_STIME:37,EV_EDATE:38,EV_ETIME:39 };
-// SNS連携列（Facebook/Instagram/X/Yahoo!/Apple/エキテン/エ_タイムライン通知）。テンプレの記入例に合わせて「✕」
+// SNS連携列（Facebook/Instagram/X/Yahoo!/Apple/エキテン/エ_タイムライン通知）。実運用では空欄で出力する
 const COL_SNS = [40,41,42,43,44,45,51];
 // 店舗の営業時間から開始・終了時刻を拾う（例「月〜土 9:20〜18:30」→ 9:20 / 18:30）
 function hoursRange(m){
@@ -5734,7 +5734,9 @@ function buildRowsFrom(d){
       const eve = d.evEnd || monthEndOf(evs);
       c[COL.EV_SDATE]=fmtDate(evs); c[COL.EV_STIME]=fmtTime(d.evStartTime || hr.st);
       c[COL.EV_EDATE]=fmtDate(eve); c[COL.EV_ETIME]=fmtTime(d.evEndTime || hr.et);
-      COL_SNS.forEach(i=> c[i]="✕");
+      // SNS連携列（40-45,51）は空欄のままにする。
+      // テンプレの記入例は「✕」だが、実際に取込成功している運用データは全て空欄。
+      // 「✕」を入れた回は画像エラーになったため空欄に戻した（2026-09-04）
     }
     rows.push(c);
   });
@@ -6321,13 +6323,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.5";
+const STUDIO_VERSION = "2026-09-04.6";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>SNS連携の列を空欄で出力するようにしました</b>：「✕」を入れると取込時に画像エラーになったため、取込実績のある空欄に戻しました</li>
         <li><b>出力の直前でも掲載期間を直せます</b>：「5. 確認して出力」に開始日・開始時間・終了日・終了時間を追加。実際に出力される期間もその場で確認できます</li>
         <li><b>⏰ イベントの開始・終了時間を時計から選べます</b>：数字キーボードで「:」が打てず入力できなかったのを修正しました</li>
         <li><b>📝 本文を予定に保存できます</b>：作成した本文を予定に保存すると、次に開いたとき入った状態から始められます。貼り付け直しが不要になり、チーム全員で同じ本文を共有できます</li>
