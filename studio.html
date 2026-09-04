@@ -27,6 +27,8 @@
   input, select, textarea { width:100%; border:1px solid #cbd5e1; border-radius:10px; padding:11px 12px; font-size:15px; font-family:inherit; background:#fff; }
   textarea { min-height:120px; line-height:1.7; resize:vertical; }
   .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .tfrow { display:flex; align-items:center; }
+  .tf { text-align:center; font-size:18px; font-weight:600; letter-spacing:.08em; }
   .mt { margin-top:12px; }
   .seg { display:grid; grid-auto-flow:column; gap:4px; background:#e2e8f0; border-radius:12px; padding:4px; }
   .seg button { border:0; background:transparent; padding:9px; border-radius:9px; font-size:14px; font-weight:600; color:var(--muted); cursor:pointer; }
@@ -469,7 +471,7 @@
     <input id="sm_catch" placeholder="例：正しい呼吸で自律神経を整え、心も体もスッキリ！">
     <div class="row mt">
       <div><label>投稿予定日</label><input type="date" id="sm_date"></div>
-      <div><label>投稿時間</label><input type="time" id="sm_time"></div>
+      <div><label>投稿時間</label><span class="tfrow"><input type="hidden" id="sm_time"><input class="tf" id="sm_time_v" type="text" inputmode="numeric" maxlength="5" placeholder="--:--" onfocus="this.select()" oninput="tfType('sm_time',null)" onblur="tfNorm('sm_time')"></span></div>
     </div>
     <div class="row mt">
       <div>
@@ -488,11 +490,11 @@
     <select id="sm_formatId"></select>
     <div class="row mt" id="sm_evRow" style="display:none;">
       <div><label>掲載開始日</label><input type="date" id="sm_evStart"></div>
-      <div><label>開始時間</label><input type="time" id="sm_evStartTime"></div>
+      <div><label>開始時間</label><span class="tfrow"><input type="hidden" id="sm_evStartTime"><input class="tf" id="sm_evStartTime_v" type="text" inputmode="numeric" maxlength="5" placeholder="--:--" onfocus="this.select()" oninput="tfType('sm_evStartTime','sm_evEndTime')" onblur="tfNorm('sm_evStartTime')"></span></div>
     </div>
     <div class="row" id="sm_evRow2" style="display:none;">
       <div><label>掲載終了日</label><input type="date" id="sm_evEnd"></div>
-      <div><label>終了時間</label><input type="time" id="sm_evEndTime"></div>
+      <div><label>終了時間</label><span class="tfrow"><input type="hidden" id="sm_evEndTime"><input class="tf" id="sm_evEndTime_v" type="text" inputmode="numeric" maxlength="5" placeholder="--:--" onfocus="this.select()" oninput="tfType('sm_evEndTime',null)" onblur="tfNorm('sm_evEndTime')"></span></div>
     </div>
     <label class="mt">タイミング</label>
     <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
@@ -2607,7 +2609,7 @@ function linkSchedImage(schedId, img, imgTitle){
   const i = schedule.findIndex(x=>x.id===schedId); if(i<0) return false;
   const prev = schedule[i].imageId;
   if(prev && prev !== img.id && window.fs && window.fs.unlinkImage) window.fs.unlinkImage(prev).catch(()=>{});
-  persistSched({ ...schedule[i], imageTitle: imgTitle, imageId: img.id });
+  persistSched({ ...schedule[i], imageTitle: safeImgName(imgTitle), imageId: img.id });
   if(window.fs) window.fs.linkImage(img.id, { linkedScheduleId: schedId, linkedScheduleTitle: (schedule[i].catchTitle||schedule[i].title||"") }).catch(e=>console.warn("linkImage",e));
   refreshAfterLink();
   return true;
@@ -3636,7 +3638,7 @@ window.confirmImportPost = (replace)=>{
     title: d.title || "（無題）", catchTitle: d.title || "",
     date: d.date, time: d.time || "", abType: base.abType || "",
     kw: base.kw||"", context: base.context||"", imageMemo: base.imageMemo||"",
-    imageTitle: d.imageTitle || "", imageId: d.imageId || "", imageUrl: "",
+    imageTitle: safeImgName(d.imageTitle || ""), imageId: d.imageId || "", imageUrl: "",
     postType: d.postType, timing: d.timing,
     scope: d.scope, storeIds: d.storeIds.slice(),
     done: true,
@@ -4437,15 +4439,15 @@ window.openSchedEdit = (id, presetDate)=>{
   document.getElementById("sm_catch").value = s?.catchTitle || "";
   document.getElementById("sm_date").value = s?.date || presetDate || "";
   document.getElementById("sm_ab").value = s?.abType || "A";
-  document.getElementById("sm_time").value = s?.time || defaultTime(s?.abType || "A");
+  setTf("sm_time", s?.time || defaultTime(s?.abType || "A"));
   document.getElementById("sm_kw").value = s?.kw || "";
   document.getElementById("sm_imgmemo").value = s?.imageMemo || "";
   document.getElementById("sm_context").value = s?.context || "";
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
   document.getElementById("sm_evStart").value = s?.evStart || "";
   document.getElementById("sm_evEnd").value = s?.evEnd || "";
-  document.getElementById("sm_evStartTime").value = s?.evStartTime || "";
-  document.getElementById("sm_evEndTime").value = s?.evEndTime || "";
+  setTf("sm_evStartTime", s?.evStartTime || "");
+  setTf("sm_evEndTime", s?.evEndTime || "");
   const smEv = (v)=> ["sm_evRow","sm_evRow2"].forEach(id=>{ document.getElementById(id).style.display = (["イベント","クーポン"].includes(v)) ? "" : "none"; });
   smEv(s?.postType);
   document.getElementById("sm_postType").onchange = (e)=> smEv(e.target.value);
@@ -4489,9 +4491,9 @@ window.dlSmImageSafe = async ()=>{
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = smImage.title;
+    a.download = safeImgName(smImage.title);
     a.click(); URL.revokeObjectURL(a.href);
-    toast("📥 " + smImage.title + " をダウンロードしました");
+    toast("📥 " + safeImgName(smImage.title) + " をダウンロードしました");
   }catch(e){
     // CORS失敗時のフォールバック: 別タブで開いてもらう
     console.warn(e);
@@ -4550,7 +4552,7 @@ window.pickGalForSched = (id)=>{
 // A/B切替時、時間が既定のままなら連動して切替
 document.getElementById("sm_ab").addEventListener("change", (e)=>{
   const t = document.getElementById("sm_time");
-  if(t.value==="07:00" || t.value==="16:00" || !t.value) t.value = defaultTime(e.target.value);
+  if(t.value==="07:00" || t.value==="16:00" || !t.value) setTf("sm_time", defaultTime(e.target.value));
 });
 window.closeSchedEdit = ()=> document.getElementById("schedModal").style.display="none";
 // 店舗ピッカー共通描画（チップ型グリッド＋業態一括選択）
@@ -4617,7 +4619,7 @@ window.saveSchedEdit = ()=>{
     kw: document.getElementById("sm_kw").value.trim(),
     imageMemo: document.getElementById("sm_imgmemo").value.trim(),
     context: document.getElementById("sm_context").value.trim(),
-    imageTitle: smImage ? smImage.title : "",
+    imageTitle: smImage ? safeImgName(smImage.title) : "",
     imageId: smImage ? (smImage.id||"") : "",
     imageUrl: "", // 旧仕様で保存された重い画像データを消去（サムネはギャラリーから解決）
     contents: (schedule.find(x=>x.id===editingSchedId)||{}).contents,
@@ -4805,7 +4807,7 @@ window.startFromSched = async (id)=>{
              overrides: s.overrides ? JSON.parse(JSON.stringify(s.overrides)) : {},
              _parsed: !!(s.contents && Object.keys(s.contents).length),
              step: (s.contents && Object.keys(s.contents).length) ? 2 : 0,
-             imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
+             imageTitle:safeImgName(s.imageTitle||""), imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
   if(cur._parsed) toast(`📝 登録済みの本文 ${Object.keys(cur.contents).length}件を読み込みました`);
 };
@@ -4847,7 +4849,7 @@ function viewTarget(){
     <input id="c_catch" value="${esc(cur.catchTitle||"")}" placeholder="例：正しい呼吸で自律神経を整え、心も体もスッキリ！">
     <div class="row mt">
       <div><label>投稿予定日</label><input type="date" id="c_date" value="${esc(cur.date)}"></div>
-      <div><label>投稿時間</label><input type="time" id="c_time" value="${esc(cur.time||"16:00")}"></div>
+      <div><label>投稿時間</label>${timeField("c_time", cur.time||"16:00")}</div>
     </div>
     <div class="row mt">
       <div><label>投稿タイプ</label><select id="c_postType">${["最新情報","イベント","クーポン"].map(t=>`<option ${cur.postType===t?"selected":""}>${t}</option>`).join("")}</select></div>
@@ -4858,13 +4860,13 @@ function viewTarget(){
     <p class="hint">${BTN_HINT}</p>
     <div class="row mt" id="c_evRow" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">
       <div><label>掲載開始日</label><input type="date" id="c_evStart" value="${esc(cur.evStart||"")}"></div>
-      <div><label>開始時間</label><input type="time" id="c_evStartTime" value="${esc(cur.evStartTime||"")}"></div>
+      <div><label>開始時間</label>${timeField("c_evStartTime", cur.evStartTime||"", {next:"c_evEndTime"})}</div>
     </div>
     <div class="row" id="c_evRow2" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">
       <div><label>掲載終了日</label><input type="date" id="c_evEnd" value="${esc(cur.evEnd||"")}"></div>
-      <div><label>終了時間</label><input type="time" id="c_evEndTime" value="${esc(cur.evEndTime||"")}"></div>
+      <div><label>終了時間</label>${timeField("c_evEndTime", cur.evEndTime||"")}</div>
     </div>
-    <p class="hint" id="c_evHint" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">イベント・クーポンは日付と時間の4つがそろっている必要があります。<b>時間は空欄でOK</b>——そのときは店舗の営業時間（例 9:20〜18:30）が自動で入ります。日付を空欄にすると「投稿日〜その月の月末」になります</p>
+    <p class="hint" id="c_evHint" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">イベント・クーポンは日付と時間の4つがそろっている必要があります。時間は<b>数字4桁を続けて打つだけ</b>（0920→09:20。開始を打ち終わると終了欄へ移ります）。<b>空欄でもOK</b>——そのときは店舗の営業時間（例 9:20〜18:30）が自動で入ります。日付を空欄にすると「投稿日〜その月の月末」になります</p>
     <label class="mt">投稿の型（書き方の構成）</label>
     <select id="c_formatId">${formatOptions(cur.formatId||"")}</select>
     <p class="hint" id="c_formatHint"></p>
@@ -5149,7 +5151,7 @@ window.saveBodyToSched = async ()=>{
     id = uid();
     persistSched({ id, title: cur.themeTitle||cur.title||"（無題）", catchTitle: cur.catchTitle||cur.title||"",
       date: cur.date||todayISO(), time: cur.time||"", abType: cur.abType||"A", kw: cur.kw||"",
-      context: cur.context||"", imageMemo: cur.imageMemo||"", imageTitle: cur.imageTitle||"", imageId: cur.imageId||"",
+      context: cur.context||"", imageMemo: cur.imageMemo||"", imageTitle: safeImgName(cur.imageTitle||""), imageId: cur.imageId||"",
       postType: cur.postType||"最新情報", btnType: cur.btnType||"", formatId: cur.formatId||"",
       evStart: cur.evStart||"", evEnd: cur.evEnd||"", evStartTime: cur.evStartTime||"", evEndTime: cur.evEndTime||"",
       timing: cur.timing||"scheduled", scope: cur.scope||"per_store", storeIds:(cur.storeIds||[]).slice(),
@@ -5162,7 +5164,7 @@ window.saveBodyToSched = async ()=>{
       scope: cur.scope, storeIds:(cur.storeIds||[]).slice(),
       postType: cur.postType, btnType: cur.btnType||"", formatId: cur.formatId||"",
       evStart: cur.evStart||"", evEnd: cur.evEnd||"", evStartTime: cur.evStartTime||"", evEndTime: cur.evEndTime||"",
-      timing: cur.timing, imageTitle: cur.imageTitle||"", imageId: cur.imageId||"",
+      timing: cur.timing, imageTitle: safeImgName(cur.imageTitle||""), imageId: cur.imageId||"",
       contents: JSON.parse(JSON.stringify(cur.contents||{})), overrides: JSON.parse(JSON.stringify(cur.overrides||{})) });
   }
   toast(`💾 本文${n}件を予定に保存しました（チーム全員に共有）`);
@@ -5474,7 +5476,7 @@ window.refreshImageWarn = ()=>{
   if(!v){ warn.innerHTML=""; if(prep) prep.style.display="none"; return; }
   const safe = safeImgName(v);
   if(safe !== v){
-    warn.innerHTML = `⚠️ GMOで問題になる文字があります。<b>${esc(safe)}</b> に自動で直します。<button class="pill" style="margin-left:6px;" onclick="applyImgSafe()">今すぐ安全名にする</button>`;
+    warn.innerHTML = `⚠️ GMOで通らない文字（「、」「。」「！」など）が入っています。出力時は <b>${esc(safe)}</b> に自動で直します。GMOにアップする画像もこの名前にしてください。<button class="pill" style="margin-left:6px;" onclick="applyImgSafe()">今すぐ安全名にする</button>`;
     warn.style.color = "var(--warn)";
   } else {
     warn.innerHTML = `✅ 安全な名前です`;
@@ -5521,6 +5523,36 @@ window.dlPickedImageSafe = async ()=>{
 };
 window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data-view="create"]').hidden && cur.step===3) renderGallery(document.getElementById("gsearch")?.value||""); });
 
+// ===== 時刻の4桁一気入力（0920→09:20。4桁入ると次の欄へ移動。type=timeは使わない） =====
+function tfZen(s){ return String(s||"").replace(/[０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)); }
+function tfPad(n){ return String(n).padStart(2,"0"); }
+function timeField(id, val, opts={}){
+  return `<span class="tfrow"><input type="hidden" id="${id}" value="${esc(val||"")}">
+    <input class="tf" id="${id}_v" type="text" inputmode="numeric" maxlength="5" value="${esc(val||"")}" placeholder="--:--"
+      onfocus="this.select()" oninput="tfType('${id}',${opts.next?`'${opts.next}'`:"null"})" onblur="tfNorm('${id}')"></span>`;
+}
+window.tfType = (id, next)=>{
+  const v = document.getElementById(id+"_v"), h = document.getElementById(id);
+  let raw = tfZen(v.value).replace(/[^0-9]/g,"").slice(0,4);
+  v.value = raw.length>2 ? raw.slice(0,2)+":"+raw.slice(2) : raw;
+  if(raw.length===4){
+    const hh=Math.min(23,+raw.slice(0,2)), mm=Math.min(59,+raw.slice(2));
+    h.value = v.value = tfPad(hh)+":"+tfPad(mm);
+    if(h.onchange) h.onchange();
+    if(next){ const nx=document.getElementById(next+"_v"); if(nx){ nx.focus(); nx.select(); } }
+  } else { h.value=""; if(h.onchange) h.onchange(); }
+};
+window.tfNorm = (id)=>{
+  const v = document.getElementById(id+"_v"), h = document.getElementById(id);
+  let raw = tfZen(v.value).replace(/[^0-9]/g,"");
+  if(!raw){ h.value=""; v.value=""; if(h.onchange) h.onchange(); return; }
+  let hh, mm;
+  if(raw.length<=2){ hh=Math.min(23,+raw); mm=0; }
+  else { raw=raw.slice(0,4).padStart(4,"0"); hh=Math.min(23,+raw.slice(0,2)); mm=Math.min(59,+raw.slice(2)); }
+  h.value = v.value = tfPad(hh)+":"+tfPad(mm);
+  if(h.onchange) h.onchange();
+};
+function setTf(id, val){ const h=document.getElementById(id); if(!h) return; h.value=val||""; const v=document.getElementById(id+"_v"); if(v) v.value=val||""; }
 // --- Step4: 出力 ---
 // 出力される掲載期間を人が読める形で（時間が空欄なら先頭店舗の営業時間を例示）
 function evPreviewText(){
@@ -5533,6 +5565,23 @@ function evPreviewText(){
   const auto = (!cur.evStartTime || !cur.evEndTime) && list.length>1 ? "（店舗ごとの営業時間）" : "";
   return `${fmtDate(sd)} ${fmtTime(stt)} 〜 ${fmtDate(ed)} ${fmtTime(ett)}${auto}`;
 }
+// 出力直前の画像名チェック：通らない文字／ギャラリー未登録を警告
+function imageNameCheckHTML(){
+  const v = cur.imageTitle||"";
+  if(!v) return "";
+  const safe = safeImgName(v);
+  const inGal = (window.__gallery||[]).some(i=> safeImgName((i.folderName||i.titleText||"")+".jpg")===safe);
+  const cp = `<button class="pill" onclick='copyStr(${JSON.stringify(safe)})'>📋 コピー</button>`;
+  if(safe !== v){
+    return `<p class="hint" style="color:var(--warn)">⚠️ 画像名にGMOで通らない文字（「、」「。」「！」など）が入っています。出力では <b>${esc(safe)}</b> に自動で直します。<b>GMOにアップする画像もこの名前にしてください</b>
+      <button class="pill" onclick="cur.imageTitle=${JSON.stringify(safe)}; renderCreate();">安全名にする</button> ${cp}</p>`;
+  }
+  if(!inGal){
+    return `<p class="hint" style="color:var(--warn)">⚠️ ギャラリーにこの名前の画像がありません。GMOにアップする画像名が <b>${esc(safe)}</b> と1文字でも違うと「不正値」になります ${cp}</p>`;
+  }
+  return `<p class="hint" style="color:var(--ok)">✅ 画像名OK（ギャラリーに同名あり）。GMOにも同じ名前でアップしてください ${cp}</p>`;
+}
+function refreshEvPreview(){ const el=document.getElementById("x_evPrev"); if(el) el.textContent = evPreviewText(); }
 function viewExport(){
   const errs = validateExport();
   const stores = exportStores();
@@ -5576,21 +5625,21 @@ function viewExport(){
     </div>
     ${cur.timing!=="immediate"?`<div class="row mt">
       <div><label>予約投稿日</label><input type="date" value="${esc(cur.date)}" onchange="cur.date=this.value; renderCreate();"></div>
-      <div><label>投稿時間</label><input type="time" value="${esc(cur.time||"")}" onchange="cur.time=this.value"></div>
+      <div><label>投稿時間</label>${timeField("x_time", cur.time||"")}</div>
     </div>`:""}
     ${(cur.postType==="イベント"||cur.postType==="クーポン")?`
     <div class="row mt">
       <div><label>掲載開始日</label><input type="date" value="${esc(cur.evStart||"")}" onchange="cur.evStart=this.value; renderCreate();"></div>
-      <div><label>開始時間</label><input type="time" value="${esc(cur.evStartTime||"")}" onchange="cur.evStartTime=this.value; renderCreate();"></div>
+      <div><label>開始時間</label>${timeField("x_evStartTime", cur.evStartTime||"", {next:"x_evEndTime"})}</div>
     </div>
     <div class="row">
       <div><label>掲載終了日</label><input type="date" value="${esc(cur.evEnd||"")}" onchange="cur.evEnd=this.value; renderCreate();"></div>
-      <div><label>終了時間</label><input type="time" value="${esc(cur.evEndTime||"")}" onchange="cur.evEndTime=this.value; renderCreate();"></div>
+      <div><label>終了時間</label>${timeField("x_evEndTime", cur.evEndTime||"")}</div>
     </div>
-    <p class="hint">実際に出力される掲載期間：<b>${esc(evPreviewText())}</b>　※時間を空欄にすると店舗ごとの営業時間が入ります</p>`:""}
+    <p class="hint">実際に出力される掲載期間：<b id="x_evPrev">${esc(evPreviewText())}</b>　※時間は数字4桁で（0920→09:20）。空欄にすると店舗ごとの営業時間が入ります</p>`:""}
     <label class="mt">画像名（全店共通）</label>
-    <input value="${esc(cur.imageTitle)}" oninput="cur.imageTitle=this.value" placeholder="（なし）">
-    ${cur.imageTitle?`<p class="hint">⚠️ GMOにアップした画像名と1文字でも違うと「不正値」になります <button class="pill" onclick='copyStr(${JSON.stringify(cur.imageTitle)})'>コピー</button></p>`:""}
+    <input value="${esc(cur.imageTitle)}" oninput="cur.imageTitle=this.value" onchange="renderCreate()" placeholder="（なし）">
+    ${imageNameCheckHTML()}
     <div class="hint">対象：${cur.scope==="category_common"?`カテゴリ共通（全${stores.length}店舗）`:`店舗別（${stores.length}店舗）`}</div>
   </div>
   <details class="mt" ${stores.length<=4?"open":""}>
@@ -5674,9 +5723,12 @@ function q(v){ return `"${String(v==null?"":v).replace(/"/g,'""')}"`; }
 // 画像名の安全化: Windows/GMOで問題になる文字を _ に置換。JPG拡張子を保証。
 function safeImgName(name){
   if(!name) return "";
-  let s = String(name).trim();
+  // NFC正規化：iPhone等から来た濁点分離（NFD）の名前も同じ文字列に揃える
+  let s = String(name).normalize("NFC").trim();
   s = s.replace(/[\\/:*?"<>|]/g, "_");
   s = s.replace(/[：／＊？＜＞｜「」【】（）　]/g, "_");
+  // 日本語の句読点・記号もGMOの画像照合で通らない（「、」入りの名前で画像エラーになった実績あり）
+  s = s.replace(/[、。！？・，．～〜＆＃％＄＠＋＝；'‘’“”『』〈〉《》〔〕［］｛｝!,;#%&+=@'`\[\]{}]/g, "_");
   s = s.replace(/_+/g, "_").replace(/^[_.]+|[_.]+$/g, "");
   const m = s.match(/^(.+?)(\.(?:jpe?g|png|gif|webp))$/i);
   if(m) s = m[1] + m[2].toLowerCase();
@@ -5725,7 +5777,7 @@ function buildRowsFrom(d){
     if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=date?fmtDate(date):""; c[COL.STIME]=time?fmtTime(time):""; }
     c[COL.TITLE]=d.title||"";
     c[COL.CONTENT]= ov.content!==undefined ? ov.content : contentFromFor(d,s);
-    c[COL.IMAGE]= ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||"");
+    c[COL.IMAGE]= safeImgName(ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||""));
     const b = btnFor(d, s); c[COL.BTYPE]=b.type; c[COL.BURL]=b.url;
     if(d.postType==="イベント" || d.postType==="クーポン"){
       // イベント・クーポンは 開始日/開始時間/終了日/終了時間 の4つがそろっている必要があります
@@ -5935,15 +5987,18 @@ function bindCreate(){
   const t=document.getElementById("c_title"); if(t) t.oninput=e=>{ cur.themeTitle=e.target.value; if(!cur.catchTitle && !cur._parsed) cur.title=e.target.value; };
   const cc=document.getElementById("c_catch"); if(cc) cc.oninput=e=>{ cur.catchTitle=e.target.value; if(!cur._parsed) cur.title=e.target.value || cur.themeTitle; };
   const d=document.getElementById("c_date"); if(d) d.oninput=e=>cur.date=e.target.value;
-  const ti=document.getElementById("c_time"); if(ti) ti.oninput=e=>cur.time=e.target.value;
+  const ti=document.getElementById("c_time"); if(ti) ti.onchange=()=>{ cur.time=ti.value; };
   const kw=document.getElementById("c_kw"); if(kw) kw.oninput=e=>cur.kw=e.target.value;
   const pt=document.getElementById("c_postType"); if(pt) pt.onchange=e=>{ cur.postType=e.target.value;
     const show = (cur.postType==="イベント"||cur.postType==="クーポン");
     ["c_evRow","c_evRow2","c_evHint"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = show?"":"none"; }); };
   const ev1=document.getElementById("c_evStart"); if(ev1) ev1.onchange=e=>cur.evStart=e.target.value;
   const ev2=document.getElementById("c_evEnd"); if(ev2) ev2.onchange=e=>cur.evEnd=e.target.value;
-  const ev3=document.getElementById("c_evStartTime"); if(ev3) ev3.onchange=e=>cur.evStartTime=e.target.value;
-  const ev4=document.getElementById("c_evEndTime"); if(ev4) ev4.onchange=e=>cur.evEndTime=e.target.value;
+  const ev3=document.getElementById("c_evStartTime"); if(ev3) ev3.onchange=()=>{ cur.evStartTime=ev3.value; };
+  const ev4=document.getElementById("c_evEndTime"); if(ev4) ev4.onchange=()=>{ cur.evEndTime=ev4.value; };
+  const xt=document.getElementById("x_time"); if(xt) xt.onchange=()=>{ cur.time=xt.value; };
+  const ev5=document.getElementById("x_evStartTime"); if(ev5) ev5.onchange=()=>{ cur.evStartTime=ev5.value; refreshEvPreview(); };
+  const ev6=document.getElementById("x_evEndTime"); if(ev6) ev6.onchange=()=>{ cur.evEndTime=ev6.value; refreshEvPreview(); };
   const bt=document.getElementById("c_btnType"); if(bt) bt.onchange=e=>cur.btnType=e.target.value;
   const ff=document.getElementById("c_formatId");
   if(ff){ ff.onchange=e=>{ cur.formatId=e.target.value; renderFormatHint(); }; renderFormatHint(); }
@@ -6323,43 +6378,64 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.6";
+const STUDIO_VERSION = "2026-09-04.7";
+// 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
+const RELEASE_NOTES = [
+  { v:"2026-09-04.7", items:[
+      `<b>🖼️ 画像名を自動で安全な名前に直します</b>：「、」「。」「！」などが入った画像名はGMOで画像エラーになるため、保存・出力のすべてで自動的に「_」に置き換えます。出力画面で画像名の状態（✅／⚠️）も確認できます`,
+      `<b>⏰ イベントの時刻は数字4桁を続けて打つだけ</b>：0920→09:20。開始を打ち終わると終了欄へ自動で移ります（予定編集・作成・出力の3か所）`,
+      `<b>🆕 更新のお知らせは、まだ見ていない分だけ</b>：一度見た更新は出ません。過去の更新は「📖 使い方」の「更新履歴」で見られます` ] },
+  { v:"2026-09-04.6", items:[
+      `<b>SNS連携の列を空欄で出力するようにしました</b>：「✕」を入れると取込時に画像エラーになったため、取込実績のある空欄に戻しました`,
+      `<b>出力の直前でも掲載期間を直せます</b>：「5. 確認して出力」に開始日・開始時間・終了日・終了時間を追加。実際に出力される期間もその場で確認できます`,
+      `<b>⏰ イベントの開始・終了時間を時計から選べます</b>：数字キーボードで「:」が打てず入力できなかったのを修正しました` ] },
+  { v:"2026-09-04.5", items:[
+      `<b>📝 本文を予定に保存できます</b>：作成した本文を予定に保存すると、次に開いたとき入った状態から始められます。貼り付け直しが不要になり、チーム全員で同じ本文を共有できます`,
+      `<b>🎫 イベント・クーポン投稿の掲載期間</b>：開始日・開始時間・終了日・終了時間の4つを出力します（空欄なら「投稿日〜月末」「店舗の営業時間」が入ります）` ] },
+  { v:"2026-08-31", items:[
+      `<b>🎨 画像の「人物なし（情景のみ）」</b>：画像プロンプトで人物を入れない指定が選べます。画像メモに「人物なし」と書くと自動で切り替わります`,
+      `<b>🔗 ボタンのリンク管理</b>：店舗ごとに候補リンクを複数登録し「これを使う」で切替。使用期間・変更日時が自動で残るので流入計測と突き合わせできます。GBPダイレクト予約のリンクも別枠で記録`,
+      `<b>📐 投稿の型を選べます</b>：競合調査から抽出した5つの構成（季節×症状／症状解説／エピソード／縦リズム／メニュー訴求）。設定タブで追加・編集も可能`,
+      `<b>NGチェックを強化</b>：根本改善・疾患・再発しにくい等を追加。裏付けの要る実績数値・個人が特定されうる数値も警告します`,
+      `<b>口コミ数と評価を店舗ごとに記録</b>：一覧表で口コミが少ない店が黄色で分かります`,
+      `<b>📋 店舗の一覧表ビュー</b>：全店の中身を横並びで見比べられます（列も選べます）`,
+      `<b>店舗マスターの取り込み</b>：スプレッドシートを店舗名で照合してまとめて反映`,
+      `<b>投稿ボタンを選べます</b>：予約／詳細／今すぐ電話など7種類。店舗ごとの既定＋投稿ごとの上書き`,
+      `<b>カテゴリ共通でも店舗を選べます</b>：既定は全店選択。外したい店のチェックだけ外してください`,
+      `<b>🎨 サムネイルツールの入口をわかりやすく</b>：ホームに常設＋画像の用意方法を4択で表示`,
+      `<b>📁 Googleドライブ連携</b>：設定に画像フォルダを登録／Driveの画像リンクからギャラリーに追加`,
+      `<b>🏪 店舗タブを新設</b>：全店舗の情報を一覧で確認・その場で編集。記入率と未記入の項目がひと目でわかります`,
+      `<b>⚡ かんたん入力</b>：未記入の項目だけを1問ずつ聞くモード。同じ業態の他店の内容をタップで入れられます`,
+      `<b>💡 投稿ネタの自動提案</b>：店舗の強み・お客様の層・お悩みから、その店に合う投稿テーマの候補を出します`,
+      `<b>🏷 業態を自由に追加</b>：整骨院・整体院・ピラティス以外の業態も、入力項目ごと作れます`,
+      `<b>📥📤 記入シート連携</b>：Excelシートで集めた情報をまとめて取り込み／今の内容を書き出し` ] },
+  { v:"2026-08-15", items:[
+      `<b>デザイン刷新</b>：ティール×コーラルの新配色・グラデーション背景`,
+      `<b>進行状況が2ビュー</b>：◐円グラフ（達成リング）と▤ガントチャート切替`,
+      `<b>投稿状態の記録</b>：投稿済み／取消／誤投稿／🗂今後未使用＋実際の投稿日・メモ`,
+      `<b>横断フィルター</b>：テーマ未作成・画像未作成・未投稿などで絞り込み`,
+      `<b>出力ファイルの逆読み込み</b>：GMOに出したXLSXから予定・本文・画像を復元`,
+      `<b>指示文・画像プロンプトのテンプレート</b>：複数保存・使い分け`,
+      `<b>下書き自動保存</b>：作成途中でも消えません（ホームに復元バナー）`,
+      `<b>更新のお知らせ</b>：新バージョンが出ると画面上部からワンタップ更新` ] },
+];
+function releaseHTML(blocks){
+  return blocks.map(b=>`<div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4; margin-top:8px;">
+    <b>${esc(b.v)}</b>
+    <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">${b.items.map(i=>`<li>${i}</li>`).join("")}</ul></div>`).join("");
+}
+function unreadNotes(){
+  let seen = ""; try{ seen = localStorage.getItem("meo_studio_help_seen")||""; }catch(e){}
+  if(!seen) return RELEASE_NOTES.slice(0,1);
+  return RELEASE_NOTES.filter(b=> b.v.localeCompare(seen, undefined, {numeric:true}) > 0);
+}
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
-      <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
-        <li><b>SNS連携の列を空欄で出力するようにしました</b>：「✕」を入れると取込時に画像エラーになったため、取込実績のある空欄に戻しました</li>
-        <li><b>出力の直前でも掲載期間を直せます</b>：「5. 確認して出力」に開始日・開始時間・終了日・終了時間を追加。実際に出力される期間もその場で確認できます</li>
-        <li><b>⏰ イベントの開始・終了時間を時計から選べます</b>：数字キーボードで「:」が打てず入力できなかったのを修正しました</li>
-        <li><b>📝 本文を予定に保存できます</b>：作成した本文を予定に保存すると、次に開いたとき入った状態から始められます。貼り付け直しが不要になり、チーム全員で同じ本文を共有できます</li>
-        <li><b>🎫 イベント・クーポン投稿の掲載期間</b>：開始日・開始時間・終了日・終了時間の4つを出力します（空欄なら「投稿日〜月末」「店舗の営業時間」が入ります）</li>
-        <li><b>🎨 画像の「人物なし（情景のみ）」</b>：画像プロンプトで人物を入れない指定が選べます。画像メモに「人物なし」と書くと自動で切り替わります</li>
-        <li><b>🔗 ボタンのリンク管理</b>：店舗ごとに候補リンクを複数登録し「これを使う」で切替。使用期間・変更日時が自動で残るので流入計測と突き合わせできます。GBPダイレクト予約のリンクも別枠で記録</li>
-        <li><b>📐 投稿の型を選べます</b>：競合調査から抽出した5つの構成（季節×症状／症状解説／エピソード／縦リズム／メニュー訴求）。設定タブで追加・編集も可能</li>
-        <li><b>NGチェックを強化</b>：根本改善・疾患・再発しにくい等を追加。裏付けの要る実績数値・個人が特定されうる数値も警告します</li>
-        <li><b>口コミ数と評価を店舗ごとに記録</b>：一覧表で口コミが少ない店が黄色で分かります</li>
-        <li><b>📋 店舗の一覧表ビュー</b>：全店の中身を横並びで見比べられます（列も選べます）</li>
-        <li><b>店舗マスターの取り込み</b>：スプレッドシートを店舗名で照合してまとめて反映</li>
-        <li><b>投稿ボタンを選べます</b>：予約／詳細／今すぐ電話など7種類。店舗ごとの既定＋投稿ごとの上書き</li>
-        <li><b>カテゴリ共通でも店舗を選べます</b>：既定は全店選択。外したい店のチェックだけ外してください</li>
-        <li><b>🎨 サムネイルツールの入口をわかりやすく</b>：ホームに常設＋画像の用意方法を4択で表示</li>
-        <li><b>📁 Googleドライブ連携</b>：設定に画像フォルダを登録／Driveの画像リンクからギャラリーに追加</li>
-        <li><b>🏪 店舗タブを新設</b>：全店舗の情報を一覧で確認・その場で編集。記入率と未記入の項目がひと目でわかります</li>
-        <li><b>⚡ かんたん入力</b>：未記入の項目だけを1問ずつ聞くモード。同じ業態の他店の内容をタップで入れられます</li>
-        <li><b>💡 投稿ネタの自動提案</b>：店舗の強み・お客様の層・お悩みから、その店に合う投稿テーマの候補を出します</li>
-        <li><b>🏷 業態を自由に追加</b>：整骨院・整体院・ピラティス以外の業態も、入力項目ごと作れます</li>
-        <li><b>📥📤 記入シート連携</b>：Excelシートで集めた情報をまとめて取り込み／今の内容を書き出し</li>
-        <li><b>デザイン刷新</b>：ティール×コーラルの新配色・グラデーション背景</li>
-        <li><b>進行状況が2ビュー</b>：◐円グラフ（達成リング）と▤ガントチャート切替</li>
-        <li><b>投稿状態の記録</b>：投稿済み／取消／誤投稿／🗂今後未使用＋実際の投稿日・メモ</li>
-        <li><b>横断フィルター</b>：テーマ未作成・画像未作成・未投稿などで絞り込み</li>
-        <li><b>出力ファイルの逆読み込み</b>：GMOに出したXLSXから予定・本文・画像を復元</li>
-        <li><b>指示文・画像プロンプトのテンプレート</b>：複数保存・使い分け</li>
-        <li><b>下書き自動保存</b>：作成途中でも消えません（ホームに復元バナー）</li>
-        <li><b>更新のお知らせ</b>：新バージョンが出ると画面上部からワンタップ更新</li>
-      </ul>
+      <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">${RELEASE_NOTES[0].items.map(i=>`<li>${i}</li>`).join("")}</ul>
+    <details style="margin-top:10px;"><summary style="cursor:pointer; color:var(--muted); font-size:13px;">📜 更新履歴（これまでの更新をすべて見る）</summary>${releaseHTML(RELEASE_NOTES.slice(1))}</details>
   </div>
 
   <h2 style="margin-top:18px;">🚀 かんたん4ステップ</h2>
@@ -6403,10 +6479,15 @@ window.closeHelp = ()=>{
   document.getElementById("helpModal").style.display = "none";
   localStorage.setItem("meo_studio_help_seen", STUDIO_VERSION);
 };
+// 起動時：未読の更新だけをポップ（全部見ていれば何も出さない）
+window.showNews = (blocks)=>{
+  document.getElementById("helpBody").innerHTML = `<h1 style="margin-top:0;">🆕 新しくなりました</h1>
+    <p class="hint" style="margin-top:0;">前回から追加・変更された内容です。使い方は「📖 使い方」からいつでも見られます</p>${releaseHTML(blocks)}`;
+  document.getElementById("helpModal").style.display = "flex";
+};
 window.maybeAutoHelp = function(){
-  if(localStorage.getItem("meo_studio_help_seen") !== STUDIO_VERSION){
-    showHelp();
-  }
+  const u = unreadNotes();
+  if(u.length) showNews(u);
 };
 
 // ============ util ============

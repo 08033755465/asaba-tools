@@ -223,9 +223,10 @@ function selectableScheds(schedules){
     .sort((a,b)=> (b.date||'').localeCompare(a.date||''));
 }
 function safeNameStr(s) {
-  return String(s ?? '')
+  return String(s ?? '').normalize('NFC')           // 濁点分離（NFD）の名前も同じ文字列に揃える
     .replace(/[\\/:*?"<>|]/g, '_')                 // 半角の禁止文字
     .replace(/[：／＊？＜＞｜「」【】（）　]/g, '_')   // 全角の禁止文字・全角スペース
+    .replace(/[、。！？・，．～〜＆＃％＄＠＋＝；'‘’“”『』〈〉《》〔〕［］｛｝!,;#%&+=@'`\[\]{}]/g, '_') // 句読点・記号（「、」入りでGMO画像エラーの実績あり）
     .replace(/_+/g, '_')                            // 連続 _ を圧縮
     .replace(/^[_.]+|[_.]+$/g, '')                  // 先頭末尾の _ . を除去
     .trim();
