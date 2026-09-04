@@ -488,7 +488,11 @@
     <select id="sm_formatId"></select>
     <div class="row mt" id="sm_evRow" style="display:none;">
       <div><label>掲載開始日</label><input type="date" id="sm_evStart"></div>
+      <div><label>開始時間</label><input id="sm_evStartTime" placeholder="9:20（空欄は営業開始）" inputmode="numeric"></div>
+    </div>
+    <div class="row" id="sm_evRow2" style="display:none;">
       <div><label>掲載終了日</label><input type="date" id="sm_evEnd"></div>
+      <div><label>終了時間</label><input id="sm_evEndTime" placeholder="18:30（空欄は営業終了）" inputmode="numeric"></div>
     </div>
     <label class="mt">タイミング</label>
     <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
@@ -2356,7 +2360,15 @@ const PRIVACY_RE = /[0-9０-９]{2,3}\s*(kg|ｋｇ|キロ|cm|ｃｍ|センチ)/i
 
 // ============ 52列ヘッダー（新テンプレ 2026-07更新） ============
 const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","A_掲載期間の設定（Apple記載欄）の予約投稿日 ","A_掲載期間の設定（Apple記載欄）の予約投稿終了日","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","A_アクションボタン（Apple）","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","Apple","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
-const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:25,CONTENT:26,IMAGE:28,BTYPE:32,BURL:33,EV_SDATE:36,EV_EDATE:38 };
+const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:25,CONTENT:26,IMAGE:28,BTYPE:32,BURL:33,EV_SDATE:36,EV_STIME:37,EV_EDATE:38,EV_ETIME:39 };
+// SNS連携列（Facebook/Instagram/X/Yahoo!/Apple/エキテン/エ_タイムライン通知）。テンプレの記入例に合わせて「✕」
+const COL_SNS = [40,41,42,43,44,45,51];
+// 店舗の営業時間から開始・終了時刻を拾う（例「月〜土 9:20〜18:30」→ 9:20 / 18:30）
+function hoursRange(m){
+  const t = String((m && m.hours) || "").replace(/[０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+  const hit = t.match(/(\d{1,2}:\d{2})\s*[〜～~\-]\s*(\d{1,2}:\d{2})/);
+  return hit ? { st: hit[1], et: hit[2] } : { st:"9:00", et:"18:00" };
+}
 // イベント/クーポン投稿の掲載期間。終了日が未指定なら投稿月の月末
 function monthEndOf(dateStr){
   const [y,m] = String(dateStr||todayISO()).split("-").map(Number);
@@ -4431,9 +4443,11 @@ window.openSchedEdit = (id, presetDate)=>{
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
   document.getElementById("sm_evStart").value = s?.evStart || "";
   document.getElementById("sm_evEnd").value = s?.evEnd || "";
-  document.getElementById("sm_evRow").style.display = (["イベント","クーポン"].includes(s?.postType)) ? "" : "none";
-  document.getElementById("sm_postType").onchange = (e)=>{
-    document.getElementById("sm_evRow").style.display = (["イベント","クーポン"].includes(e.target.value)) ? "" : "none"; };
+  document.getElementById("sm_evStartTime").value = s?.evStartTime || "";
+  document.getElementById("sm_evEndTime").value = s?.evEndTime || "";
+  const smEv = (v)=> ["sm_evRow","sm_evRow2"].forEach(id=>{ document.getElementById(id).style.display = (["イベント","クーポン"].includes(v)) ? "" : "none"; });
+  smEv(s?.postType);
+  document.getElementById("sm_postType").onchange = (e)=> smEv(e.target.value);
   document.getElementById("sm_btnType").innerHTML = btnTypeOptions(s?.btnType || "");
   document.getElementById("sm_formatId").innerHTML = formatOptions(s?.formatId || "");
   document.getElementById("sm_timing").value = s?.timing || "scheduled";
@@ -4610,6 +4624,8 @@ window.saveSchedEdit = ()=>{
     formatId: document.getElementById("sm_formatId").value,
     evStart: document.getElementById("sm_evStart").value || "",
     evEnd: document.getElementById("sm_evEnd").value || "",
+    evStartTime: (document.getElementById("sm_evStartTime").value||"").trim(),
+    evEndTime: (document.getElementById("sm_evEndTime").value||"").trim(),
     timing: document.getElementById("sm_timing").value,
     scope, storeIds, done:false,
   };
@@ -4769,7 +4785,7 @@ function checkUpdate(){
 setInterval(checkUpdate, 5*60*1000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkUpdate(); });
 setTimeout(checkUpdate, 20*1000);
-function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", btnType:"", formatId:"", evStart:"", evEnd:"", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
+function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", btnType:"", formatId:"", evStart:"", evEnd:"", evStartTime:"", evEndTime:"", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
 window.startFromSched = async (id)=>{
@@ -4780,7 +4796,7 @@ window.startFromSched = async (id)=>{
   if(typeof closeDayModal==="function") closeDayModal();
   freshCur({ schedId:id, title:s.catchTitle||s.title, themeTitle:s.title, catchTitle:s.catchTitle||"",
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
-             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", formatId:s.formatId||"", evStart:s.evStart||"", evEnd:s.evEnd||"", timing:s.timing||"scheduled",
+             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", formatId:s.formatId||"", evStart:s.evStart||"", evEnd:s.evEnd||"", evStartTime:s.evStartTime||"", evEndTime:s.evEndTime||"", timing:s.timing||"scheduled",
              scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
              imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
@@ -4834,9 +4850,13 @@ function viewTarget(){
     <p class="hint">${BTN_HINT}</p>
     <div class="row mt" id="c_evRow" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">
       <div><label>掲載開始日</label><input type="date" id="c_evStart" value="${esc(cur.evStart||"")}"></div>
-      <div><label>掲載終了日</label><input type="date" id="c_evEnd" value="${esc(cur.evEnd||"")}"></div>
+      <div><label>開始時間</label><input id="c_evStartTime" value="${esc(cur.evStartTime||"")}" placeholder="9:20（空欄は営業開始）" inputmode="numeric"></div>
     </div>
-    <p class="hint" id="c_evHint" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">イベント・クーポンは掲載期間つきで表示されます。空欄なら「投稿日〜その月の月末」になります</p>
+    <div class="row" id="c_evRow2" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">
+      <div><label>掲載終了日</label><input type="date" id="c_evEnd" value="${esc(cur.evEnd||"")}"></div>
+      <div><label>終了時間</label><input id="c_evEndTime" value="${esc(cur.evEndTime||"")}" placeholder="18:30（空欄は営業終了）" inputmode="numeric"></div>
+    </div>
+    <p class="hint" id="c_evHint" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">イベント・クーポンは日付と時間の4つがそろっている必要があります。空欄なら「投稿日〜その月の月末」「店舗の営業時間」が入ります</p>
     <label class="mt">投稿の型（書き方の構成）</label>
     <select id="c_formatId">${formatOptions(cur.formatId||"")}</select>
     <p class="hint" id="c_formatHint"></p>
@@ -5648,9 +5668,13 @@ function buildRowsFrom(d){
     c[COL.IMAGE]= ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||"");
     const b = btnFor(d, s); c[COL.BTYPE]=b.type; c[COL.BURL]=b.url;
     if(d.postType==="イベント" || d.postType==="クーポン"){
+      // イベント・クーポンは 開始日/開始時間/終了日/終了時間 の4つがそろっている必要があります
+      const hr = hoursRange(s._m || {});
       const evs = d.evStart || date || todayISO();
       const eve = d.evEnd || monthEndOf(evs);
-      c[COL.EV_SDATE]=fmtDate(evs); c[COL.EV_EDATE]=fmtDate(eve);
+      c[COL.EV_SDATE]=fmtDate(evs); c[COL.EV_STIME]=fmtTime(d.evStartTime || hr.st);
+      c[COL.EV_EDATE]=fmtDate(eve); c[COL.EV_ETIME]=fmtTime(d.evEndTime || hr.et);
+      COL_SNS.forEach(i=> c[i]="✕");
     }
     rows.push(c);
   });
@@ -5702,7 +5726,8 @@ function archivePost(){
       date: cur.date || todayISO(), time: cur.time || "",
       abType: cur.abType || "", kw: cur.kw || "", context: cur.context || "",
       imageMemo: cur.imageMemo || "", imageTitle: cur.imageTitle || "", imageId: cur.imageId || "", imageUrl: "",
-      postType: cur.postType || "最新情報", evStart: cur.evStart||"", evEnd: cur.evEnd||"", timing: cur.timing || "scheduled",
+      postType: cur.postType || "最新情報", evStart: cur.evStart||"", evEnd: cur.evEnd||"",
+      evStartTime: cur.evStartTime||"", evEndTime: cur.evEndTime||"", timing: cur.timing || "scheduled",
       scope: cur.scope || "category_common", storeIds: (cur.storeIds||[]).slice(),
       done: true, posted: false, postedAt: "",
     };
@@ -5852,10 +5877,11 @@ function bindCreate(){
   const kw=document.getElementById("c_kw"); if(kw) kw.oninput=e=>cur.kw=e.target.value;
   const pt=document.getElementById("c_postType"); if(pt) pt.onchange=e=>{ cur.postType=e.target.value;
     const show = (cur.postType==="イベント"||cur.postType==="クーポン");
-    const r=document.getElementById("c_evRow"), h=document.getElementById("c_evHint");
-    if(r) r.style.display = show?"":"none"; if(h) h.style.display = show?"":"none"; };
+    ["c_evRow","c_evRow2","c_evHint"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = show?"":"none"; }); };
   const ev1=document.getElementById("c_evStart"); if(ev1) ev1.onchange=e=>cur.evStart=e.target.value;
   const ev2=document.getElementById("c_evEnd"); if(ev2) ev2.onchange=e=>cur.evEnd=e.target.value;
+  const ev3=document.getElementById("c_evStartTime"); if(ev3) ev3.oninput=e=>cur.evStartTime=e.target.value.trim();
+  const ev4=document.getElementById("c_evEndTime"); if(ev4) ev4.oninput=e=>cur.evEndTime=e.target.value.trim();
   const bt=document.getElementById("c_btnType"); if(bt) bt.onchange=e=>cur.btnType=e.target.value;
   const ff=document.getElementById("c_formatId");
   if(ff){ ff.onchange=e=>{ cur.formatId=e.target.value; renderFormatHint(); }; renderFormatHint(); }
@@ -6235,14 +6261,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.1";
+const STUDIO_VERSION = "2026-09-04.2";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
-        <li><b>🎫 イベント・クーポン投稿の掲載期間</b>：投稿タイプをイベント/クーポンにすると掲載期間つきで出力されます（空欄なら投稿日〜月末）</li>
+        <li><b>🎫 イベント・クーポン投稿の掲載期間</b>：開始日・開始時間・終了日・終了時間の4つを出力します（空欄なら「投稿日〜月末」「店舗の営業時間」が入ります）</li>
         <li><b>🎨 画像の「人物なし（情景のみ）」</b>：画像プロンプトで人物を入れない指定が選べます。画像メモに「人物なし」と書くと自動で切り替わります</li>
         <li><b>🔗 ボタンのリンク管理</b>：店舗ごとに候補リンクを複数登録し「これを使う」で切替。使用期間・変更日時が自動で残るので流入計測と突き合わせできます。GBPダイレクト予約のリンクも別枠で記録</li>
         <li><b>📐 投稿の型を選べます</b>：競合調査から抽出した5つの構成（季節×症状／症状解説／エピソード／縦リズム／メニュー訴求）。設定タブで追加・編集も可能</li>
