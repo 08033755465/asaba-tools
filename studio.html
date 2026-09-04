@@ -3423,6 +3423,7 @@ function schedCard(s){
         <button class="act" onclick="openImgPrompt('${s.id}')" title="ChatGPT用の画像プロンプトを作る">🎨 AIで作る</button>
         ${ist!=='linked'?`<button class="act" onclick="openGalFrame('${s.id}')" title="サムネイルツールで画像を作る・選ぶ">🖼️ サムネツール</button>`:''}
         <button class="act" onclick="openPostStatus('${s.id}')">${st?'✏️ 状態を直す':'✅ 投稿できた'}</button>
+        ${(s.contents&&Object.keys(s.contents).length)?`<span class="pill" style="background:#DCE9EE;color:#2F6D80;">📝 本文${Object.keys(s.contents).length}件</span>`:''}
         <button class="act" onclick="openSchedEdit('${s.id}')">⚙️ 予定を編集</button>
       </div>
     </div>
@@ -4619,6 +4620,8 @@ window.saveSchedEdit = ()=>{
     imageTitle: smImage ? smImage.title : "",
     imageId: smImage ? (smImage.id||"") : "",
     imageUrl: "", // 旧仕様で保存された重い画像データを消去（サムネはギャラリーから解決）
+    contents: (schedule.find(x=>x.id===editingSchedId)||{}).contents,
+    overrides: (schedule.find(x=>x.id===editingSchedId)||{}).overrides,
     postType: document.getElementById("sm_postType").value,
     btnType: document.getElementById("sm_btnType").value,
     formatId: document.getElementById("sm_formatId").value,
@@ -4798,8 +4801,13 @@ window.startFromSched = async (id)=>{
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
              kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", formatId:s.formatId||"", evStart:s.evStart||"", evEnd:s.evEnd||"", evStartTime:s.evStartTime||"", evEndTime:s.evEndTime||"", timing:s.timing||"scheduled",
              scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
+             contents: s.contents ? JSON.parse(JSON.stringify(s.contents)) : {},
+             overrides: s.overrides ? JSON.parse(JSON.stringify(s.overrides)) : {},
+             _parsed: !!(s.contents && Object.keys(s.contents).length),
+             step: (s.contents && Object.keys(s.contents).length) ? 2 : 0,
              imageTitle:s.imageTitle||"", imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
   go("create");
+  if(cur._parsed) toast(`📝 登録済みの本文 ${Object.keys(cur.contents).length}件を読み込みました`);
 };
 function targets(){
   const list = storesOf(cur);
@@ -5131,6 +5139,35 @@ window.renderTplList = ()=>{
 };
 
 // --- Step2: 貼り付け解析 ---
+// 作成中の本文を予定に保存（チーム全員が同じ本文から続けられます）
+window.saveBodyToSched = async ()=>{
+  const n = Object.keys(cur.contents||{}).filter(k=>String(cur.contents[k]||"").trim()).length;
+  if(!n){ toast("保存する本文がありません"); return; }
+  let id = cur.schedId;
+  if(!id){
+    // 予定が無ければ作る
+    id = uid();
+    persistSched({ id, title: cur.themeTitle||cur.title||"（無題）", catchTitle: cur.catchTitle||cur.title||"",
+      date: cur.date||todayISO(), time: cur.time||"", abType: cur.abType||"A", kw: cur.kw||"",
+      context: cur.context||"", imageMemo: cur.imageMemo||"", imageTitle: cur.imageTitle||"", imageId: cur.imageId||"",
+      postType: cur.postType||"最新情報", btnType: cur.btnType||"", formatId: cur.formatId||"",
+      evStart: cur.evStart||"", evEnd: cur.evEnd||"", evStartTime: cur.evStartTime||"", evEndTime: cur.evEndTime||"",
+      timing: cur.timing||"scheduled", scope: cur.scope||"per_store", storeIds:(cur.storeIds||[]).slice(),
+      contents: JSON.parse(JSON.stringify(cur.contents||{})), overrides: JSON.parse(JSON.stringify(cur.overrides||{})),
+      done:false });
+    cur.schedId = id;
+  } else {
+    const cur0 = schedule.find(x=>x.id===id) || { id };
+    persistSched({ ...cur0, title: cur.themeTitle||cur0.title, catchTitle: cur.catchTitle||cur0.catchTitle,
+      scope: cur.scope, storeIds:(cur.storeIds||[]).slice(),
+      postType: cur.postType, btnType: cur.btnType||"", formatId: cur.formatId||"",
+      evStart: cur.evStart||"", evEnd: cur.evEnd||"", evStartTime: cur.evStartTime||"", evEndTime: cur.evEndTime||"",
+      timing: cur.timing, imageTitle: cur.imageTitle||"", imageId: cur.imageId||"",
+      contents: JSON.parse(JSON.stringify(cur.contents||{})), overrides: JSON.parse(JSON.stringify(cur.overrides||{})) });
+  }
+  toast(`💾 本文${n}件を予定に保存しました（チーム全員に共有）`);
+  if(typeof renderSchedule==="function") renderSchedule();
+};
 window.applyContextToInstr = ()=>{
   const t=document.getElementById("c_instruction"); if(!t) return;
   t.value = buildInstruction(); cur._instruction = t.value;
@@ -5142,6 +5179,8 @@ function viewPaste(){
     <p class="small muted">Claudeの返信を全部コピーして、ここに貼り付けて「流し込む」を押すと、全店舗分に自動で入ります。</p>
     <textarea id="c_paste" placeholder="ここにClaudeの返信を貼り付け（====タイトル==== … の形式）" style="min-height:200px;">${esc(cur._rawPaste||"")}</textarea>
     <button class="btn btn-primary mt" onclick="parsePaste()">⬇️ 流し込む</button>
+    <button class="btn btn-ghost mt" onclick="saveBodyToSched()">💾 この本文を予定に保存（チーム共有）</button>
+    <p class="hint">保存しておくと、次に予定を開いたときに本文が入った状態から始められます。貼り付け直す必要がありません</p>
     <div id="parseResult"></div>
   </div>
   ${cur._parsed ? renderPasteEditors() : ""}
@@ -6261,13 +6300,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.2";
+const STUDIO_VERSION = "2026-09-04.3";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>📝 本文を予定に保存できます</b>：作成した本文を予定に保存すると、次に開いたとき入った状態から始められます。貼り付け直しが不要になり、チーム全員で同じ本文を共有できます</li>
         <li><b>🎫 イベント・クーポン投稿の掲載期間</b>：開始日・開始時間・終了日・終了時間の4つを出力します（空欄なら「投稿日〜月末」「店舗の営業時間」が入ります）</li>
         <li><b>🎨 画像の「人物なし（情景のみ）」</b>：画像プロンプトで人物を入れない指定が選べます。画像メモに「人物なし」と書くと自動で切り替わります</li>
         <li><b>🔗 ボタンのリンク管理</b>：店舗ごとに候補リンクを複数登録し「これを使う」で切替。使用期間・変更日時が自動で残るので流入計測と突き合わせできます。GBPダイレクト予約のリンクも別枠で記録</li>
