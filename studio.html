@@ -488,11 +488,11 @@
     <select id="sm_formatId"></select>
     <div class="row mt" id="sm_evRow" style="display:none;">
       <div><label>掲載開始日</label><input type="date" id="sm_evStart"></div>
-      <div><label>開始時間</label><input id="sm_evStartTime" placeholder="9:20（空欄は営業開始）" inputmode="numeric"></div>
+      <div><label>開始時間</label><input type="time" id="sm_evStartTime"></div>
     </div>
     <div class="row" id="sm_evRow2" style="display:none;">
       <div><label>掲載終了日</label><input type="date" id="sm_evEnd"></div>
-      <div><label>終了時間</label><input id="sm_evEndTime" placeholder="18:30（空欄は営業終了）" inputmode="numeric"></div>
+      <div><label>終了時間</label><input type="time" id="sm_evEndTime"></div>
     </div>
     <label class="mt">タイミング</label>
     <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
@@ -4858,13 +4858,13 @@ function viewTarget(){
     <p class="hint">${BTN_HINT}</p>
     <div class="row mt" id="c_evRow" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">
       <div><label>掲載開始日</label><input type="date" id="c_evStart" value="${esc(cur.evStart||"")}"></div>
-      <div><label>開始時間</label><input id="c_evStartTime" value="${esc(cur.evStartTime||"")}" placeholder="9:20（空欄は営業開始）" inputmode="numeric"></div>
+      <div><label>開始時間</label><input type="time" id="c_evStartTime" value="${esc(cur.evStartTime||"")}"></div>
     </div>
     <div class="row" id="c_evRow2" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">
       <div><label>掲載終了日</label><input type="date" id="c_evEnd" value="${esc(cur.evEnd||"")}"></div>
-      <div><label>終了時間</label><input id="c_evEndTime" value="${esc(cur.evEndTime||"")}" placeholder="18:30（空欄は営業終了）" inputmode="numeric"></div>
+      <div><label>終了時間</label><input type="time" id="c_evEndTime" value="${esc(cur.evEndTime||"")}"></div>
     </div>
-    <p class="hint" id="c_evHint" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">イベント・クーポンは日付と時間の4つがそろっている必要があります。空欄なら「投稿日〜その月の月末」「店舗の営業時間」が入ります</p>
+    <p class="hint" id="c_evHint" style="${(cur.postType==="イベント"||cur.postType==="クーポン")?"":"display:none;"}">イベント・クーポンは日付と時間の4つがそろっている必要があります。<b>時間は空欄でOK</b>——そのときは店舗の営業時間（例 9:20〜18:30）が自動で入ります。日付を空欄にすると「投稿日〜その月の月末」になります</p>
     <label class="mt">投稿の型（書き方の構成）</label>
     <select id="c_formatId">${formatOptions(cur.formatId||"")}</select>
     <p class="hint" id="c_formatHint"></p>
@@ -5919,8 +5919,8 @@ function bindCreate(){
     ["c_evRow","c_evRow2","c_evHint"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = show?"":"none"; }); };
   const ev1=document.getElementById("c_evStart"); if(ev1) ev1.onchange=e=>cur.evStart=e.target.value;
   const ev2=document.getElementById("c_evEnd"); if(ev2) ev2.onchange=e=>cur.evEnd=e.target.value;
-  const ev3=document.getElementById("c_evStartTime"); if(ev3) ev3.oninput=e=>cur.evStartTime=e.target.value.trim();
-  const ev4=document.getElementById("c_evEndTime"); if(ev4) ev4.oninput=e=>cur.evEndTime=e.target.value.trim();
+  const ev3=document.getElementById("c_evStartTime"); if(ev3) ev3.onchange=e=>cur.evStartTime=e.target.value;
+  const ev4=document.getElementById("c_evEndTime"); if(ev4) ev4.onchange=e=>cur.evEndTime=e.target.value;
   const bt=document.getElementById("c_btnType"); if(bt) bt.onchange=e=>cur.btnType=e.target.value;
   const ff=document.getElementById("c_formatId");
   if(ff){ ff.onchange=e=>{ cur.formatId=e.target.value; renderFormatHint(); }; renderFormatHint(); }
@@ -6300,13 +6300,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.3";
+const STUDIO_VERSION = "2026-09-04.4";
 const HELP_HTML = `
   <h1 style="margin-top:0;">📖 使い方 ＆ お知らせ</h1>
 
   <div class="card" style="background:linear-gradient(135deg,var(--pbg),#fff); border-color:#CBDFE4;">
     <b>🆕 最新アップデート（${STUDIO_VERSION}）</b>
       <ul style="margin:8px 0 0; padding-left:18px; line-height:1.9;">
+        <li><b>⏰ イベントの開始・終了時間を時計から選べます</b>：数字キーボードで「:」が打てず入力できなかったのを修正しました</li>
         <li><b>📝 本文を予定に保存できます</b>：作成した本文を予定に保存すると、次に開いたとき入った状態から始められます。貼り付け直しが不要になり、チーム全員で同じ本文を共有できます</li>
         <li><b>🎫 イベント・クーポン投稿の掲載期間</b>：開始日・開始時間・終了日・終了時間の4つを出力します（空欄なら「投稿日〜月末」「店舗の営業時間」が入ります）</li>
         <li><b>🎨 画像の「人物なし（情景のみ）」</b>：画像プロンプトで人物を入れない指定が選べます。画像メモに「人物なし」と書くと自動で切り替わります</li>
