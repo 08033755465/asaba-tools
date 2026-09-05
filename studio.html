@@ -114,6 +114,34 @@
   .act.warn { color:var(--warn); border-color:#fde68a; }
   .act.ng { color:var(--ng); border-color:#fecaca; }
   .actbar { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  /* ===== 予定カードの操作：「つぎにやること」1つ＋その他は折りたたみ ===== */
+  .flow { display:flex; align-items:center; gap:2px; margin:6px 0 2px; }
+  .flow .fstep { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:9.5px; color:var(--muted); }
+  .flow .fstep .fi { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; background:#eef2f5; color:#94a3b8; font-weight:700; }
+  .flow .fstep.on .fi { background:#3E8E7E; color:#fff; }
+  .flow .fstep.now .fi { background:var(--brand); color:#fff; box-shadow:0 0 0 3px #DCE9EE; }
+  .flow .fstep.now { color:var(--brand); font-weight:700; }
+  .flow .fstep.warn .fi { background:#fde68a; color:#92400e; }
+  .flow .fstep.bad .fi { background:#fecaca; color:#991b1b; }
+  .flow .fsep { width:10px; height:2px; background:#e2e8f0; margin-bottom:14px; flex-shrink:0; }
+  .pact { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; width:100%; padding:9px 12px; border-radius:11px; border:0; background:var(--brand); color:#fff; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; line-height:1.3; }
+  .pact:active { transform:scale(.98); }
+  .pact.done { background:#E3F0E4; color:#3E8E7E; cursor:default; }
+  .pact small { font-weight:500; opacity:.85; font-size:10px; }
+  .more-tg { display:flex; align-items:center; justify-content:center; gap:4px; width:100%; margin-top:6px; padding:6px; border:0; background:transparent; color:var(--muted); font-size:11px; cursor:pointer; }
+  .more-tg::after { content:"▾"; transition:transform .15s ease; }
+  .more-wrap.open .more-tg::after { transform:rotate(180deg); }
+  .more-list { display:none; grid-template-columns:1fr 1fr; gap:6px; margin-top:4px; }
+  .more-wrap.open .more-list { display:grid; }
+  .more-btn { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; padding:7px 9px; border-radius:9px; border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer; min-width:0; }
+  .more-btn:active { transform:scale(.97); }
+  .more-btn b { font-size:11.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .more-btn span { font-size:9.5px; color:var(--muted); line-height:1.3; }
+  .more-btn.warn { border-color:#fde68a; } .more-btn.warn b { color:var(--warn); }
+  .more-btn.ng { border-color:#fecaca; } .more-btn.ng b { color:var(--ng); }
+  .di-body.clamp { max-height:44px; overflow:hidden; position:relative; }
+  .di-body.clamp::after { content:""; position:absolute; left:0; right:0; bottom:0; height:22px; background:linear-gradient(rgba(248,250,252,0),#f8fafc); }
+  .body-tg { font-size:10px; color:var(--brand); background:transparent; border:0; padding:2px 0; cursor:pointer; }
   .schedcard { padding:8px 0; border-bottom:1px solid #f1f5f9; }
   .schedcard:last-child { border-bottom:0; }
   .sc-head { display:flex; gap:8px; align-items:center; min-width:0; cursor:pointer; }
@@ -3322,10 +3350,8 @@ function renderHomeSchedule(){
         ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:40px;height:40px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
         <div style="min-width:0;">${abBadge(s)}<b class="small">${esc(s.title)}</b>${s.imageTitle?' 🖼️':''}<br><span class="muted small">${schedWhen(s)} ・ ${scopeLabel(s)}</span></div>
       </div>
-      <div style="display:flex; gap:6px;">
-        ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:`<button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>`}
-        <button class="pill" onclick="openImgPrompt('${s.id}')">🎨画像</button>
-        <button class="pill" style="background:var(--brand); color:#fff;" onclick="startFromSched('${s.id}')">作成</button>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        ${(()=>{ const pa=primaryAction(s); return pa.done ? `<span class="pill badge-done">${pa.label}</span>` : `<button class="pill" style="background:var(--brand); color:#fff; padding:6px 10px;" onclick="${pa.fn}">${pa.short}</button>`; })()}
       </div>
     </div>`).join("") : `<p class="hint">予定がありません。予定タブから追加、または「投稿を作る」で今すぐ作成できます。</p>`;
 }
@@ -3386,6 +3412,66 @@ function renderSchedList(){
 // 予定カード（1行に凝縮 → タップで詳細＋操作を開く）
 let SC_OPEN = null;
 window.toggleSchedCard = (id)=>{ SC_OPEN = (SC_OPEN===id) ? null : id; renderSchedList(); };
+// ===== 予定カードの「いまどこか」と「つぎにやること」（リスト・日付モーダル・ホームで共通） =====
+// 4つの段階：🖼️画像 → ✍️本文 → 📤出力 → ✅投稿
+function schedFlow(s){
+  const ist = imgState(s), st = postStatusOf(s);
+  const hasBody = !!(s.contents && Object.keys(s.contents).length);
+  const steps = [
+    { key:"image",  icon:"🖼️", label:"画像",  on: ist==="linked", warn: ist==="nameonly"||ist==="broken" },
+    { key:"body",   icon:"✍️", label:"本文",  on: hasBody },
+    { key:"export", icon:"📤", label:"出力",  on: !!s.done },
+    { key:"post",   icon:"✅", label:"投稿",  on: st==="posted", bad: st==="canceled"||st==="mistake"||st==="retired" },
+  ];
+  const now = steps.findIndex(x=>!x.on);
+  return { steps, now: now<0 ? steps.length : now, hasBody, ist, st };
+}
+function flowTracker(s){
+  const f = schedFlow(s);
+  return `<div class="flow">${f.steps.map((x,i)=>`${i?'<div class="fsep"></div>':''}<div class="fstep${x.on?' on':''}${i===f.now?' now':''}${x.warn?' warn':''}${x.bad?' bad':''}"><div class="fi">${x.on?'✓':(x.bad?'!':i+1)}</div><div>${x.icon}${x.label}</div></div>`).join("")}</div>`;
+}
+// いま押すべきボタンを1つだけ返す
+function primaryAction(s){
+  const f = schedFlow(s);
+  if(f.st==='retired') return { done:true, label:"🗂 今後未使用（データに含めません）" };
+  if(f.st==='posted')  return { done:true, label:`✅ 投稿済み${s.postedDate?`（${fmtJp(s.postedDate)}）`:""}` };
+  if(f.st==='canceled'||f.st==='mistake') return { label:"✏️ 投稿状態を直す", short:"状態を直す", sub:`いまは「${PS_META[f.st].label}」になっています`, fn:`openPostStatus('${s.id}')` };
+  if(f.ist!=='linked') return { label:"🖼️ 画像を用意する", short:"画像を用意", sub:f.ist==='none'?"サムネツールで作る／ギャラリーから選ぶ":"画像の紐付けを直す", fn:`imageFirst('${s.id}')` };
+  if(!f.hasBody)  return { label:"✍️ 本文を作る", short:"本文を作る", sub:"指示文をコピー → Claudeで作成 → 貼り付け", fn:`startFromSched('${s.id}')` };
+  if(!s.done)     return { label:"📤 GMO用ファイルを出す", short:"出力する", sub:"本文と画像はそろっています", fn:`startFromSched('${s.id}',4)` };
+  return { label:"✅ 投稿できたら記録する", short:"投稿を記録", sub:"GMOに入れて公開されたら押してください", fn:`openPostStatus('${s.id}')` };
+}
+// その他の操作（折りたたみ）。ctx: 'day'（日付モーダル）| 'list'（予定リスト）
+function moreActions(s, ctx){
+  const f = schedFlow(s); const a = [];
+  const pa = primaryAction(s);
+  if(pa.fn !== `startFromSched('${s.id}')`) a.push({ label: f.hasBody ? "✍️ 本文を見る・直す" : "✍️ 本文を作る", desc: f.hasBody ? `保存済み ${Object.keys(s.contents).length}件` : "作成画面を開く", fn:`startFromSched('${s.id}')` });
+  if(f.ist==='linked') a.push({ label:"🖼️ 画像を選び直す", desc:"ギャラリーから別の画像に", fn:`quickLinkImage('${s.id}')` });
+  else if(pa.fn !== `imageFirst('${s.id}')`) a.push({ label:"🖼️ 画像を選ぶ", desc:"ギャラリーから紐付け", fn:`quickLinkImage('${s.id}')` });
+  a.push({ label:"🎨 サムネツールで作る", desc:"文字入れ・デザイン", fn:`openGalFrame('${s.id}')` });
+  a.push({ label:"🤖 AI画像の指示文", desc:"ChatGPT用プロンプト", fn:`openImgPrompt('${s.id}')` });
+  if(s.done) a.push({ label:"📤 もう一度出力", desc:"前回の本文を直して再出力", fn:`reExport('${s.id}')` });
+  if(pa.fn !== `openPostStatus('${s.id}')`) a.push({ label: f.st ? "✏️ 投稿状態を直す" : "✅ 投稿状態を記録", desc: f.st ? `いまは「${PS_META[f.st].label}」` : "投稿済・取消などを記録", fn:`openPostStatus('${s.id}')` });
+  a.push({ label:"⚙️ 予定を編集", desc:"日時・テーマ・対象店舗", fn:`openSchedEdit('${s.id}')` });
+  a.push({ label:"📋 複製", desc:"同じ内容で別の日に", fn:`dupSched('${s.id}')` });
+  if(f.ist==='linked') a.push({ label:"🖼️ 画像を外す", desc:"紐付けだけ解除（画像は残る）", fn:`unlinkSchedImageUI('${s.id}')`, cls:"warn" });
+  if(ctx==='day') a.push({ label:"🗑 予定を削除", desc:"元に戻せます（数秒間）", fn:`delSchedFromDay('${s.id}')`, cls:"ng" });
+  return a;
+}
+function actionBlock(s, ctx){
+  const pa = primaryAction(s);
+  const more = moreActions(s, ctx);
+  return `${pa.done
+      ? `<div class="pact done">${pa.label}</div>`
+      : `<button class="pact" onclick="event.stopPropagation();${pa.fn}"><span>${pa.label}</span>${pa.sub?`<small>${esc(pa.sub)}</small>`:""}</button>`}
+    <div class="more-wrap" id="more_${ctx}_${s.id}">
+      <button class="more-tg" onclick="event.stopPropagation();toggleMore('${ctx}','${s.id}')">その他の操作（${more.length}）</button>
+      <div class="more-list">${more.map(m=>`<button class="more-btn ${m.cls||''}" onclick="event.stopPropagation();${m.fn}"><b>${m.label}</b><span>${esc(m.desc)}</span></button>`).join("")}</div>
+    </div>`;
+}
+window.toggleMore = (ctx,id)=>{ const el=document.getElementById(`more_${ctx}_${id}`); if(el) el.classList.toggle('open'); };
+window.toggleBody = (btn)=>{ const b=btn.previousElementSibling; if(!b) return; const c=b.classList.toggle('clamp'); btn.textContent = c ? '▾ 本文を全部見る' : '▴ 本文を閉じる'; };
+
 function schedCard(s){
   const st = postStatusOf(s), ist = imgState(s), im = IMG_META[ist];
   const open = SC_OPEN===s.id;
@@ -3418,19 +3504,8 @@ function schedCard(s){
         <button class="act" style="padding:3px 7px; font-size:10px;" onclick="event.stopPropagation();copyStr(${JSON.stringify(s.imageTitle)},event)">📋 コピー</button></div>`:""}
       ${isShifted(s)?`<div class="muted small" style="margin-top:3px;">📅 予定 ${fmtJp(s.date)} → 実績 <b>${fmtJp(s.postedDate)}</b></div>`:""}
       ${s.postNote?`<div class="muted small">📝 ${esc(s.postNote)}</div>`:""}
-      <div class="actbar">
-        <button class="act primary" onclick="startFromSched('${s.id}')">✍️ 投稿を作る</button>
-        <button class="act" onclick="imageFirst('${s.id}')" title="画像の準備から始める（本文はあとで）">🖼️ 画像から進める</button>
-        <button class="act" onclick="reExport('${s.id}')" title="この投稿を編集してもう一度出力する">📤 再出力</button>
-        ${ist==='linked'
-          ? `<button class="act warn" onclick="unlinkSchedImageUI('${s.id}')">🖼️ 画像を外す</button>`
-          : `<button class="act" onclick="quickLinkImage('${s.id}')">🖼️ 画像を選ぶ</button>`}
-        <button class="act" onclick="openImgPrompt('${s.id}')" title="ChatGPT用の画像プロンプトを作る">🎨 AIで作る</button>
-        ${ist!=='linked'?`<button class="act" onclick="openGalFrame('${s.id}')" title="サムネイルツールで画像を作る・選ぶ">🖼️ サムネツール</button>`:''}
-        <button class="act" onclick="openPostStatus('${s.id}')">${st?'✏️ 状態を直す':'✅ 投稿できた'}</button>
-        ${(s.contents&&Object.keys(s.contents).length)?`<span class="pill" style="background:#DCE9EE;color:#2F6D80;">📝 本文${Object.keys(s.contents).length}件</span>`:''}
-        <button class="act" onclick="openSchedEdit('${s.id}')">⚙️ 予定を編集</button>
-      </div>
+      ${flowTracker(s)}
+      ${actionBlock(s,'list')}
     </div>
   </div>`;
 }
@@ -4174,8 +4249,10 @@ function bodyForSched(s){
   const posts = window.__posts||[];
   let p = posts.find(x=> x.schedId && x.schedId===s.id);
   if(!p) p = posts.find(x=> x.date===s.date && (x.catchTitle===s.catchTitle || x.title===s.title) && (s.catchTitle||s.title));
-  if(!p || !p.contents) return null;
-  return Object.entries(p.contents).map(([k,v])=> `【${contentLabel(k)}】\n${v}`).join("\n\n");
+  // 出力履歴が無くても、予定に保存した本文（contents）があればそれを見せる
+  const src = (p && p.contents && Object.keys(p.contents).length) ? p.contents : (s.contents && Object.keys(s.contents).length ? s.contents : null);
+  if(!src) return null;
+  return Object.entries(src).map(([k,v])=> `【${contentLabel(k)}】\n${v}`).join("\n\n");
 }
 
 // 日別ポップからの削除（confirm→askPop化のため関数化）
@@ -4323,31 +4400,16 @@ function renderDayModalBody(){
         ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
         <div style="min-width:0; flex:1;">
           <div class="di-title">${abBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${postStatusOf(s)==='posted'?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
-          <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)}</div>
-          <div class="di-meta" style="color:${IMG_META[imgState(s)].color}">${IMG_META[imgState(s)].icon} 画像：${imgState(s)==='linked'?'作成済み':(imgState(s)==='none'?'未作成':IMG_META[imgState(s)].label)}</div>
+          <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)}${!(s.catchTitle||s.title)?' ・ <span style="color:var(--warn)">📝 テーマ未作成</span>':''}</div>
           ${s.imageTitle?`<div class="di-meta" style="display:flex;align-items:center;gap:5px;"><span style="flex:1;min-width:0;word-break:break-all;">🖼️ ${esc(s.imageTitle)}</span>
             <button class="act" style="padding:3px 7px;font-size:10px;" onclick="copyStr(${JSON.stringify(s.imageTitle)},event)">📋 コピー</button></div>`:""}
-          <div class="di-meta">${s.done?'📤 出力済み（GMO投入待ち）':'📤 未出力'}</div>
-          <div class="di-meta">${(s.catchTitle||s.title)?'📝 テーマあり':'📝 テーマ未作成'}</div>
-          ${(()=>{const st=postStatusOf(s); if(!st) return '<div class="di-meta">⬜ 投稿：未投稿</div>';
-            const m=PS_META[st]; return `<div class="di-meta" style="color:${m.color}">${m.icon} 投稿：${m.label}${s.postedDate?`（${fmtJp(s.postedDate)}）`:""}</div>`;})()}
           ${isShifted(s)?`<div class="di-meta" style="color:var(--warn)">📅 予定 ${fmtJp(s.date)} → 実績 <b>${fmtJp(s.postedDate)}</b></div>`:""}
           ${s.postNote?`<div class="di-meta">📝 ${esc(s.postNote)}</div>`:""}
-          ${body?`<div class="di-body">${esc(body)}</div>`:`<div class="di-meta" style="color:var(--warn)">📝 本文：未作成（作成すると表示されます）</div>`}
         </div>
       </div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-        <button class="pill" onclick="startFromSched('${s.id}')">✍️作成</button>
-        <button class="pill" onclick="imageFirst('${s.id}')">🖼️画像から</button>
-        <button class="pill" onclick="reExport('${s.id}')">📤再出力</button>
-        <button class="pill" onclick="quickLinkImage('${s.id}')">🖼️紐付け</button>
-        ${s.imageId||s.imageTitle?`<button class="pill" style="color:var(--warn)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:""}
-        <button class="pill" onclick="openSchedEdit('${s.id}')">編集</button>
-        <button class="pill" onclick="dupSched('${s.id}')">📋複製</button>
-        <button class="pill" onclick="openPostStatus('${s.id}')">${postStatusOf(s)?'✏️状態を変更':'✅投稿状態を記録'}</button>
-        ${s.imageTitle?`<button class="pill" style="color:var(--ng)" onclick="unlinkSchedImageUI('${s.id}')">🖼️解除</button>`:''}
-        <button class="pill" style="color:var(--ng)" onclick="delSchedFromDay('${s.id}')">削除</button>
-      </div>
+      ${flowTracker(s)}
+      ${body?`<div class="di-body clamp">${esc(body)}</div><button class="body-tg" onclick="toggleBody(this)">▾ 本文を全部見る</button>`:`<div class="di-meta" style="color:var(--warn)">📝 本文：まだありません</div>`}
+      ${actionBlock(s,'day')}
     </div>`;
   });
   evs.forEach(e=>{
@@ -4796,7 +4858,7 @@ setTimeout(checkUpdate, 20*1000);
 function freshCur(over){ setCur(Object.assign({ step:0, schedId:null, tplId:null, title:"", themeTitle:"", catchTitle:"", date:"", time:"16:00", abType:"A", kw:"", context:"", imageMemo:"", postType:"最新情報", btnType:"", formatId:"", evStart:"", evEnd:"", evStartTime:"", evEndTime:"", timing:"scheduled", scope:"per_store", storeIds:STORES.map(s=>s.gmo), contents:{}, overrides:{}, imagePrompt:"", imageTitle:"", imageId:"", imageUrl:"" }, over||{})); }
 freshCur();
 
-window.startFromSched = async (id)=>{
+window.startFromSched = async (id, step)=>{
   const s = schedule.find(x=>x.id===id); if(!s) return;
   if(curHasWork() && cur.schedId!==id){
     if(!(await askPop({title:"作成中の内容があります", body:"別の予定を開くと、いま作成中の本文は消えます（下書きには残ります）", okLabel:"開く"}))) return;
@@ -4811,6 +4873,7 @@ window.startFromSched = async (id)=>{
              _parsed: !!(s.contents && Object.keys(s.contents).length),
              step: (s.contents && Object.keys(s.contents).length) ? 2 : 0,
              imageTitle:safeImgName(s.imageTitle||""), imageId:s.imageId||"", imageUrl:galUrlById(s.imageId) });
+  if(step!==undefined && step!==null) cur.step = step;   // 例：4＝「確認して出力」へ直行
   go("create");
   if(cur._parsed) toast(`📝 登録済みの本文 ${Object.keys(cur.contents).length}件を読み込みました`);
 };
@@ -6381,9 +6444,13 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-05.1";
+const STUDIO_VERSION = "2026-09-05.2";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-05.2", items:[
+      `<b>予定のボタンを整理しました</b>：カードには「つぎにやること」のボタンを1つだけ表示し、それ以外は「その他の操作」を開くと出てきます。各ボタンに何が起きるかの説明も付けました`,
+      `<b>進み具合が一目で分かるように</b>：🖼️画像 → ✍️本文 → 📤出力 → ✅投稿 の4段階を、いまどこまで終わっているかで表示します`,
+      `本文は折りたたみで表示（「本文を全部見る」で開く）。同じ「解除」ボタンが2つ出ていた不具合も直しました` ] },
   { v:"2026-09-05.1", items:[
       `<b>🖼️ サムネイル・ギャラリーの上部が崩れていたのを直しました</b>：見出しが縦に潰れて「閉じる」だけが横いっぱいになっていた表示を修正しました` ] },
   { v:"2026-09-04.7", items:[
