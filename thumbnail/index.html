@@ -8,6 +8,9 @@
 <link rel="icon" type="image/png" href="/app-icon.png" />
 <link rel="apple-touch-icon" href="/app-icon.png" />
 <script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;800;900&family=Playfair+Display:wght@400;700;900&family=Dancing+Script:wght@400;700&family=Noto+Sans+JP:wght@400;500;700;900&family=Noto+Serif+JP:wght@400;700;900&display=swap" rel="stylesheet">
 <script type="importmap">
 {
   "imports": {
@@ -19,6 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="design-engine.js?v=2026-09-05.1"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -62,7 +66,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-08-08.1";
+  window.APP_VERSION = "2026-09-05.1";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -182,7 +186,14 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.0 リニューアル（2026-07-07）】
+const RELEASE_NOTES = `【v2.1 デザイン編集（2026-09-05）】
+・写真の上に文字を入れたサムネイルを作れるようになりました（テンプレ：1枚＋枠／コラージュ4枚／帯コラージュ）
+・タイトル・サブタイトル・ラベル・縦書きの書体／太さ／大きさ／色／位置を調整できます。{ }で囲んだ行は筆記体になります
+・透かし（全体を暗く／帯）の色と濃さ、枠線の太さ・色・余白を調整できます
+・写真はプレビュー上でドラッグして位置合わせ、ズームも可能。4枚コラージュはまとめて選べます
+・保存した画像はギャラリーの「✏️ 編集」からデザインを開き直せます
+
+【v2.0 リニューアル（2026-07-07）】
 ・見出し帯／文字入れ／カラー設定を廃止し、画像整理特化に
 ・保存フォルダ名で自動命名（アカウント：カテゴリ_日付_メモ）
 ・運用アカウント／画像カテゴリ／プロジェクトのマスタ管理を追加（チーム共有）
@@ -806,10 +817,126 @@ function ProjectManager({ accounts, categories, projects, selectedProjectId, set
   );
 }
 
+// ============ デザイン編集パネル ============
+const TD = window.ThumbDesign;
+function Sl({ label, value, min, max, step, onChange, fmt }) {
+  return (<label className="block text-xs text-slate-600"><span className="flex justify-between"><span>{label}</span><span className="text-slate-400">{fmt ? fmt(value) : value}</span></span>
+    <input type="range" min={min} max={max} step={step || 1} value={value} onChange={e => onChange(Number(e.target.value))} className="w-full accent-[#2F6D80]" /></label>);
+}
+function ColorF({ label, value, onChange }) {
+  return (<div className="text-xs text-slate-600 flex items-center gap-2"><span className="w-14 shrink-0">{label}</span>
+    <input type="color" value={value || '#ffffff'} onChange={e => onChange(e.target.value)} className="w-8 h-8 p-0 border rounded shrink-0" />
+    <div className="flex gap-1 flex-wrap">{TD.COLOR_CHIPS.map(c => <button key={c} type="button" onClick={() => onChange(c)} className="w-5 h-5 rounded-full border border-slate-300" style={{ background: c, outline: value === c ? '2px solid #2F6D80' : 'none', outlineOffset: 1 }} />)}</div></div>);
+}
+function Sel({ label, value, opts, onChange }) {
+  return (<label className="text-xs text-slate-600 flex items-center gap-2"><span className="w-14 shrink-0">{label}</span>
+    <select value={value} onChange={e => onChange(e.target.value)} className="flex-1 min-w-0 p-1.5 border rounded text-xs">{opts.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select></label>);
+}
+function Acc({ title, open, children }) {
+  return (<details open={open} className="border border-slate-200 rounded-lg bg-white"><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-700">{title}</summary><div className="px-3 pb-3 space-y-2">{children}</div></details>);
+}
+function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto }) {
+  const d = design;
+  const up = (path, v) => setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); let cur = o; const ks = path.split('.'); for (let i = 0; i < ks.length - 1; i++) { if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; return o; });
+  const n = TD.cellCount(d.template);
+  const fileRef = useRef(null);
+  const pick = (i) => { setSelectedCell(i); if (fileRef.current) fileRef.current.click(); };
+  const p = (d.photos || [])[selectedCell] || {};
+  const hasSel = !!photoSrcs[selectedCell];
+  const fontOpts = Object.keys(TD.FONT_LABEL).map(k => [k, TD.FONT_LABEL[k]]);
+  const isNone = d.template === 'none';
+  const pct = v => Math.round(v * 100) + '%';
+  return (<div className="space-y-3">
+    <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { onPickFiles(Array.from(e.target.files || []), selectedCell); e.target.value = ''; }} />
+    <div className="grid grid-cols-4 gap-1.5">{TD.PRESET_ORDER.map(k => { const pr = TD.PRESETS[k]; const on = d.template === k; return (
+      <button key={k} type="button" onClick={() => setDesign(prev => TD.applyPreset(prev, k))} className={`rounded-lg border p-1.5 text-[11px] leading-tight ${on ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E] font-bold' : 'border-slate-200 bg-white text-slate-600'}`}>
+        <div className="text-base">{k === 'none' ? '🖼️' : k === 'single' ? '🅰️' : k === 'grid4' ? '▦' : '▤'}</div>{pr.name}</button>); })}</div>
+    <p className="text-[11px] text-slate-500">{TD.PRESETS[d.template] ? TD.PRESETS[d.template].hint : ''}。テンプレを選んだあと、下の項目で自由に変えられます</p>
+    <div className={`grid ${n === 4 ? 'grid-cols-4' : 'grid-cols-1'} gap-1.5`}>{Array.from({ length: n }).map((_, i) => { const src = photoSrcs[i]; const sel = selectedCell === i; return (
+      <button key={i} type="button" onClick={() => pick(i)} className={`relative ${n === 4 ? 'aspect-square' : 'h-28'} rounded-lg overflow-hidden border-2 ${sel ? 'border-[#2F6D80]' : 'border-slate-200'} bg-slate-100`}>
+        {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-[11px]"><Upload className="w-5 h-5 mb-1" />写真{n === 4 ? i + 1 : 'を選ぶ'}</div>}
+        {n === 4 && <span className="absolute top-1 left-1 bg-black/50 text-white text-[10px] px-1.5 rounded">{i + 1}</span>}
+      </button>); })}</div>
+    <div className="flex gap-2 flex-wrap text-xs">
+      <button type="button" onClick={() => pick(selectedCell)} className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded font-medium">📷 写真を選ぶ{n === 4 ? '（複数まとめてOK）' : ''}</button>
+      {hasSel && <button type="button" onClick={() => up(`photos.${selectedCell}`, { zoom: 1, dx: 0, dy: 0 })} className="bg-slate-100 px-3 py-1.5 rounded">位置リセット</button>}
+      {hasSel && <button type="button" onClick={() => onRemovePhoto(selectedCell)} className="bg-slate-100 px-3 py-1.5 rounded text-red-600">外す</button>}
+    </div>
+    {hasSel && <Sl label={`写真${n === 4 ? selectedCell + 1 : ''}のズーム`} value={p.zoom || 1} min={1} max={2.5} step={0.05} onChange={v => up(`photos.${selectedCell}.zoom`, v)} fmt={v => v.toFixed(2) + '×'} />}
+    <p className="text-[11px] text-slate-500">プレビューの写真をドラッグすると位置を動かせます</p>
+    {!isNone && (<>
+      <Acc title="✏️ タイトル・文字" open>
+        <textarea value={d.title.text} onChange={e => up('title.text', e.target.value)} rows={2} placeholder={"タイトル（改行OK）\n{To} のように囲んだ行は筆記体"} className="w-full p-2 border rounded text-sm" />
+        <div className="grid grid-cols-2 gap-2">
+          <Sel label="書体" value={d.title.font} opts={fontOpts} onChange={v => up('title.font', v)} />
+          <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={d.title.shadow !== false} onChange={e => up('title.shadow', e.target.checked)} />影をつける</label>
+        </div>
+        <Sl label="太さ" value={d.title.weight} min={400} max={900} step={100} onChange={v => up('title.weight', v)} />
+        <Sl label="大きさ" value={d.title.size} min={40} max={280} step={2} onChange={v => up('title.size', v)} />
+        <Sl label="文字間" value={d.title.letterSpacing} min={0} max={0.5} step={0.01} onChange={v => up('title.letterSpacing', v)} fmt={v => v.toFixed(2)} />
+        <Sl label="上下位置" value={d.title.y} min={0.05} max={0.95} step={0.01} onChange={v => up('title.y', v)} fmt={pct} />
+        <ColorF label="色" value={d.title.color} onChange={v => up('title.color', v)} />
+        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">サブタイトル（日本語）</div>
+        <input value={d.sub.text} onChange={e => up('sub.text', e.target.value)} placeholder="例：5泊6日フランス女子旅" className="w-full p-2 border rounded text-sm" />
+        <div className="grid grid-cols-2 gap-2">
+          <Sel label="書体" value={d.sub.font} opts={fontOpts} onChange={v => up('sub.font', v)} />
+          <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={d.sub.shadow !== false} onChange={e => up('sub.shadow', e.target.checked)} />影をつける</label>
+        </div>
+        <Sl label="太さ" value={d.sub.weight} min={400} max={900} step={100} onChange={v => up('sub.weight', v)} />
+        <Sl label="大きさ" value={d.sub.size} min={14} max={80} step={1} onChange={v => up('sub.size', v)} />
+        <Sl label="上下位置" value={d.sub.y} min={0.05} max={0.95} step={0.01} onChange={v => up('sub.y', v)} fmt={pct} />
+        <ColorF label="色" value={d.sub.color} onChange={v => up('sub.color', v)} />
+        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">ラベル（小さな英字）</div>
+        <input value={d.label.text} onChange={e => up('label.text', e.target.value)} placeholder="例：Travel Vlog" className="w-full p-2 border rounded text-sm" />
+        <Sel label="形" value={d.label.style} opts={[['pill', '塗りつぶし（丸）'], ['outline', '枠線'], ['plain', '文字のみ']]} onChange={v => up('label.style', v)} />
+        <Sl label="大きさ" value={d.label.size} min={12} max={60} step={1} onChange={v => up('label.size', v)} />
+        <Sl label="文字間" value={d.label.letterSpacing || 0} min={0} max={0.6} step={0.01} onChange={v => up('label.letterSpacing', v)} fmt={v => v.toFixed(2)} />
+        <Sl label="上下位置" value={d.label.y} min={0.05} max={0.95} step={0.01} onChange={v => up('label.y', v)} fmt={pct} />
+        <ColorF label="文字色" value={d.label.color} onChange={v => up('label.color', v)} />
+        {d.label.style === 'pill' && <ColorF label="背景色" value={d.label.bg} onChange={v => up('label.bg', v)} />}
+        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">縦書き（端に小さく）</div>
+        <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={!!d.vtext.on} onChange={e => up('vtext.on', e.target.checked)} />縦書きを入れる</label>
+        {d.vtext.on && (<>
+          <input value={d.vtext.text} onChange={e => up('vtext.text', e.target.value)} placeholder="例：初めての海外一人旅" className="w-full p-2 border rounded text-sm" />
+          <div className="grid grid-cols-2 gap-2"><Sel label="位置" value={d.vtext.side} opts={[['right', '右端'], ['left', '左端']]} onChange={v => up('vtext.side', v)} /><Sel label="書体" value={d.vtext.font || 'jp'} opts={fontOpts} onChange={v => up('vtext.font', v)} /></div>
+          <Sl label="大きさ" value={d.vtext.size} min={14} max={60} step={1} onChange={v => up('vtext.size', v)} />
+          <Sl label="上からの位置" value={d.vtext.y} min={0.02} max={0.8} step={0.01} onChange={v => up('vtext.y', v)} fmt={pct} />
+          <ColorF label="色" value={d.vtext.color} onChange={v => up('vtext.color', v)} />
+        </>)}
+      </Acc>
+      <Acc title="🌫️ 透かし・帯">
+        <div className="flex gap-1.5">{[['none', 'なし'], ['dark', '全体を暗く'], ['band', '帯']].map(o => <button key={o[0]} type="button" onClick={() => up('overlay.type', o[0])} className={`flex-1 text-xs py-1.5 rounded border ${d.overlay.type === o[0] ? 'border-[#2F6D80] bg-[#EAF3F4] font-bold' : 'border-slate-200 bg-white'}`}>{o[1]}</button>)}</div>
+        {d.overlay.type === 'dark' && (<><Sl label="暗さ（透かし具合）" value={d.overlay.opacity} min={0} max={0.8} step={0.01} onChange={v => up('overlay.opacity', v)} fmt={pct} /><ColorF label="色" value={d.overlay.color} onChange={v => up('overlay.color', v)} /></>)}
+        {d.overlay.type === 'band' && (<>
+          <Sel label="向き" value={d.overlay.band.dir} opts={[['h', '横の帯'], ['v', '縦の帯']]} onChange={v => up('overlay.band.dir', v)} />
+          <Sl label="不透明度" value={d.overlay.band.opacity} min={0.1} max={1} step={0.01} onChange={v => up('overlay.band.opacity', v)} fmt={pct} />
+          <Sl label="太さ" value={d.overlay.band.size} min={0.08} max={0.8} step={0.01} onChange={v => up('overlay.band.size', v)} fmt={pct} />
+          <Sl label="位置" value={d.overlay.band.pos} min={0.1} max={0.9} step={0.01} onChange={v => up('overlay.band.pos', v)} fmt={pct} />
+          <ColorF label="色" value={d.overlay.band.color} onChange={v => up('overlay.band.color', v)} />
+        </>)}
+      </Acc>
+      <Acc title="▭ 枠線">
+        <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={!!d.frame.on} onChange={e => up('frame.on', e.target.checked)} />枠線を入れる</label>
+        {d.frame.on && (<><Sl label="太さ" value={d.frame.width} min={1} max={14} step={1} onChange={v => up('frame.width', v)} /><Sl label="内側の余白" value={d.frame.inset} min={0} max={90} step={1} onChange={v => up('frame.inset', v)} /><ColorF label="色" value={d.frame.color} onChange={v => up('frame.color', v)} /></>)}
+      </Acc>
+      {n === 4 && <Sl label="写真のすき間" value={d.gap || 0} min={0} max={24} step={2} onChange={v => up('gap', v)} />}
+    </>)}
+  </div>);
+}
+
 // ============ CreateTab ============
-function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules }) {
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg }) {
   const canvasRef = useRef(null);
-  const [baseImage, setBaseImage] = useState(null);
+  // デザイン設定（写真データは photoSrcs に分けて持つ：スライダー操作のたびに巨大な dataURL をコピーしないため）
+  const [design, setDesign] = useState(() => {
+    try { const last = JSON.parse(localStorage.getItem('thumb_design_last') || 'null'); if (last && last.template) { const d = TD.merge(TD.DEFAULT, last); d.photos = Array.from({ length: TD.cellCount(d.template) }, () => ({ zoom: 1, dx: 0, dy: 0 })); return d; } } catch (e) {}
+    const d = JSON.parse(JSON.stringify(TD.DEFAULT)); d.photos = [{ zoom: 1, dx: 0, dy: 0 }]; return d;
+  });
+  const [photoSrcs, setPhotoSrcs] = useState([]);
+  const [selectedCell, setSelectedCell] = useState(0);
+  const imgCacheRef = useRef({});
+  const dragRef = useRef(null);
+  const baseImage = photoSrcs.some(Boolean) ? 'y' : null;
   const [canvasWidth, setCanvasWidth] = useState(1200);
   const [canvasHeight, setCanvasHeight] = useState(900);
 
@@ -846,39 +973,87 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
     accountName: account?.name || '', categoryName: category?.name || '', date: mmdd, memo
   });
 
-  const readFile = (file) => {
-    if (!file) return;
-    const r = new FileReader();
-    r.onload = (ev) => setBaseImage(ev.target.result);
-    r.readAsDataURL(file);
+  // 写真の投入：選択中のセルから順に入れる（4枚コラージュはまとめて選べる）。長辺1600pxに縮小して持つ
+  const readFiles = (files, startCell) => {
+    const list = (files || []).filter(f => f && f.type && f.type.startsWith('image/'));
+    if (!list.length) { showToast('画像ファイルを選んでください'); return; }
+    list.forEach((f, k) => {
+      const r = new FileReader();
+      r.onload = async (ev) => {
+        let src = ev.target.result;
+        try { src = await compressDataUrl(src, 1600, 0.88); } catch (e) {}
+        const n = TD.cellCount(design.template);
+        const idx = ((startCell || 0) + k) % n;
+        setPhotoSrcs(prev => { const a = prev.slice(); a[idx] = src; return a; });
+        setDesign(prev => { const o = { ...prev, photos: (prev.photos || []).slice() }; while (o.photos.length < n) o.photos.push({ zoom: 1, dx: 0, dy: 0 }); o.photos[idx] = { zoom: 1, dx: 0, dy: 0 }; return o; });
+      };
+      r.readAsDataURL(f);
+    });
   };
-  const onFileInput = (e) => readFile(e.target.files[0]);
+  const removePhoto = (i) => setPhotoSrcs(prev => { const a = prev.slice(); a[i] = ''; return a; });
   const onDrop = (e) => {
     e.preventDefault(); setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f && f.type.startsWith('image/')) readFile(f);
-    else showToast('画像ファイルをドロップしてください');
+    readFiles(Array.from(e.dataTransfer.files || []), selectedCell);
   };
+  // プレビュー上のドラッグで写真の位置合わせ
+  const canvasPos = (e) => { const c = canvasRef.current; const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * c.width / r.width, y: (e.clientY - r.top) * c.height / r.height }; };
+  const onPointerDown = (e) => {
+    if (!photoSrcs.some(Boolean)) return;
+    const pos = canvasPos(e);
+    const i = TD.cellAt(design.template, canvasWidth, canvasHeight, (design.gap || 0) * canvasWidth / TD.BASE_W, pos.x, pos.y);
+    setSelectedCell(i);
+    if (!photoSrcs[i]) return;
+    const p = (design.photos || [])[i] || {};
+    dragRef.current = { i, sx: pos.x, sy: pos.y, dx: p.dx || 0, dy: p.dy || 0 };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+  };
+  const onPointerMove = (e) => {
+    const g = dragRef.current; if (!g) return;
+    const pos = canvasPos(e); const s = canvasWidth / TD.BASE_W;
+    const ndx = g.dx + (pos.x - g.sx) / s, ndy = g.dy + (pos.y - g.sy) / s;
+    setDesign(prev => { const o = { ...prev, photos: (prev.photos || []).slice() }; o.photos[g.i] = { ...(o.photos[g.i] || {}), dx: ndx, dy: ndy }; return o; });
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+  // 動作確認用フック（写真をコードから差し込む）
+  useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; return () => { delete window.__thumbSetPhotos; }; }, []);
+  // 最後に使ったデザインを次回の初期値に
+  useEffect(() => { try { localStorage.setItem('thumb_design_last', JSON.stringify(TD.strip(design))); } catch (e) {} }, [design]);
+  // ギャラリーの「編集」から開いたとき：デザインと元写真を復元
+  useEffect(() => {
+    if (!editImg) return;
+    (async () => {
+      try {
+        const d = TD.merge(TD.DEFAULT, editImg.design || {});
+        const n = TD.cellCount(d.template);
+        d.photos = Array.from({ length: n }, (_, i) => (editImg.design && editImg.design.photos && editImg.design.photos[i]) || { zoom: 1, dx: 0, dy: 0 });
+        const srcs = [];
+        for (const id of (editImg.sourceIds || [])) {
+          if (!id) { srcs.push(''); continue; }
+          const sd = await getDoc(docRefFn('thumb_sources', id)); srcs.push(sd.exists() ? (sd.data().dataUrl || '') : '');
+        }
+        if (!srcs.some(Boolean) && editImg.imageUrl) srcs[0] = editImg.imageUrl; // 元写真が無いときは完成画像を下地に
+        setDesign(d); setPhotoSrcs(srcs); setSelectedCell(0);
+        if (editImg.width) setCanvasWidth(editImg.width); if (editImg.height) setCanvasHeight(editImg.height);
+        if (!accountLocked) { setAccountId(editImg.accountId || ''); setCategoryId(editImg.categoryId || ''); }
+        setMemo(editImg.memo || '');
+        showToast('デザインを読み込みました');
+      } catch (e) { console.error(e); showToast('読み込みに失敗しました'); }
+    })();
+  }, [editImg]);
 
-  // Canvas描画（画像のみ・cover fit）
+  // Canvas描画（写真 → 透かし → 枠 → 文字。design-engine.js）
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    ctx.fillStyle = '#f1f5f9';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    if (!baseImage) return;
-    const img = new Image();
-    img.onload = () => {
-      const ir = img.width / img.height, cr = canvasWidth / canvasHeight;
-      let dw, dh, ox, oy;
-      if (ir > cr) { dh = canvasHeight; dw = img.width * (canvasHeight / img.height); ox = (canvasWidth - dw) / 2; oy = 0; }
-      else { dw = canvasWidth; dh = img.height * (canvasWidth / img.width); ox = 0; oy = (canvasHeight - dh) / 2; }
-      ctx.drawImage(img, ox, oy, dw, dh);
-    };
-    img.src = baseImage;
-  }, [baseImage, canvasWidth, canvasHeight]);
+    let alive = true;
+    const full = { ...design, photos: Array.from({ length: TD.cellCount(design.template) }, (_, i) => ({ ...((design.photos || [])[i] || {}), src: photoSrcs[i] || '' })) };
+    const draw = () => { if (!alive) return; TD.render(canvas.getContext('2d'), full, canvasWidth, canvasHeight, imgCacheRef.current); };
+    const missing = full.photos.filter(p => p.src && !imgCacheRef.current[p.src]);
+    const pImgs = missing.length ? TD.loadImages({ photos: missing }).then(c => Object.assign(imgCacheRef.current, c)) : Promise.resolve();
+    draw();
+    Promise.all([pImgs, TD.ensureFonts(full)]).then(draw);
+    return () => { alive = false; };
+  }, [design, photoSrcs, canvasWidth, canvasHeight]);
 
   const canSave = !!baseImage && !!accountId && !!categoryId;
 
@@ -906,8 +1081,19 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
     setIsUploading(true);
     try {
       const linkTitle = selSched ? (selSched.catchTitle || selSched.title || '') : '';
+      // デザインありのときは、あとで「編集」できるよう元写真（長辺900px）と設定も残す
+      const sourceIds = [];
+      if (design.template !== 'none') {
+        for (let i = 0; i < TD.cellCount(design.template); i++) {
+          const src = photoSrcs[i]; if (!src) { sourceIds.push(''); continue; }
+          const small = await compressDataUrl(src, 900, 0.75);
+          const sref = await addDoc(colRef('thumb_sources'), { dataUrl: small, createdAt: Date.now(), authorId: user.uid });
+          sourceIds.push(sref.id);
+        }
+      }
       const ref = await addDoc(colRef('shared_thumbnails'), {
-        imageUrl: url, titleText: '', folderName,
+        imageUrl: url, titleText: (design.template !== 'none' ? (design.title.text || '').replace(/[{}]/g, '').replace(/\n/g, ' ') : ''), folderName,
+        design: design.template !== 'none' ? TD.strip(design) : null, sourceIds,
         accountId, accountName: account?.name || '',
         categoryId, categoryName: category?.name || '',
         date: mmdd, memo,
@@ -947,31 +1133,11 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
           <section className="space-y-3">
             <div className="flex items-center space-x-2 border-b pb-2">
               <ImageIcon className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-semibold">1. ベース画像</h2>
+              <h2 className="text-base font-semibold">1. 写真とデザイン</h2>
             </div>
-            <label
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-              className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
-            >
-              {baseImage ? (
-                <>
-                  <img src={baseImage} alt="アップロード画像" className="max-h-32 max-w-full object-contain rounded" />
-                  <p className="text-xs text-slate-500 mt-1.5">タップで差し替え</p>
-                </>
-              ) : (
-                <>
-                  <Upload className={`w-8 h-8 mb-2 ${dragOver ? 'text-blue-500' : 'text-slate-400'}`} />
-                  <p className="text-sm font-medium text-slate-600">{dragOver ? 'ここにドロップ' : 'クリックまたはドラッグ&ドロップ'}</p>
-                  <p className="text-xs text-slate-400 mt-1">PNG / JPG / WEBP</p>
-                </>
-              )}
-              <input type="file" className="hidden" accept="image/*" onChange={onFileInput} />
-            </label>
-            {baseImage && (
-              <button onClick={() => setBaseImage(null)} className="text-xs text-slate-500 hover:text-red-500 underline">画像を外す</button>
-            )}
+            <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={dragOver ? 'dnd-hi rounded-xl p-1' : ''}>
+              <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} />
+            </div>
           </section>
 
           <section className="space-y-3">
@@ -1050,8 +1216,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         </div>
       </div>
 
-      <div className="flex-1 bg-slate-200/50 p-4 md:p-6 pb-24 md:pb-6 flex flex-col overflow-auto">
-        <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+      <div className="flex-none md:flex-1 h-[46vh] md:h-auto min-h-0 bg-[#E4EDF0] md:bg-slate-200/50 p-3 md:p-6 flex flex-col overflow-hidden md:overflow-auto order-first md:order-none sticky md:static top-0 z-20 md:z-auto shadow-md md:shadow-none">
+        <div className="flex flex-wrap items-center justify-end gap-2 mb-2 md:mb-4">
           <button onClick={openGallery} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium text-sm shadow-sm">
             <Library className="w-4 h-4 text-blue-600" />チームギャラリー
           </button>
@@ -1072,11 +1238,11 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
             </div>
           </div>
         )}
-        <div className="flex-1 flex flex-col items-center justify-center">
-          <div className="relative shadow-2xl bg-white rounded-md overflow-hidden ring-1 ring-slate-900/5" style={{ maxWidth: '100%', maxHeight: '100%', aspectRatio: `${canvasWidth} / ${canvasHeight}` }}>
-            <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} className="w-full h-full object-contain" />
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
+          <div className="relative w-full flex-1 min-h-0 flex items-center justify-center">
+            <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} className="max-w-full max-h-full object-contain shadow-2xl bg-white rounded-md ring-1 ring-slate-900/5" style={{ touchAction: 'none', cursor: baseImage ? 'grab' : 'default' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
           </div>
-          <p className="mt-4 text-sm text-slate-500 font-medium">書き出しサイズ: {canvasWidth} × {canvasHeight} px</p>
+          <p className="mt-1.5 md:mt-4 text-[11px] md:text-sm text-slate-500 font-medium">書き出しサイズ: {canvasWidth} × {canvasHeight} px　※プレビューをドラッグで位置合わせ</p>
         </div>
       </div>
     </main>
@@ -1084,7 +1250,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
 }
 
 // ============ GalleryModal ============
-function GalleryModal({ onClose, images, accounts, categories, showToast, schedules }) {
+function GalleryModal({ onClose, images, accounts, categories, showToast, schedules, onEdit }) {
   const [filterMode, setFilterMode] = useState('all'); // all|account|category|both
   const [filterAccountId, setFilterAccountId] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState('');
@@ -1363,6 +1529,7 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
                       <div className="flex items-center justify-between gap-1">
                         <p className="text-[10px] text-slate-400">{fmtDateTime(img.createdAt)}</p>
                         <div className="flex items-center gap-1 shrink-0">
+                          {img.design && onEdit ? <button onClick={() => onEdit(img)} className="text-[10px] bg-amber-50 text-amber-700 hover:bg-amber-100 px-2 py-1 rounded">✏️ 編集</button> : null}
                           <button onClick={() => { setLinkImg(img); setLinkSchedId(img.linkedScheduleId || ''); }} className="text-[10px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2 py-1 rounded flex items-center gap-1">📅紐付け</button>
                           <button onClick={async () => { const n = `${safeNameStr(img.folderName || img.titleText || 'image')}.jpg`; await copyToClipboard(n); showToast(`「${n}」をコピーしました`); }} className="text-[10px] bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded flex items-center gap-1"><Copy className="w-3 h-3" />.jpg</button>
                         </div>
@@ -1612,6 +1779,7 @@ function App() {
   const [tab, setTab] = useState('create');
   const [menuOpen, setMenuOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [editImg, setEditImg] = useState(null);
   const [toastMsg, setToastMsg] = useState('');
   const showToast = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(''), 3000); };
 
@@ -1643,7 +1811,7 @@ function App() {
       <Header tab={tab} onTabChange={setTab} onMenu={() => setMenuOpen(true)} onGallery={() => setGalleryOpen(true)} />
       {tab === 'create' && (
         <CreateTab user={user} accounts={accounts} categories={categories} projects={projects}
-          selectedProject={selectedProject} showToast={showToast} openGallery={() => setGalleryOpen(true)} schedules={schedules} />
+          selectedProject={selectedProject} showToast={showToast} openGallery={() => setGalleryOpen(true)} schedules={schedules} editImg={editImg} />
       )}
       {tab === 'links' && (
         <LinksTab teamLinks={teamLinks} personalLinks={personalLinks} setPersonalLinks={setPersonalLinks} showToast={showToast} />
@@ -1656,7 +1824,8 @@ function App() {
       )}
       {galleryOpen && (
         <GalleryModal onClose={() => setGalleryOpen(false)}
-          images={images} accounts={accounts} categories={categories} showToast={showToast} schedules={schedules} />
+          images={images} accounts={accounts} categories={categories} showToast={showToast} schedules={schedules}
+          onEdit={(img) => { setEditImg({ ...img, _t: Date.now() }); setGalleryOpen(false); setTab('create'); }} />
       )}
     </div>
   );
