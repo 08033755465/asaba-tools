@@ -134,7 +134,9 @@ async function callTool(name, a, ctx) {
       const perStore = keys.every(k => /^\d+$/.test(k));
       const unknown = perStore ? keys.filter(k => !STORES.some(st => st.gmo === k)) : keys.filter(k => !['seitai_seikotsu', 'pilates', 'other'].includes(k));
       if (unknown.length) throw new Error(`不明なキー: ${unknown.join(', ')}（店舗IDか seitai_seikotsu/pilates を使ってください）`);
-      const contents = a.mode === 'merge' ? { ...(s.contents || {}), ...incoming } : incoming;
+      // merge でも「店舗別」と「カテゴリ共通」のキーは混ぜない（今回のキー種別に合わせて残す）
+      const keep = {}; if (a.mode === 'merge') for (const [k, v] of Object.entries(s.contents || {})) { if (/^\d+$/.test(k) === perStore) keep[k] = v; }
+      const contents = { ...keep, ...incoming };
       const fields = { contents };
       if (perStore) { fields.scope = 'per_store'; fields.storeIds = Object.keys(contents); }
       else { fields.scope = 'category_common'; if (!(s.storeIds || []).length) fields.storeIds = STORES.map(st => st.gmo); }
