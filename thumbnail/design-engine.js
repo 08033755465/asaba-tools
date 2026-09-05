@@ -15,11 +15,11 @@
 
   const DEFAULT = {
     template: 'none', photos: [], gap: 0,
-    overlay: { type: 'none', color: '#000000', opacity: 0.3, band: { dir: 'h', pos: 0.5, size: 0.26, color: '#f3ede3', opacity: 0.88 } },
+    overlay: { type: 'none', color: '#000000', opacity: 0.3, band: { dir: 'h', pos: 0.5, size: 0.26, color: '#f3ede3', opacity: 0.88 }, gradient: { dir: 'bottom', color: '#000000', opacity: 0.75, size: 0.6 } },
     frame: { on: false, color: '#ffffff', width: 2, inset: 34 },
-    title: { text: '', font: 'sans', weight: 800, size: 150, color: '#ffffff', letterSpacing: 0.08, x: 0.5, y: 0.5, shadow: true },
-    sub:   { text: '', font: 'jp', weight: 500, size: 30, color: '#ffffff', letterSpacing: 0.05, x: 0.5, y: 0.65, shadow: true },
-    label: { text: '', style: 'pill', bg: '#111111', color: '#ffffff', size: 24, letterSpacing: 0.08, x: 0.5, y: 0.36 },
+    title: { text: '', font: 'sans', weight: 800, size: 150, color: '#ffffff', letterSpacing: 0.08, lineHeight: 1.05, align: 'center', x: 0.5, y: 0.5, shadow: true },
+    sub:   { text: '', font: 'jp', weight: 500, size: 30, color: '#ffffff', letterSpacing: 0.05, lineHeight: 1.5, align: 'center', x: 0.5, y: 0.65, shadow: true },
+    label: { text: '', style: 'pill', bg: '#111111', color: '#ffffff', size: 24, letterSpacing: 0.08, align: 'center', x: 0.5, y: 0.36 },
     vtext: { on: false, text: '', font: 'jp', weight: 500, size: 26, color: '#ffffff', side: 'right', x: 0.945, y: 0.1, letterSpacing: 0.25 },
   };
 
@@ -30,35 +30,81 @@
       template: 'single', gap: 0,
       overlay: { ...DEFAULT.overlay, type: 'dark', color: '#000000', opacity: 0.15 },
       frame: { on: true, color: '#ffffff', width: 2, inset: 34 },
-      title: { ...DEFAULT.title, text: 'TRAVEL\n{To}\nASIA', font: 'sans', weight: 900, size: 150, color: '#ffffff', letterSpacing: 0.12, y: 0.5 },
+      title: { ...DEFAULT.title, text: 'タイトル\n{Sub Title}', font: 'sans', weight: 900, size: 120, color: '#ffffff', letterSpacing: 0.12, y: 0.5 },
       sub: { ...DEFAULT.sub, text: '' },
       label: { ...DEFAULT.label, text: '' },
-      vtext: { ...DEFAULT.vtext, on: true, text: '初めての海外一人旅', side: 'right', size: 26, color: '#ffffff' },
+      vtext: { ...DEFAULT.vtext, on: true, text: '縦書きテキスト', side: 'right', size: 26, color: '#ffffff' },
     }) },
     grid4: { name: 'コラージュ4枚', hint: '4枚グリッド・中央タイトル・ラベル', apply: () => ({
       template: 'grid4', gap: 0,
       overlay: { ...DEFAULT.overlay, type: 'dark', color: '#000000', opacity: 0.25 },
       frame: { ...DEFAULT.frame, on: false },
-      title: { ...DEFAULT.title, text: 'Paris', font: 'sans', weight: 800, size: 170, color: '#ffffff', letterSpacing: 0, y: 0.5 },
-      sub: { ...DEFAULT.sub, text: '5泊6日フランス女子旅', size: 30, color: '#ffffff', y: 0.655 },
-      label: { ...DEFAULT.label, text: 'Travel Vlog', style: 'pill', bg: '#111111', color: '#ffffff', size: 24, y: 0.35 },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'sans', weight: 800, size: 140, color: '#ffffff', letterSpacing: 0, y: 0.5 },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', size: 30, color: '#ffffff', y: 0.655 },
+      label: { ...DEFAULT.label, text: 'ラベル', style: 'pill', bg: '#111111', color: '#ffffff', size: 24, y: 0.35 },
       vtext: { ...DEFAULT.vtext, on: false },
     }) },
     band: { name: '帯コラージュ', hint: '4枚グリッド・中央に半透明の帯', apply: () => ({
       template: 'band', gap: 0,
       overlay: { ...DEFAULT.overlay, type: 'band', band: { dir: 'h', pos: 0.5, size: 0.26, color: '#f3ede3', opacity: 0.88 } },
       frame: { ...DEFAULT.frame, on: false },
-      title: { ...DEFAULT.title, text: 'Summer Trip', font: 'serif', weight: 700, size: 120, color: '#5b6b3a', letterSpacing: 0.02, y: 0.5, shadow: false },
-      sub: { ...DEFAULT.sub, text: '彼と沖縄に行ってきました', size: 26, color: '#6b7b4a', y: 0.585, shadow: false },
-      label: { ...DEFAULT.label, text: 'OKINAWA', style: 'plain', color: '#5b6b3a', size: 22, letterSpacing: 0.35, y: 0.425 },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'serif', weight: 700, size: 110, color: '#5b6b3a', letterSpacing: 0.02, y: 0.5, shadow: false },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', size: 26, color: '#6b7b4a', y: 0.585, shadow: false },
+      label: { ...DEFAULT.label, text: 'ラベル', style: 'plain', color: '#5b6b3a', size: 22, letterSpacing: 0.35, y: 0.425 },
+      vtext: { ...DEFAULT.vtext, on: false },
+    }) },
+    bottombar: { name: '下帯グラデ', hint: '下からの黒グラデに左寄せタイトル', apply: () => ({
+      template: 'single', gap: 0,
+      overlay: { ...DEFAULT.overlay, type: 'gradient', gradient: { dir: 'bottom', color: '#000000', opacity: 0.78, size: 0.62 } },
+      frame: { ...DEFAULT.frame, on: false },
+      label: { ...DEFAULT.label, text: 'ラベル', style: 'pill', bg: '#E07A5F', color: '#ffffff', size: 22, align: 'left', x: 0.06, y: 0.6 },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'jp', weight: 800, size: 92, color: '#ffffff', letterSpacing: 0.02, align: 'left', x: 0.06, y: 0.73 },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', size: 30, color: '#ffffff', align: 'left', x: 0.06, y: 0.86 },
+      vtext: { ...DEFAULT.vtext, on: false },
+    }) },
+    split: { name: '左パネル', hint: '左半分を色パネルにして文字、右に写真', apply: () => ({
+      template: 'single', gap: 0,
+      overlay: { ...DEFAULT.overlay, type: 'band', band: { dir: 'v', pos: 0.24, size: 0.48, color: '#2F6D80', opacity: 0.94 } },
+      frame: { ...DEFAULT.frame, on: false },
+      label: { ...DEFAULT.label, text: 'ラベル', style: 'outline', color: '#ffffff', size: 22, letterSpacing: 0.2, align: 'left', x: 0.05, y: 0.2 },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'jp', weight: 800, size: 84, color: '#ffffff', letterSpacing: 0.04, lineHeight: 1.2, align: 'left', x: 0.05, y: 0.48, shadow: false },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', size: 28, color: '#E6F0F2', align: 'left', x: 0.05, y: 0.74, shadow: false },
+      vtext: { ...DEFAULT.vtext, on: false },
+    }) },
+    polaroid: { name: '白フチ', hint: '太い白フチ＋下の余白に文字', apply: () => ({
+      template: 'single', gap: 0,
+      overlay: { ...DEFAULT.overlay, type: 'band', band: { dir: 'h', pos: 0.9, size: 0.2, color: '#ffffff', opacity: 1 } },
+      frame: { on: true, color: '#ffffff', width: 40, inset: 0 },
+      label: { ...DEFAULT.label, text: '' },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'jpserif', weight: 700, size: 58, color: '#2b2b2b', letterSpacing: 0.06, y: 0.87, shadow: false },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', font: 'jp', size: 22, color: '#777777', y: 0.945, shadow: false },
+      vtext: { ...DEFAULT.vtext, on: false },
+    }) },
+    grid3: { name: '1＋2コラージュ', hint: '大きい1枚＋小さい2枚・大きい側に文字', apply: () => ({
+      template: 'grid3', gap: 8,
+      overlay: { ...DEFAULT.overlay, type: 'gradient', gradient: { dir: 'bottom', color: '#000000', opacity: 0.6, size: 0.5 } },
+      frame: { ...DEFAULT.frame, on: false },
+      label: { ...DEFAULT.label, text: 'ラベル', style: 'pill', bg: '#2F6D80', color: '#ffffff', size: 22, align: 'left', x: 0.04, y: 0.66 },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'jp', weight: 800, size: 80, color: '#ffffff', letterSpacing: 0.02, align: 'left', x: 0.04, y: 0.78 },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', size: 26, color: '#ffffff', align: 'left', x: 0.04, y: 0.9 },
+      vtext: { ...DEFAULT.vtext, on: false },
+    }) },
+    topband: { name: '上帯ラベル', hint: '上に黒い帯とラベル、中央に大きなタイトル', apply: () => ({
+      template: 'single', gap: 0,
+      overlay: { ...DEFAULT.overlay, type: 'band', band: { dir: 'h', pos: 0.09, size: 0.18, color: '#111111', opacity: 0.85 } },
+      frame: { ...DEFAULT.frame, on: false },
+      label: { ...DEFAULT.label, text: 'ラベル', style: 'plain', color: '#ffffff', size: 26, letterSpacing: 0.35, y: 0.09 },
+      title: { ...DEFAULT.title, text: 'タイトル', font: 'sans', weight: 900, size: 130, color: '#ffffff', letterSpacing: 0.06, y: 0.56 },
+      sub: { ...DEFAULT.sub, text: 'サブタイトル', size: 30, color: '#ffffff', y: 0.72 },
       vtext: { ...DEFAULT.vtext, on: false },
     }) },
   };
-  const PRESET_ORDER = ['none', 'single', 'grid4', 'band'];
+  const PRESET_ORDER = ['none', 'single', 'grid4', 'band', 'bottombar', 'split', 'polaroid', 'grid3', 'topband'];
 
-  function cellCount(template) { return (template === 'grid4' || template === 'band') ? 4 : 1; }
+  function cellCount(template) { return (template === 'grid4' || template === 'band') ? 4 : template === 'grid3' ? 3 : 1; }
   function cellRects(template, W, H, gap) {
     if (cellCount(template) === 1) return [{ x: 0, y: 0, w: W, h: H }];
+    if (template === 'grid3') { const g = gap || 0, bw = Math.round(W * 0.62), sw = W - bw - g, sh = (H - g) / 2; return [{ x: 0, y: 0, w: bw, h: H }, { x: bw + g, y: 0, w: sw, h: sh }, { x: bw + g, y: sh + g, w: sw, h: sh }]; }
     const g = gap || 0, cw = (W - g) / 2, ch = (H - g) / 2;
     return [{ x: 0, y: 0, w: cw, h: ch }, { x: cw + g, y: 0, w: cw, h: ch }, { x: 0, y: ch + g, w: cw, h: ch }, { x: cw + g, y: ch + g, w: cw, h: ch }];
   }
@@ -96,10 +142,10 @@
     chars.forEach((c, i) => { w += ctx.measureText(c).width + (i < chars.length - 1 ? spacingPx : 0); });
     return w;
   }
-  function drawSpaced(ctx, text, cx, y, spacingPx) {
+  function drawSpaced(ctx, text, cx, y, spacingPx, align) {
     const chars = Array.from(text);
     const total = measureSpaced(ctx, text, spacingPx);
-    let x = cx - total / 2;
+    let x = align === 'left' ? cx : align === 'right' ? cx - total : cx - total / 2;
     const prev = ctx.textAlign; ctx.textAlign = 'left';
     chars.forEach(c => { ctx.fillText(c, x, y); x += ctx.measureText(c).width + spacingPx; });
     ctx.textAlign = prev;
@@ -121,8 +167,9 @@
     const base = (t.size || 120) * s;
     const items = lines.map(l => {
       const m = l.match(/^\s*\{(.*)\}\s*$/);
-      if (m) return { text: m[1], font: fontStr(400, base * 0.62, 'script'), h: base * 0.62 * 0.95, spacing: 0 };
-      return { text: l, font: fontStr(t.weight, base, t.font), h: base * 1.02, spacing: (t.letterSpacing || 0) * base };
+      const lh = t.lineHeight || 1.05;
+      if (m) return { text: m[1], font: fontStr(400, base * 0.62, 'script'), h: base * 0.62 * lh * 0.93, spacing: 0 };
+      return { text: l, font: fontStr(t.weight, base, t.font), h: base * lh, spacing: (t.letterSpacing || 0) * base };
     });
     const total = items.reduce((a, it) => a + it.h, 0);
     let y = (t.y != null ? t.y : 0.5) * H - total / 2;
@@ -130,17 +177,18 @@
     ctx.textBaseline = 'middle';
     withShadow(ctx, t.shadow !== false, s, () => {
       ctx.fillStyle = t.color || '#fff';
-      items.forEach(it => { ctx.font = it.font; drawSpaced(ctx, it.text, cx, y + it.h / 2, it.spacing); y += it.h; });
+      items.forEach(it => { ctx.font = it.font; drawSpaced(ctx, it.text, cx, y + it.h / 2, it.spacing, t.align); y += it.h; });
     });
   }
   function drawSub(ctx, t, W, H, s) {
     if (!t || !String(t.text || '').trim()) return;
     const px = (t.size || 30) * s, lines = String(t.text).split('\n');
-    const cx = (t.x != null ? t.x : 0.5) * W; let y = (t.y != null ? t.y : 0.65) * H - (lines.length - 1) * px * 0.75;
+    const lh = t.lineHeight || 1.5;
+    const cx = (t.x != null ? t.x : 0.5) * W; let y = (t.y != null ? t.y : 0.65) * H - (lines.length - 1) * px * lh / 2;
     ctx.textBaseline = 'middle'; ctx.font = fontStr(t.weight, px, t.font);
     withShadow(ctx, t.shadow !== false, s, () => {
       ctx.fillStyle = t.color || '#fff';
-      lines.forEach(l => { drawSpaced(ctx, l, cx, y, (t.letterSpacing || 0) * px); y += px * 1.5; });
+      lines.forEach(l => { drawSpaced(ctx, l, cx, y, (t.letterSpacing || 0) * px, t.align); y += px * lh; });
     });
   }
   function drawLabel(ctx, t, W, H, s) {
@@ -148,12 +196,14 @@
     const px = (t.size || 24) * s, sp = (t.letterSpacing || 0) * px;
     ctx.font = fontStr(600, px, 'sans'); ctx.textBaseline = 'middle';
     const tw = measureSpaced(ctx, t.text, sp);
-    const cx = (t.x != null ? t.x : 0.5) * W, cy = (t.y != null ? t.y : 0.36) * H;
+    const ax = (t.x != null ? t.x : 0.5) * W, cy = (t.y != null ? t.y : 0.36) * H;
     const padX = px * 0.9, padY = px * 0.45, bw = tw + padX * 2, bh = px + padY * 2;
-    if (t.style === 'pill') { ctx.fillStyle = t.bg || '#111'; roundRect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, bh / 2); ctx.fill(); }
-    else if (t.style === 'outline') { ctx.strokeStyle = t.color || '#fff'; ctx.lineWidth = Math.max(1, 1.5 * s); roundRect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, bh / 2); ctx.stroke(); }
+    // 揃え位置から箱の左端を決める（left=箱の左端が x、right=右端が x）
+    const bx = t.align === 'left' ? ax : t.align === 'right' ? ax - bw : ax - bw / 2;
+    if (t.style === 'pill') { ctx.fillStyle = t.bg || '#111'; roundRect(ctx, bx, cy - bh / 2, bw, bh, bh / 2); ctx.fill(); }
+    else if (t.style === 'outline') { ctx.strokeStyle = t.color || '#fff'; ctx.lineWidth = Math.max(1, 1.5 * s); roundRect(ctx, bx, cy - bh / 2, bw, bh, bh / 2); ctx.stroke(); }
     ctx.fillStyle = t.color || '#fff';
-    drawSpaced(ctx, t.text, cx, cy, sp);
+    drawSpaced(ctx, t.text, bx + bw / 2, cy, sp, 'center');
   }
   function drawVertical(ctx, t, W, H, s) {
     if (!t || !t.on || !String(t.text || '').trim()) return;
@@ -191,6 +241,13 @@
     if (d.template !== 'none') {
       const ov = d.overlay || {};
       if (ov.type === 'dark') { ctx.fillStyle = hexA(ov.color || '#000', ov.opacity != null ? ov.opacity : 0.3); ctx.fillRect(0, 0, W, H); }
+      if (ov.type === 'gradient') {
+        const gd = ov.gradient || {}; const size = gd.size != null ? gd.size : 0.6, op = gd.opacity != null ? gd.opacity : 0.75;
+        const fromTop = gd.dir === 'top';
+        const g = fromTop ? ctx.createLinearGradient(0, 0, 0, size * H) : ctx.createLinearGradient(0, H, 0, H - size * H);
+        g.addColorStop(0, hexA(gd.color || '#000', op)); g.addColorStop(1, hexA(gd.color || '#000', 0));
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
       if (ov.type === 'band') {
         const b = ov.band || {}; const size = b.size != null ? b.size : 0.26, pos = b.pos != null ? b.pos : 0.5;
         ctx.fillStyle = hexA(b.color || '#f3ede3', b.opacity != null ? b.opacity : 0.88);

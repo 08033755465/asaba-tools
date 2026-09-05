@@ -22,7 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="design-engine.js?v=2026-09-05.2"></script>
+<script src="design-engine.js?v=2026-09-05.3"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -86,7 +86,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-05.2";
+  window.APP_VERSION = "2026-09-05.3";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -206,7 +206,15 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.2 画面の流れを整理（2026-09-05）】
+const RELEASE_NOTES = `【v2.3 デザインの保存と配置（2026-09-05）】
+・作ったデザインを「マイテンプレ」として保存・呼び出し・削除できます（チーム共有）。前回のデザインもワンタップで呼び出せます
+・新しいテンプレ5種：下帯グラデ／左パネル／白フチ／1＋2コラージュ／上帯ラベル
+・文字の配置：左・中・右揃え、横位置、上下位置、行間を調整できます。「まとめて配置」で全体を9か所へ一発配置
+・透かしに「グラデーション」を追加
+・初期の文字は「タイトル」「サブタイトル」「ラベル」に
+・ギャラリーの上部をコンパクトにして一覧を見やすくしました（検索・絞り込みはボタンで開閉）
+
+【v2.2 画面の流れを整理（2026-09-05）】
 ・最初にチームギャラリーが開き、「画像を作成」「画像を登録」の2つから始める形にしました
 ・作成＝文字入れ・デザイン編集、登録＝写真をそのまま保存（編集なし）
 ・やることリスト（写真→保存先→保存）と「必須」の目印を付け、足りないものをボタンの下に表示します
@@ -863,7 +871,7 @@ function Sel({ label, value, opts, onChange }) {
 function Acc({ title, open, children }) {
   return (<details open={open} className="border border-slate-200 rounded-lg bg-white"><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-700">{title}</summary><div className="px-3 pb-3 space-y-2">{children}</div></details>);
 }
-function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto }) {
+function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast }) {
   const d = design;
   const up = (path, v) => setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); let cur = o; const ks = path.split('.'); for (let i = 0; i < ks.length - 1; i++) { if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; return o; });
   const n = TD.cellCount(d.template);
@@ -874,26 +882,60 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
   const fontOpts = Object.keys(TD.FONT_LABEL).map(k => [k, TD.FONT_LABEL[k]]);
   const isNone = d.template === 'none';
   const pct = v => Math.round(v * 100) + '%';
+  const [tplName, setTplName] = useState('');
+  const [presetKey, setPresetKey] = useState(d.template === 'none' ? 'none' : (TD.PRESET_ORDER.find(k => TD.PRESETS[k].apply().template === d.template) || 'single'));
+  useEffect(() => { if (d.template === 'none') setPresetKey('none'); }, [d.template]);
+  const lastDesign = (() => { try { return JSON.parse(localStorage.getItem('thumb_design_last') || 'null'); } catch (e) { return null; } })();
+  const applySaved = (saved) => setDesign(prev => { const o = TD.merge(prev, saved || {}); const n2 = TD.cellCount(o.template); o.photos = (prev.photos || []).slice(0, n2); while (o.photos.length < n2) o.photos.push({ zoom: 1, dx: 0, dy: 0 }); return o; });
+  // まとめて配置：ラベル・タイトル・サブを縦横9か所へ
+  const placeAll = (h, v) => setDesign(prev => {
+    const o = JSON.parse(JSON.stringify(prev));
+    const x = h === 'left' ? 0.06 : h === 'right' ? 0.94 : 0.5;
+    const base = v === 'top' ? 0.3 : v === 'bottom' ? 0.74 : 0.5;
+    ['label', 'title', 'sub'].forEach(k => { o[k].align = h; o[k].x = x; });
+    o.label.y = base - 0.15; o.title.y = base; o.sub.y = base + 0.15;
+    return o;
+  });
+  const AlignRow = ({ k }) => (<div className="flex items-center gap-2 text-xs text-slate-600"><span className="w-14 shrink-0">揃え</span>
+    <div className="flex gap-1">{[['left', '左'], ['center', '中'], ['right', '右']].map(o => <button key={o[0]} type="button" onClick={() => { up(`${k}.align`, o[0]); up(`${k}.x`, o[0] === 'left' ? 0.06 : o[0] === 'right' ? 0.94 : 0.5); }} className={`px-3 py-1 rounded border ${(d[k].align || 'center') === o[0] ? 'border-[#2F6D80] bg-[#EAF3F4] font-bold' : 'border-slate-200 bg-white'}`}>{o[1]}</button>)}</div></div>);
   return (<div className="space-y-3">
     <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { onPickFiles(Array.from(e.target.files || []), selectedCell); e.target.value = ''; }} />
-    <div className="grid grid-cols-4 gap-1.5">{TD.PRESET_ORDER.map(k => { const pr = TD.PRESETS[k]; const on = d.template === k; return (
-      <button key={k} type="button" onClick={() => setDesign(prev => TD.applyPreset(prev, k))} className={`rounded-lg border p-1.5 text-[11px] leading-tight ${on ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E] font-bold' : 'border-slate-200 bg-white text-slate-600'}`}>
-        <div className="text-base">{k === 'none' ? '🖼️' : k === 'single' ? '🅰️' : k === 'grid4' ? '▦' : '▤'}</div>{pr.name}</button>); })}</div>
-    <p className="text-[11px] text-slate-500">{TD.PRESETS[d.template] ? TD.PRESETS[d.template].hint : ''}。テンプレを選んだあと、下の項目で自由に変えられます</p>
-    <div className={`grid ${n === 4 ? 'grid-cols-4' : 'grid-cols-1'} gap-1.5`}>{Array.from({ length: n }).map((_, i) => { const src = photoSrcs[i]; const sel = selectedCell === i; return (
-      <button key={i} type="button" onClick={() => pick(i)} className={`relative ${n === 4 ? 'aspect-square' : 'h-28'} rounded-lg overflow-hidden border-2 ${sel ? 'border-[#2F6D80]' : 'border-slate-200'} bg-slate-100`}>
-        {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-[11px]"><Upload className="w-5 h-5 mb-1" />写真{n === 4 ? i + 1 : 'を選ぶ'}</div>}
-        {n === 4 && <span className="absolute top-1 left-1 bg-black/50 text-white text-[10px] px-1.5 rounded">{i + 1}</span>}
+    <div className="grid grid-cols-3 gap-1.5">{TD.PRESET_ORDER.map(k => { const pr = TD.PRESETS[k]; const on = presetKey === k; const icon = { none: '🖼️', single: '🅰️', grid4: '▦', band: '▤', bottombar: '⬇️', split: '◧', polaroid: '🖼', grid3: '◫', topband: '⬆️' }[k] || '✨'; return (
+      <button key={k} type="button" onClick={() => { setPresetKey(k); setDesign(prev => TD.applyPreset(prev, k)); }} className={`rounded-lg border p-1.5 text-[11px] leading-tight ${on ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E] font-bold' : 'border-slate-200 bg-white text-slate-600'}`}>
+        <div className="text-base">{icon}</div>{pr.name}</button>); })}</div>
+    <p className="text-[11px] text-slate-500">{TD.PRESETS[presetKey] ? TD.PRESETS[presetKey].hint : ''}。テンプレを選んだあと、下の項目で自由に変えられます</p>
+    {/* マイテンプレ */}
+    {!isNone && (<div className="border border-dashed border-[#CBDFE4] rounded-lg p-2 space-y-1.5 bg-[#F6FAFB]">
+      <div className="text-[11px] font-bold text-[#24505E]">💾 マイテンプレ（作ったデザインを保存して次回も使う）</div>
+      <div className="flex flex-wrap gap-1.5">
+        {lastDesign && lastDesign.template && lastDesign.template !== 'none' && <button type="button" onClick={() => { applySaved(lastDesign); showToast && showToast('前回のデザインを呼び出しました'); }} className="text-[11px] bg-white border border-slate-300 rounded-full px-2.5 py-1">⏪ 前回のデザイン</button>}
+        {templates.map(t => (<span key={t.id} className="inline-flex items-center bg-white border border-[#2F6D80]/40 rounded-full pl-2.5 pr-1 py-0.5 text-[11px]">
+          <button type="button" onClick={() => { applySaved(t.design); showToast && showToast(`「${t.name}」を呼び出しました`); }} className="font-medium text-[#24505E]">{t.name}</button>
+          <button type="button" onClick={() => onDeleteTemplate && onDeleteTemplate(t)} className="ml-1 w-5 h-5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50" title="削除">×</button></span>))}
+        {!templates.length && !lastDesign && <span className="text-[11px] text-slate-400">まだありません</span>}
+      </div>
+      <div className="flex gap-1.5">
+        <input value={tplName} onChange={e => setTplName(e.target.value)} placeholder="名前をつけて保存（例：定期コラム用）" className="flex-1 min-w-0 p-1.5 border rounded text-xs" />
+        <button type="button" disabled={!tplName.trim()} onClick={() => { onSaveTemplate && onSaveTemplate(tplName.trim(), TD.strip(d)); setTplName(''); }} className="text-xs bg-[#2F6D80] disabled:bg-slate-300 text-white px-3 py-1.5 rounded font-medium">保存</button>
+      </div>
+    </div>)}
+    <div className={`grid ${n === 4 ? 'grid-cols-4' : n === 3 ? 'grid-cols-3' : 'grid-cols-1'} gap-1.5`}>{Array.from({ length: n }).map((_, i) => { const src = photoSrcs[i]; const sel = selectedCell === i; return (
+      <button key={i} type="button" onClick={() => pick(i)} className={`relative ${n > 1 ? 'aspect-square' : 'h-28'} rounded-lg overflow-hidden border-2 ${sel ? 'border-[#2F6D80]' : 'border-slate-200'} bg-slate-100`}>
+        {src ? <img src={src} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-[11px]"><Upload className="w-5 h-5 mb-1" />写真{n > 1 ? i + 1 : 'を選ぶ'}</div>}
+        {n > 1 && <span className="absolute top-1 left-1 bg-black/50 text-white text-[10px] px-1.5 rounded">{i + 1}</span>}
       </button>); })}</div>
     <div className="flex gap-2 flex-wrap text-xs">
-      <button type="button" onClick={() => pick(selectedCell)} className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded font-medium">📷 写真を選ぶ{n === 4 ? '（複数まとめてOK）' : ''}</button>
+      <button type="button" onClick={() => pick(selectedCell)} className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded font-medium">📷 写真を選ぶ{n > 1 ? '（複数まとめてOK）' : ''}</button>
       {hasSel && <button type="button" onClick={() => up(`photos.${selectedCell}`, { zoom: 1, dx: 0, dy: 0 })} className="bg-slate-100 px-3 py-1.5 rounded">位置リセット</button>}
       {hasSel && <button type="button" onClick={() => onRemovePhoto(selectedCell)} className="bg-slate-100 px-3 py-1.5 rounded text-red-600">外す</button>}
     </div>
-    {hasSel && <Sl label={`写真${n === 4 ? selectedCell + 1 : ''}のズーム`} value={p.zoom || 1} min={1} max={2.5} step={0.05} onChange={v => up(`photos.${selectedCell}.zoom`, v)} fmt={v => v.toFixed(2) + '×'} />}
+    {hasSel && <Sl label={`写真${n > 1 ? selectedCell + 1 : ''}のズーム`} value={p.zoom || 1} min={1} max={2.5} step={0.05} onChange={v => up(`photos.${selectedCell}.zoom`, v)} fmt={v => v.toFixed(2) + '×'} />}
     <p className="text-[11px] text-slate-500">プレビューの写真をドラッグすると位置を動かせます</p>
     {!isNone && (<>
       <Acc title="✏️ タイトル・文字" open>
+        <div className="text-xs text-slate-600 flex items-center gap-2"><span className="w-14 shrink-0">まとめて配置</span>
+          <div className="grid grid-cols-3 gap-0.5">{['top', 'center', 'bottom'].map(v => ['left', 'center', 'right'].map(h => <button key={v + h} type="button" onClick={() => placeAll(h, v)} title={`${v === 'top' ? '上' : v === 'bottom' ? '下' : '中'}・${h === 'left' ? '左' : h === 'right' ? '右' : '中'}`} className="w-7 h-6 border border-slate-300 bg-white rounded-sm hover:bg-[#EAF3F4] flex items-center justify-center"><span className={`block w-2.5 h-1.5 bg-slate-500 rounded-sm ${h === 'left' ? 'mr-auto ml-0.5' : h === 'right' ? 'ml-auto mr-0.5' : ''} ${v === 'top' ? 'mb-auto mt-0.5' : v === 'bottom' ? 'mt-auto mb-0.5' : ''}`} /></button>))}</div>
+          <span className="text-[10px] text-slate-400">ラベル・タイトル・サブを一括で</span></div>
         <textarea value={d.title.text} onChange={e => up('title.text', e.target.value)} rows={2} placeholder={"タイトル（改行OK）\n{To} のように囲んだ行は筆記体"} className="w-full p-2 border rounded text-sm" />
         <div className="grid grid-cols-2 gap-2">
           <Sel label="書体" value={d.title.font} opts={fontOpts} onChange={v => up('title.font', v)} />
@@ -902,30 +944,38 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
         <Sl label="太さ" value={d.title.weight} min={400} max={900} step={100} onChange={v => up('title.weight', v)} />
         <Sl label="大きさ" value={d.title.size} min={40} max={280} step={2} onChange={v => up('title.size', v)} />
         <Sl label="文字間" value={d.title.letterSpacing} min={0} max={0.5} step={0.01} onChange={v => up('title.letterSpacing', v)} fmt={v => v.toFixed(2)} />
+        <Sl label="行間" value={d.title.lineHeight || 1.05} min={0.8} max={2} step={0.05} onChange={v => up('title.lineHeight', v)} fmt={v => v.toFixed(2)} />
+        <AlignRow k="title" />
+        <Sl label="横位置" value={d.title.x != null ? d.title.x : 0.5} min={0} max={1} step={0.01} onChange={v => up('title.x', v)} fmt={pct} />
         <Sl label="上下位置" value={d.title.y} min={0.05} max={0.95} step={0.01} onChange={v => up('title.y', v)} fmt={pct} />
         <ColorF label="色" value={d.title.color} onChange={v => up('title.color', v)} />
         <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">サブタイトル（日本語）</div>
-        <input value={d.sub.text} onChange={e => up('sub.text', e.target.value)} placeholder="例：5泊6日フランス女子旅" className="w-full p-2 border rounded text-sm" />
+        <textarea value={d.sub.text} onChange={e => up('sub.text', e.target.value)} rows={1} placeholder="サブタイトル（改行OK）" className="w-full p-2 border rounded text-sm" />
         <div className="grid grid-cols-2 gap-2">
           <Sel label="書体" value={d.sub.font} opts={fontOpts} onChange={v => up('sub.font', v)} />
           <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={d.sub.shadow !== false} onChange={e => up('sub.shadow', e.target.checked)} />影をつける</label>
         </div>
         <Sl label="太さ" value={d.sub.weight} min={400} max={900} step={100} onChange={v => up('sub.weight', v)} />
         <Sl label="大きさ" value={d.sub.size} min={14} max={80} step={1} onChange={v => up('sub.size', v)} />
+        <Sl label="行間" value={d.sub.lineHeight || 1.5} min={1} max={2.5} step={0.05} onChange={v => up('sub.lineHeight', v)} fmt={v => v.toFixed(2)} />
+        <AlignRow k="sub" />
+        <Sl label="横位置" value={d.sub.x != null ? d.sub.x : 0.5} min={0} max={1} step={0.01} onChange={v => up('sub.x', v)} fmt={pct} />
         <Sl label="上下位置" value={d.sub.y} min={0.05} max={0.95} step={0.01} onChange={v => up('sub.y', v)} fmt={pct} />
         <ColorF label="色" value={d.sub.color} onChange={v => up('sub.color', v)} />
         <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">ラベル（小さな英字）</div>
-        <input value={d.label.text} onChange={e => up('label.text', e.target.value)} placeholder="例：Travel Vlog" className="w-full p-2 border rounded text-sm" />
+        <input value={d.label.text} onChange={e => up('label.text', e.target.value)} placeholder="ラベル（小さな見出し）" className="w-full p-2 border rounded text-sm" />
         <Sel label="形" value={d.label.style} opts={[['pill', '塗りつぶし（丸）'], ['outline', '枠線'], ['plain', '文字のみ']]} onChange={v => up('label.style', v)} />
         <Sl label="大きさ" value={d.label.size} min={12} max={60} step={1} onChange={v => up('label.size', v)} />
         <Sl label="文字間" value={d.label.letterSpacing || 0} min={0} max={0.6} step={0.01} onChange={v => up('label.letterSpacing', v)} fmt={v => v.toFixed(2)} />
+        <AlignRow k="label" />
+        <Sl label="横位置" value={d.label.x != null ? d.label.x : 0.5} min={0} max={1} step={0.01} onChange={v => up('label.x', v)} fmt={pct} />
         <Sl label="上下位置" value={d.label.y} min={0.05} max={0.95} step={0.01} onChange={v => up('label.y', v)} fmt={pct} />
         <ColorF label="文字色" value={d.label.color} onChange={v => up('label.color', v)} />
         {d.label.style === 'pill' && <ColorF label="背景色" value={d.label.bg} onChange={v => up('label.bg', v)} />}
         <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">縦書き（端に小さく）</div>
         <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={!!d.vtext.on} onChange={e => up('vtext.on', e.target.checked)} />縦書きを入れる</label>
         {d.vtext.on && (<>
-          <input value={d.vtext.text} onChange={e => up('vtext.text', e.target.value)} placeholder="例：初めての海外一人旅" className="w-full p-2 border rounded text-sm" />
+          <input value={d.vtext.text} onChange={e => up('vtext.text', e.target.value)} placeholder="縦書きの文" className="w-full p-2 border rounded text-sm" />
           <div className="grid grid-cols-2 gap-2"><Sel label="位置" value={d.vtext.side} opts={[['right', '右端'], ['left', '左端']]} onChange={v => up('vtext.side', v)} /><Sel label="書体" value={d.vtext.font || 'jp'} opts={fontOpts} onChange={v => up('vtext.font', v)} /></div>
           <Sl label="大きさ" value={d.vtext.size} min={14} max={60} step={1} onChange={v => up('vtext.size', v)} />
           <Sl label="上からの位置" value={d.vtext.y} min={0.02} max={0.8} step={0.01} onChange={v => up('vtext.y', v)} fmt={pct} />
@@ -933,8 +983,14 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
         </>)}
       </Acc>
       <Acc title="🌫️ 透かし・帯">
-        <div className="flex gap-1.5">{[['none', 'なし'], ['dark', '全体を暗く'], ['band', '帯']].map(o => <button key={o[0]} type="button" onClick={() => up('overlay.type', o[0])} className={`flex-1 text-xs py-1.5 rounded border ${d.overlay.type === o[0] ? 'border-[#2F6D80] bg-[#EAF3F4] font-bold' : 'border-slate-200 bg-white'}`}>{o[1]}</button>)}</div>
+        <div className="flex gap-1.5">{[['none', 'なし'], ['dark', '全体を暗く'], ['gradient', 'グラデ'], ['band', '帯']].map(o => <button key={o[0]} type="button" onClick={() => up('overlay.type', o[0])} className={`flex-1 text-xs py-1.5 rounded border ${d.overlay.type === o[0] ? 'border-[#2F6D80] bg-[#EAF3F4] font-bold' : 'border-slate-200 bg-white'}`}>{o[1]}</button>)}</div>
         {d.overlay.type === 'dark' && (<><Sl label="暗さ（透かし具合）" value={d.overlay.opacity} min={0} max={0.8} step={0.01} onChange={v => up('overlay.opacity', v)} fmt={pct} /><ColorF label="色" value={d.overlay.color} onChange={v => up('overlay.color', v)} /></>)}
+        {d.overlay.type === 'gradient' && (<>
+          <Sel label="向き" value={(d.overlay.gradient || {}).dir || 'bottom'} opts={[['bottom', '下から'], ['top', '上から']]} onChange={v => up('overlay.gradient.dir', v)} />
+          <Sl label="濃さ" value={(d.overlay.gradient || {}).opacity != null ? d.overlay.gradient.opacity : 0.75} min={0.1} max={1} step={0.01} onChange={v => up('overlay.gradient.opacity', v)} fmt={pct} />
+          <Sl label="広さ" value={(d.overlay.gradient || {}).size != null ? d.overlay.gradient.size : 0.6} min={0.2} max={1} step={0.01} onChange={v => up('overlay.gradient.size', v)} fmt={pct} />
+          <ColorF label="色" value={(d.overlay.gradient || {}).color || '#000000'} onChange={v => up('overlay.gradient.color', v)} />
+        </>)}
         {d.overlay.type === 'band' && (<>
           <Sel label="向き" value={d.overlay.band.dir} opts={[['h', '横の帯'], ['v', '縦の帯']]} onChange={v => up('overlay.band.dir', v)} />
           <Sl label="不透明度" value={d.overlay.band.opacity} min={0.1} max={1} step={0.01} onChange={v => up('overlay.band.opacity', v)} fmt={pct} />
@@ -947,13 +1003,13 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
         <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={!!d.frame.on} onChange={e => up('frame.on', e.target.checked)} />枠線を入れる</label>
         {d.frame.on && (<><Sl label="太さ" value={d.frame.width} min={1} max={14} step={1} onChange={v => up('frame.width', v)} /><Sl label="内側の余白" value={d.frame.inset} min={0} max={90} step={1} onChange={v => up('frame.inset', v)} /><ColorF label="色" value={d.frame.color} onChange={v => up('frame.color', v)} /></>)}
       </Acc>
-      {n === 4 && <Sl label="写真のすき間" value={d.gap || 0} min={0} max={24} step={2} onChange={v => up('gap', v)} />}
+      {n > 1 && <Sl label="写真のすき間" value={d.gap || 0} min={0} max={24} step={2} onChange={v => up('gap', v)} />}
     </>)}
   </div>);
 }
 
 // ============ CreateTab ============
-function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved }) {
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate }) {
   const canvasRef = useRef(null);
   const isRegister = mode === 'register';
   const [saved, setSaved] = useState(null);      // 保存完了画面
@@ -1053,7 +1109,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   };
   const onPointerUp = () => { dragRef.current = null; };
   // 動作確認用フック（写真をコードから差し込む）
-  useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; return () => { delete window.__thumbSetPhotos; }; }, []);
+  useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; window.__thumbSetDesign = (patch) => setDesign(prev => TD.merge(prev, patch)); return () => { delete window.__thumbSetPhotos; delete window.__thumbSetDesign; }; }, []);
   // 最後に使ったデザインを次回の初期値に
   useEffect(() => { try { localStorage.setItem('thumb_design_last', JSON.stringify(TD.strip(design))); } catch (e) {} }, [design]);
   // ギャラリーの「編集」から開いたとき：デザインと元写真を復元
@@ -1215,7 +1271,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               </div>
             ) : (
               <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={dragOver ? 'dnd-hi rounded-xl p-1' : ''}>
-                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} />
+                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} />
               </div>
             )}
           </section>
@@ -1349,6 +1405,7 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
   const [confirm, setConfirm] = useState(null);
   const [linkImg, setLinkImg] = useState(null);      // 予定紐付けモーダル用
   const [linkSchedId, setLinkSchedId] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const doLinkImage = async () => {
     if (!linkSchedId) { showToast('予定を選んでください'); return; }
     const sched = (schedules||[]).find(x => x.id === linkSchedId); if (!sched || !linkImg) return;
@@ -1480,26 +1537,14 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
     <div className={page ? 'flex-1 min-h-0 flex flex-col p-0 md:p-4' : 'fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex justify-center items-center p-2 md:p-6'}>
       <div className={page ? 'bg-white md:rounded-2xl md:shadow-xl w-full max-w-7xl mx-auto flex-1 min-h-0 flex flex-col overflow-hidden' : 'bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-full max-h-[95vh] flex flex-col overflow-hidden'}>
         {page ? (
-          <div className="p-3 md:p-4 border-b bg-gradient-to-br from-[#EAF3F4] to-white shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-2">
-                <div className="bg-blue-100 p-2 rounded-xl text-blue-600"><Library className="w-5 h-5" /></div>
-                <div>
-                  <h2 className="text-base md:text-lg font-bold text-slate-800">チームギャラリー</h2>
-                  <p className="text-[11px] text-slate-500">{filtered.length} / {images.length} 件　まず下のどちらかから始めます</p>
-                </div>
-              </div>
+          <div className="px-3 py-2 md:px-4 md:py-2.5 border-b bg-gradient-to-r from-[#EAF3F4] to-white shrink-0 flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0 mr-auto">
+              <Library className="w-5 h-5 text-blue-600 shrink-0" />
+              <div className="min-w-0"><div className="text-sm font-bold text-slate-800 leading-tight">ギャラリー</div><div className="text-[10px] text-slate-500 leading-tight">{filtered.length}/{images.length}件</div></div>
             </div>
-            <div className="grid grid-cols-2 gap-2 md:gap-3">
-              <button onClick={onCreate} className="btn-press group text-left bg-blue-600 hover:bg-blue-700 text-white rounded-2xl p-3 md:p-4 shadow-md hover:shadow-lg">
-                <div className="flex items-center gap-2"><span className="text-xl md:text-2xl">✨</span><span className="font-bold text-sm md:text-base">画像を作成</span></div>
-                <div className="text-[11px] md:text-xs text-white/85 mt-1 leading-snug">写真に文字・デザインを入れて保存</div>
-              </button>
-              <button onClick={onRegister} className="btn-press text-left bg-white hover:bg-emerald-50 text-emerald-800 border-2 border-emerald-300 rounded-2xl p-3 md:p-4 shadow-sm hover:shadow-md">
-                <div className="flex items-center gap-2"><span className="text-xl md:text-2xl">⬆️</span><span className="font-bold text-sm md:text-base">画像を登録</span></div>
-                <div className="text-[11px] md:text-xs text-emerald-700/80 mt-1 leading-snug">できあがった写真をそのまま保存（編集なし）</div>
-              </button>
-            </div>
+            <button onClick={() => setFiltersOpen(v => !v)} className={`btn-press text-xs px-2.5 py-2 rounded-lg border ${filtersOpen || searchText || filterMode !== 'all' ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E]' : 'border-slate-200 bg-white text-slate-600'}`} title="検索・絞り込み"><Search className="w-4 h-4 inline" /><span className="hidden md:inline ml-1">絞り込み</span></button>
+            <button onClick={onRegister} className="btn-press text-xs md:text-sm font-bold bg-white hover:bg-emerald-50 text-emerald-800 border-2 border-emerald-300 rounded-lg px-2.5 md:px-3 py-1.5 md:py-2 shadow-sm" title="できあがった写真をそのまま保存（編集なし）">⬆️ 画像を登録</button>
+            <button onClick={onCreate} className="btn-press text-xs md:text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-2.5 md:px-3 py-1.5 md:py-2 shadow-md" title="写真に文字・デザインを入れて保存">✨ 画像を作成</button>
           </div>
         ) : (
         <div className="flex items-center justify-between p-4 border-b bg-slate-50 shrink-0">
@@ -1514,8 +1559,9 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
         </div>
         )}
 
-        {/* フィルタ・検索 */}
-        <div className="p-3 border-b bg-white space-y-2 shrink-0">
+        {/* フィルタ・検索（ページ表示では開閉式） */}
+        {(!page || filtersOpen) && (
+        <div className="p-2 md:p-3 border-b bg-white space-y-2 shrink-0 fade-up">
           <div className="flex flex-wrap gap-1">
             {[
               { k: 'all', l: '全一覧' }, { k: 'account', l: 'アカウント別' },
@@ -1564,6 +1610,7 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
             <button onClick={() => setSearchMode(searchMode === 'AND' ? 'OR' : 'AND')} className="px-3 py-2 border rounded text-xs font-bold bg-slate-50 hover:bg-slate-100">{searchMode}</button>
           </div>
         </div>
+        )}
 
         <div className="flex-1 flex overflow-hidden">
           {/* サイドバー */}
@@ -1611,7 +1658,7 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
           </aside>
 
           {/* 一覧 */}
-          <div className="flex-1 overflow-y-auto p-4 bg-slate-100/50">
+          <div className="flex-1 overflow-y-auto p-2 md:p-4 bg-slate-100/50 safe-b">
             {loading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {Array.from({ length: 8 }).map((_, i) => <div key={i} className="bg-white rounded-xl border overflow-hidden animate-pulse"><div className="aspect-[4/3] bg-slate-200" /><div className="p-3 space-y-2"><div className="h-3 bg-slate-200 rounded w-3/4" /><div className="h-2 bg-slate-100 rounded w-1/2" /></div></div>)}
@@ -1623,7 +1670,7 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
                 {images.length === 0 && page && <p className="text-xs text-slate-400">上の「✨ 画像を作成」か「⬆️ 画像を登録」から始めましょう</p>}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-4">
                 {filtered.map(img => (
                   <div
                     key={img.id}
@@ -1804,6 +1851,8 @@ function App() {
   const [images, setImages] = useState([]);
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [schedules, setSchedules] = useState([]);
+  const [designTemplates, setDesignTemplates] = useState([]);
+  const [tplConfirm, setTplConfirm] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useLocalStorage('selected_project_id', null);
   // 最初はギャラリー。統合ツールから ?sched=ID で来たときは作成画面へ
   const [view, setView] = useState(params.get('sched') ? 'create' : 'gallery');
@@ -1828,12 +1877,15 @@ function App() {
       onSnapshot(colRef('projects'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setProjects(arr); }),
       onSnapshot(colRef('shared_thumbnails'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); setImages(arr); setImagesLoaded(true); }),
       onSnapshot(colRef('studio_schedule'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999')); setSchedules(arr); }),
+      onSnapshot(colRef('thumb_design_templates'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setDesignTemplates(arr); }),
     ];
     return () => subs.forEach(u => u());
   }, [user]);
 
   if (viewerId) return (<><Toast msg={toastMsg} /><ViewerMode id={viewerId} showToast={showToast} /></>);
   const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
+  const saveTemplate = async (name, design) => { try { await addDoc(colRef('thumb_design_templates'), { name, design, createdAt: Date.now(), authorId: user ? user.uid : '' }); showToast(`「${name}」を保存しました`); } catch (e) { console.error(e); showToast('保存に失敗しました'); } };
+  const deleteTemplate = (t) => setTplConfirm({ title: `「${t.name}」を削除しますか？`, body: 'チーム全員のマイテンプレから消えます', confirmLabel: '削除', onCancel: () => setTplConfirm(null), onConfirm: async () => { try { await deleteDoc(docRefFn('thumb_design_templates', t.id)); showToast('削除しました'); } catch (e) { showToast('削除に失敗しました'); } setTplConfirm(null); } });
   const goGallery = (hl) => { setView('gallery'); setEditImg(null); if (hl) { setHighlightId(hl); setTimeout(() => setHighlightId(''), 4000); } window.scrollTo(0, 0); };
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-800">
@@ -1850,8 +1902,9 @@ function App() {
       {(view === 'create' || view === 'register') && (
         <CreateTab key={view} mode={view} user={user} accounts={accounts} categories={categories} projects={projects}
           selectedProject={selectedProject} showToast={showToast} openGallery={() => goGallery()} schedules={schedules} editImg={editImg}
-          onSaved={(id) => { setHighlightId(id); }} />
+          onSaved={(id) => { setHighlightId(id); }} designTemplates={designTemplates} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate} />
       )}
+      {tplConfirm && <ConfirmModal {...tplConfirm} />}
       {menuOpen && (
         <HamburgerMenu onClose={() => setMenuOpen(false)}
           accounts={accounts} categories={categories} projects={projects}
