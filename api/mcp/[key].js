@@ -232,6 +232,16 @@ async function handleMessage(msg, ctx) {
   }
 }
 
+// Content-Type が application/json 以外でも JSON-RPC を受け付ける（Buffer/文字列/未パース の全ケース）
+async function readBody(req) {
+  let b = req.body;
+  if (b === undefined || b === null) {
+    b = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks))); req.on('error', () => resolve(null)); });
+  }
+  if (Buffer.isBuffer(b)) b = b.toString('utf8');
+  if (typeof b === 'string') { try { return JSON.parse(b); } catch (e) { return null; } }
+  return b;
+}
 module.exports = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.status(204).end(); return; }
@@ -240,8 +250,7 @@ module.exports = async (req, res) => {
   if (req.method === 'GET') { res.setHeader('Allow', 'POST'); res.status(405).json({ error: 'SSE stream is not offered; use POST' }); return; }
   if (req.method === 'DELETE') { res.status(200).end(); return; }
   if (req.method !== 'POST') { res.status(405).end(); return; }
-  let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { res.status(400).json(rpcError(null, -32700, 'Parse error')); return; } }
+  let body = await readBody(req);
   if (!body) { res.status(400).json(rpcError(null, -32700, 'Parse error')); return; }
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const ctx = { key, origin: `${proto}://${req.headers.host}` };
