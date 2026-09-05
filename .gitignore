@@ -4,3 +4,5 @@
 *_月次レポート_*.csv
 .vercel
 .env*
+
+node_modules

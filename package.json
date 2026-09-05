@@ -1,0 +1,8 @@
+{
+  "name": "asaba-tools",
+  "private": true,
+  "description": "あさばグループ MEO運用ツール（静的サイト＋Vercel API）",
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}
