@@ -30,7 +30,7 @@
       template: 'single', gap: 0,
       overlay: { ...DEFAULT.overlay, type: 'dark', color: '#000000', opacity: 0.15 },
       frame: { on: true, color: '#ffffff', width: 2, inset: 34 },
-      title: { ...DEFAULT.title, text: 'タイトル\n{Sub Title}', font: 'sans', weight: 900, size: 120, color: '#ffffff', letterSpacing: 0.12, y: 0.5 },
+      title: { ...DEFAULT.title, text: 'タイトル\n{Sub}', font: 'sans', weight: 900, size: 120, color: '#ffffff', letterSpacing: 0.12, y: 0.5 },
       sub: { ...DEFAULT.sub, text: '' },
       label: { ...DEFAULT.label, text: '' },
       vtext: { ...DEFAULT.vtext, on: true, text: '縦書きテキスト', side: 'right', size: 26, color: '#ffffff' },

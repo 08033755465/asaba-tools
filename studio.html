@@ -195,7 +195,10 @@
   .bd-week { font-size:10px; font-weight:700; color:var(--muted); background:#f1f5f9; border-radius:6px; padding:3px 8px; margin:10px 0 4px; }
   /* アプリ内ギャラリー */
   #galFrameWrap { position:fixed; inset:0; z-index:90; background:#fff; display:none; flex-direction:column; }
-  #galFrameBar { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--line); background:#fff; flex-shrink:0; }
+  #galFrameBar { display:flex; align-items:center; gap:8px; padding:8px 10px; padding-top:calc(8px + env(safe-area-inset-top)); border-bottom:1px solid var(--line); background:#fff; flex-shrink:0; }
+  /* .btn は width:100% なので、このバーの中だけ内容幅に戻す（タイトルが縦書きに潰れるのを防ぐ） */
+  #galFrameBar .btn, #galFrameBar .pill { width:auto; flex:0 0 auto; white-space:nowrap; }
+  #galFrameBar > b { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #galFrame { flex:1; width:100%; border:0; }
   /* ===== 進行状況ボード（ガント風） ===== */
   .bd-legend { display:flex; flex-wrap:wrap; gap:10px; font-size:10px; color:var(--muted); margin-bottom:8px; }
@@ -6378,9 +6381,11 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-04.7";
+const STUDIO_VERSION = "2026-09-05.1";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-05.1", items:[
+      `<b>🖼️ サムネイル・ギャラリーの上部が崩れていたのを直しました</b>：見出しが縦に潰れて「閉じる」だけが横いっぱいになっていた表示を修正しました` ] },
   { v:"2026-09-04.7", items:[
       `<b>🖼️ 画像名を自動で安全な名前に直します</b>：「、」「。」「！」などが入った画像名はGMOで画像エラーになるため、保存・出力のすべてで自動的に「_」に置き換えます。出力画面で画像名の状態（✅／⚠️）も確認できます`,
       `<b>⏰ イベントの時刻は数字4桁を続けて打つだけ</b>：0920→09:20。開始を打ち終わると終了欄へ自動で移ります（予定編集・作成・出力の3か所）`,

@@ -22,7 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="design-engine.js?v=2026-09-05.3"></script>
+<script src="design-engine.js?v=2026-09-05.4"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -86,7 +86,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-05.3";
+  window.APP_VERSION = "2026-09-05.4";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -871,7 +871,7 @@ function Sel({ label, value, opts, onChange }) {
 function Acc({ title, open, children }) {
   return (<details open={open} className="border border-slate-200 rounded-lg bg-white"><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-700">{title}</summary><div className="px-3 pb-3 space-y-2">{children}</div></details>);
 }
-function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast }) {
+function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign }) {
   const d = design;
   const up = (path, v) => setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); let cur = o; const ks = path.split('.'); for (let i = 0; i < ks.length - 1; i++) { if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; return o; });
   const n = TD.cellCount(d.template);
@@ -885,7 +885,6 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
   const [tplName, setTplName] = useState('');
   const [presetKey, setPresetKey] = useState(d.template === 'none' ? 'none' : (TD.PRESET_ORDER.find(k => TD.PRESETS[k].apply().template === d.template) || 'single'));
   useEffect(() => { if (d.template === 'none') setPresetKey('none'); }, [d.template]);
-  const lastDesign = (() => { try { return JSON.parse(localStorage.getItem('thumb_design_last') || 'null'); } catch (e) { return null; } })();
   const applySaved = (saved) => setDesign(prev => { const o = TD.merge(prev, saved || {}); const n2 = TD.cellCount(o.template); o.photos = (prev.photos || []).slice(0, n2); while (o.photos.length < n2) o.photos.push({ zoom: 1, dx: 0, dy: 0 }); return o; });
   // まとめて配置：ラベル・タイトル・サブを縦横9か所へ
   const placeAll = (h, v) => setDesign(prev => {
@@ -908,7 +907,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
     {!isNone && (<div className="border border-dashed border-[#CBDFE4] rounded-lg p-2 space-y-1.5 bg-[#F6FAFB]">
       <div className="text-[11px] font-bold text-[#24505E]">💾 マイテンプレ（作ったデザインを保存して次回も使う）</div>
       <div className="flex flex-wrap gap-1.5">
-        {lastDesign && lastDesign.template && lastDesign.template !== 'none' && <button type="button" onClick={() => { applySaved(lastDesign); showToast && showToast('前回のデザインを呼び出しました'); }} className="text-[11px] bg-white border border-slate-300 rounded-full px-2.5 py-1">⏪ 前回のデザイン</button>}
+        {lastDesign && <button type="button" onClick={() => { applySaved(lastDesign); showToast && showToast('前回のデザインを呼び出しました'); }} className="text-[11px] bg-white border border-slate-300 rounded-full px-2.5 py-1">⏪ 前回のデザイン</button>}
         {templates.map(t => (<span key={t.id} className="inline-flex items-center bg-white border border-[#2F6D80]/40 rounded-full pl-2.5 pr-1 py-0.5 text-[11px]">
           <button type="button" onClick={() => { applySaved(t.design); showToast && showToast(`「${t.name}」を呼び出しました`); }} className="font-medium text-[#24505E]">{t.name}</button>
           <button type="button" onClick={() => onDeleteTemplate && onDeleteTemplate(t)} className="ml-1 w-5 h-5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50" title="削除">×</button></span>))}
@@ -1017,10 +1016,10 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   const secPhoto = useRef(null), secFolder = useRef(null), secSize = useRef(null);
   const scrollTo = (r) => { try { r.current && r.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} };
   // デザイン設定（写真データは photoSrcs に分けて持つ：スライダー操作のたびに巨大な dataURL をコピーしないため）
-  const [design, setDesign] = useState(() => {
-    try { const last = JSON.parse(localStorage.getItem('thumb_design_last') || 'null'); if (last && last.template) { const d = TD.merge(TD.DEFAULT, last); d.photos = Array.from({ length: TD.cellCount(d.template) }, () => ({ zoom: 1, dx: 0, dy: 0 })); return d; } } catch (e) {}
-    const d = JSON.parse(JSON.stringify(TD.DEFAULT)); d.photos = [{ zoom: 1, dx: 0, dy: 0 }]; return d;
-  });
+  // 開いた時点で保存されている「前回のデザイン」（この後すぐ今回の内容で上書きされるので先に控える）
+  const [prevDesign] = useState(() => { try { const l = JSON.parse(localStorage.getItem('thumb_design_last') || 'null'); return (l && l.v === 2 && l.template && l.template !== 'none') ? l : null; } catch (e) { return null; } });
+  // 新規作成は必ずテンプレの見本文言から始める（前回の内容は「⏪ 前回のデザイン」で呼び出す）
+  const [design, setDesign] = useState(() => { const d = JSON.parse(JSON.stringify(TD.DEFAULT)); d.photos = [{ zoom: 1, dx: 0, dy: 0 }]; return d; });
   const [photoSrcs, setPhotoSrcs] = useState([]);
   const [selectedCell, setSelectedCell] = useState(0);
   useEffect(() => {
@@ -1111,7 +1110,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   // 動作確認用フック（写真をコードから差し込む）
   useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; window.__thumbSetDesign = (patch) => setDesign(prev => TD.merge(prev, patch)); return () => { delete window.__thumbSetPhotos; delete window.__thumbSetDesign; }; }, []);
   // 最後に使ったデザインを次回の初期値に
-  useEffect(() => { try { localStorage.setItem('thumb_design_last', JSON.stringify(TD.strip(design))); } catch (e) {} }, [design]);
+  useEffect(() => { try { localStorage.setItem('thumb_design_last', JSON.stringify({ ...TD.strip(design), v: 2 })); } catch (e) {} }, [design]);
   // ギャラリーの「編集」から開いたとき：デザインと元写真を復元
   useEffect(() => {
     if (!editImg) return;
@@ -1271,7 +1270,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               </div>
             ) : (
               <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={dragOver ? 'dnd-hi rounded-xl p-1' : ''}>
-                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} />
+                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} />
               </div>
             )}
           </section>
