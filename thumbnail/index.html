@@ -22,7 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="design-engine.js?v=2026-09-07.1"></script>
+<script src="design-engine.js?v=2026-09-07.2"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -86,7 +86,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-07.1";
+  window.APP_VERSION = "2026-09-07.2";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -206,7 +206,12 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.4 画像プロンプト集（2026-09-07）】
+const RELEASE_NOTES = `【v2.5 プロンプトと投稿予定の連携（2026-09-07）】
+・投稿予定を選んでいると、その予定に合うテーマのプロンプトが自動で選ばれます（症状キーワードが近いもの→無ければ日付が近いもの）
+・投稿ツールの予定から「サムネツールで作る」で開いたときも、その予定に合わせて選ばれます
+・予定のタイトル（投稿のキャッチコピー）を、そのまま画像の文字として入れるボタンを追加しました
+
+【v2.4 画像プロンプト集（2026-09-07）】
 ・AI画像づくり用のプロンプトを、ツールの中から選んでコピーできるようにしました（9月の8テーマ × 人物／風景の2パターン）
 ・テーマを選ぶと、そのタイトルをサムネイルの文字入力欄にそのまま流し込めます
 ・A投稿は「人物」、B投稿は「風景」が最初から選ばれます。狙う症状キーワードも一緒に表示します
@@ -260,6 +265,30 @@ function validatePrompts(data) {
   return errs;
 }
 const VARIANT_LABEL = { person: '人物', scenery: '風景' };
+// ===== 投稿予定とプロンプトのテーマを突き合わせる =====
+function normJa(s) { return String(s || '').toLowerCase().replace(/[\s　・、。「」『』【】（）()／\/]+/g, ''); }
+function tokensOf(list) {
+  return list.flatMap(x => String(x || '').split(/[\s　・、，,／\/\n]+/)).map(normJa).filter(t => t.length >= 2);
+}
+// 予定に合うテーマを選ぶ：症状キーワードが近いもの → 無ければ日付が近いもの
+function matchTheme(themes, sched) {
+  if (!themes.length) return { idx: 0, reason: '' };
+  const today = todayISO();
+  if (!sched) { const i = themes.findIndex(t => (t.date || '') >= today); return { idx: i < 0 ? themes.length - 1 : i, reason: '' }; }
+  const st = tokensOf([sched.title, sched.catchTitle, sched.kw, sched.imageMemo]);
+  let best = -1, bestScore = 0;
+  themes.forEach((t, i) => {
+    const tt = tokensOf([...(t.keywords || []), t.theme, t.title]);
+    let sc = 0;
+    st.forEach(a => tt.forEach(b => { if (a === b) sc += 2; else if (a.includes(b) || b.includes(a)) sc += 1; }));
+    if (sc > bestScore) { bestScore = sc; best = i; }
+  });
+  if (best >= 0 && bestScore >= 2) return { idx: best, reason: 'kw' };
+  const base = sched.date || today;
+  let bi = themes.length - 1, bd = Infinity;
+  themes.forEach((t, i) => { const d = Math.abs(new Date(t.date + 'T00:00:00') - new Date(base + 'T00:00:00')); if (d < bd) { bd = d; bi = i; } });
+  return { idx: bi, reason: 'date' };
+}
 function defaultVariant(t) { return (t && t.abType === 'B') ? 'scenery' : 'person'; }
 
 const CONTACT_TEMPLATE = `件名：サムネツール 改善要望／不具合連絡
@@ -884,14 +913,12 @@ function ProjectManager({ accounts, categories, projects, selectedProjectId, set
 }
 
 // ============ 画像プロンプト集（参照・コピー用） ============
-function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, baseDate }) {
+function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, sched }) {
   const themes = (data && data.themes) || [];
-  const [idx, setIdx] = useState(() => {
-    if (!themes.length) return 0;
-    const base = baseDate || todayISO();
-    const i = themes.findIndex(t => (t.date || '') >= base);
-    return i < 0 ? themes.length - 1 : i;   // 期間を過ぎていたら最後のテーマ
-  });
+  const auto = useMemo(() => matchTheme(themes, sched), [data, sched]);
+  const [idx, setIdx] = useState(auto.idx);
+  const [touched, setTouched] = useState(false);
+  useEffect(() => { if (!touched) setIdx(auto.idx); }, [auto.idx]);   // 予定を変えたら選び直す（手で選んだあとは尊重）
   const t = themes[idx] || null;
   const [variant, setVariant] = useState(() => defaultVariant(themes[idx]));
   const [copied, setCopied] = useState(false);
@@ -925,14 +952,25 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, b
             {errs && errs.length > 0 && (
               <div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠️ 運用ルールに合わない項目が {errs.length} 件あります（詳細はコンソール）</div>
             )}
+            {sched && (
+              <div className="bg-[#EDF6F0] border border-[#BFDCCB] rounded-lg p-2.5 text-[11px] text-emerald-900">
+                <div className="font-bold">📅 {(sched.date || '').replace(/-/g, '/')}「{sched.catchTitle || sched.title || '無題'}」の予定に紐付いています</div>
+                <div className="mt-0.5 text-emerald-800/80">
+                  {touched ? 'テーマは手で選んでいます'
+                    : auto.reason === 'kw' ? '症状キーワードが近いテーマを選びました'
+                    : auto.reason === 'date' ? '日付が近いテーマを選びました（キーワードは一致せず）'
+                    : ''}
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-slate-500">テーマ（日付順）</label>
               <div className="flex items-center gap-1.5 mt-1">
-                <button onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronLeft className="w-4 h-4" /></button>
-                <select value={idx} onChange={(e) => setIdx(Number(e.target.value))} className="flex-1 min-w-0 p-2 border rounded-lg text-sm">
+                <button onClick={() => { setIdx(i => Math.max(0, i - 1)); setTouched(true); }} disabled={idx === 0} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronLeft className="w-4 h-4" /></button>
+                <select value={idx} onChange={(e) => { setIdx(Number(e.target.value)); setTouched(true); }} className="flex-1 min-w-0 p-2 border rounded-lg text-sm">
                   {themes.map((x, i) => <option key={x.id} value={i}>{fmtOpt(x)}</option>)}
                 </select>
-                <button onClick={() => setIdx(i => Math.min(themes.length - 1, i + 1))} disabled={idx === themes.length - 1} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronRight className="w-4 h-4" /></button>
+                <button onClick={() => { setIdx(i => Math.min(themes.length - 1, i + 1)); setTouched(true); }} disabled={idx === themes.length - 1} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronRight className="w-4 h-4" /></button>
               </div>
             </div>
 
@@ -989,6 +1027,11 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, b
             <button onClick={() => onApplyTitle(t.title)} className="btn-press w-full mt-2 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
               {inCreate ? '✏️ このタイトルを文字入力欄に入れる' : '✨ このタイトルで作成をはじめる'}
             </button>
+            {sched && (sched.catchTitle || sched.title) && (sched.catchTitle || sched.title) !== t.title && (
+              <button onClick={() => onApplyTitle(sched.catchTitle || sched.title)} className="btn-press w-full mt-1.5 py-2.5 rounded-xl border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-sm font-medium">
+                📅 予定のタイトル「{(sched.catchTitle || sched.title).slice(0, 14)}{(sched.catchTitle || sched.title).length > 14 ? '…' : ''}」を使う
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1155,7 +1198,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
 }
 
 // ============ CreateTab ============
-function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply }) {
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply, onSchedChange }) {
   const canvasRef = useRef(null);
   const isRegister = mode === 'register';
   const [saved, setSaved] = useState(null);      // 保存完了画面
@@ -1256,6 +1299,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   const onPointerUp = () => { dragRef.current = null; };
   // 動作確認用フック（写真をコードから差し込む）
   useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; window.__thumbSetDesign = (patch) => setDesign(prev => TD.merge(prev, patch)); return () => { delete window.__thumbSetPhotos; delete window.__thumbSetDesign; }; }, []);
+  // 紐付け中の予定を画面全体（プロンプト集）にも知らせる
+  useEffect(() => { if (onSchedChange) onSchedChange(schedId); }, [schedId]);
   // 画像プロンプト集で選んだタイトルを文字入力欄へ流し込む
   useEffect(() => { if (titleToApply && titleToApply.text) setDesign(prev => ({ ...prev, title: { ...prev.title, text: titleToApply.text } })); }, [titleToApply]);
   // 最後に使ったデザインを次回の初期値に
@@ -2004,6 +2049,7 @@ function App() {
   const [promptErrs, setPromptErrs] = useState([]);
   const [promptOpen, setPromptOpen] = useState(false);
   const [titleToApply, setTitleToApply] = useState(null);
+  const [linkedSchedId, setLinkedSchedId] = useState(() => params.get('sched') || '');
   const [tplConfirm, setTplConfirm] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useLocalStorage('selected_project_id', null);
   // 最初はギャラリー。統合ツールから ?sched=ID で来たときは作成画面へ
@@ -2063,11 +2109,12 @@ function App() {
         <CreateTab key={view} mode={view} user={user} accounts={accounts} categories={categories} projects={projects}
           selectedProject={selectedProject} showToast={showToast} openGallery={() => goGallery()} schedules={schedules} editImg={editImg}
           onSaved={(id) => { setHighlightId(id); }} designTemplates={designTemplates} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate}
-          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} />
+          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} onSchedChange={setLinkedSchedId} />
       )}
       {tplConfirm && <ConfirmModal {...tplConfirm} />}
       {promptOpen && (
         <PromptModal data={prompts} errs={promptErrs} inCreate={view === 'create'} showToast={showToast}
+          sched={schedules.find(x => x.id === linkedSchedId) || null}
           onClose={() => setPromptOpen(false)}
           onApplyTitle={(text) => {
             setTitleToApply({ text, at: Date.now() });
