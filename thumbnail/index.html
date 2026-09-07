@@ -22,7 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="design-engine.js?v=2026-09-07.2"></script>
+<script src="design-engine.js?v=2026-09-08.1"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -86,7 +86,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-07.2";
+  window.APP_VERSION = "2026-09-08.1";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -206,7 +206,13 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.5 プロンプトと投稿予定の連携（2026-09-07）】
+const RELEASE_NOTES = `【v2.6 投稿の型ごとのサムネ運用（2026-09-08）】
+・プロンプト集に「型から作る」タブを追加：型1〜4それぞれの背景プロンプトが入っていて、紐付けた予定のテーマ・画像メモが自動で差し込まれます
+・型1＝人物あり（文字まで画像内に生成）／型2＝風景のみ／型3・4＝人物あり・風景を手動で選択
+・マイテンプレに「使う型」を設定できます。予定から開くと、その型のテンプレが自動で適用され、テーマタイトルが文字に入ります（型2はサブ欄＝メインの位置に入ります）
+・型4は毎月1日のイベント投稿用です
+
+【v2.5 プロンプトと投稿予定の連携（2026-09-07）】
 ・投稿予定を選んでいると、その予定に合うテーマのプロンプトが自動で選ばれます（症状キーワードが近いもの→無ければ日付が近いもの）
 ・投稿ツールの予定から「サムネツールで作る」で開いたときも、その予定に合わせて選ばれます
 ・予定のタイトル（投稿のキャッチコピー）を、そのまま画像の文字として入れるボタンを追加しました
@@ -265,6 +271,28 @@ function validatePrompts(data) {
   return errs;
 }
 const VARIANT_LABEL = { person: '人物', scenery: '風景' };
+// 投稿の型（投稿ツールのformatId）→ 型番号。f_story と f_rhythm は「型3」ファミリー
+const FORMAT_KATA = { f_season: '1', f_symptom: '2', f_story: '3', f_rhythm: '3', f_menu: '4' };
+const KATA_META = { '1': { emoji: '🍂' }, '2': { emoji: '☑️' }, '3': { emoji: '📖' }, '4': { emoji: '🎫' } };
+// 画像メモ「人物なし・朝の窓辺…」→ 場面の説明だけを取り出す
+function sceneOf(sched) {
+  if (!sched) return '';
+  const m = String(sched.imageMemo || '').replace(/人物(なし|あり)（?[^・、]*）?[・、,]?/g, '').trim();
+  return m || sched.title || '';
+}
+// 型2のタイトルは「〇〇チェックリスト」形式：キャッチが長文なら「チェック」を含む節だけを使う
+function kataFillText(kata, title) {
+  if (kata !== '2') return title;
+  const parts = String(title || '').split(/[。！？\n]/).map(x => x.trim()).filter(Boolean);
+  const hit = parts.find(x => x.includes('チェック'));
+  return hit || title;
+}
+function kataTextOf(kd, variant, sched) {
+  let t = ((kd && kd.prompts) || {})[variant] || '';
+  const title = sched ? (sched.catchTitle || sched.title || '') : '';
+  const scene = sceneOf(sched);
+  return t.replace('{場面}', scene || '{場面}').replace('{タイトル}', title || '{タイトル}');
+}
 // ===== 投稿予定とプロンプトのテーマを突き合わせる =====
 function normJa(s) { return String(s || '').toLowerCase().replace(/[\s　・、。「」『』【】（）()／\/]+/g, ''); }
 function tokensOf(list) {
@@ -915,22 +943,42 @@ function ProjectManager({ accounts, categories, projects, selectedProjectId, set
 // ============ 画像プロンプト集（参照・コピー用） ============
 function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, sched }) {
   const themes = (data && data.themes) || [];
+  const kataDefs = (data && data.formats) || [];
+  // 紐付き予定の型 → 「型から作る」タブを既定に
+  const schedKata = sched && sched.formatId ? FORMAT_KATA[sched.formatId] || '' : '';
+  const [tab, setTab] = useState(() => (kataDefs.length && (schedKata || !themes.length)) ? 'kata' : (themes.length ? 'theme' : 'kata'));
+  // --- テーマ集タブ ---
   const auto = useMemo(() => matchTheme(themes, sched), [data, sched]);
   const [idx, setIdx] = useState(auto.idx);
   const [touched, setTouched] = useState(false);
-  useEffect(() => { if (!touched) setIdx(auto.idx); }, [auto.idx]);   // 予定を変えたら選び直す（手で選んだあとは尊重）
+  useEffect(() => { if (!touched) setIdx(auto.idx); }, [auto.idx]);
   const t = themes[idx] || null;
   const [variant, setVariant] = useState(() => defaultVariant(themes[idx]));
-  const [copied, setCopied] = useState(false);
   useEffect(() => { setVariant(defaultVariant(themes[idx])); setCopied(false); }, [idx]);
   const text = (t && t.variants && t.variants[variant]) || '';
   const fmtOpt = (x) => `${(x.date || '').replace(/-/g, '/')}（${x.abType}）${x.theme}`;
-  const doCopy = async () => {
-    if (!text) return;
-    await copyToClipboard(text);
+  // --- 型タブ ---
+  const [kIdx, setKIdx] = useState(() => { const i = kataDefs.findIndex(k => k.kata === schedKata); return i < 0 ? 0 : i; });
+  useEffect(() => { const i = kataDefs.findIndex(k => k.kata === schedKata); if (i >= 0) setKIdx(i); }, [schedKata]);
+  const kd = kataDefs[kIdx] || null;
+  const kMode = (kd && kd.variantMode) || 'person';
+  const [kVariant, setKVariant] = useState('person');
+  useEffect(() => {
+    if (kMode !== 'choice') setKVariant(kMode);
+    else setKVariant(/人物なし/.test((sched && sched.imageMemo) || '') ? 'scenery' : 'person');
+  }, [kIdx, sched && sched.id]);
+  const [kText, setKText] = useState('');
+  useEffect(() => { setKText(kataTextOf(kd, kVariant, sched)); setCopied(false); }, [kIdx, kVariant, sched && sched.id, data]);
+  // --- 共通 ---
+  const [copied, setCopied] = useState(false);
+  const doCopy = async (str) => {
+    if (!str) return;
+    await copyToClipboard(str);
     setCopied(true); setTimeout(() => setCopied(false), 1800);
-    showToast('プロンプトをコピーしました。ChatGPTなどに貼り付けてください');
+    if (/[{][^}]+[}]/.test(str)) showToast('コピーしました。{ }の部分を書き換えてから使ってください');
+    else showToast('プロンプトをコピーしました。ChatGPTなどに貼り付けてください');
   };
+  const copyTarget = tab === 'kata' ? kText : text;
   return (
     <div className="fixed inset-0 z-[80] bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center" onClick={onClose}>
       <div className="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col max-h-[88vh] fade-up" onClick={(e) => e.stopPropagation()}>
@@ -939,29 +987,67 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, s
             <Sparkles className="w-5 h-5 text-blue-600 shrink-0" />
             <div className="min-w-0">
               <div className="text-sm font-bold text-slate-800 leading-tight">画像プロンプト集</div>
-              <div className="text-[11px] text-slate-500 leading-tight truncate">{data ? `${data.scope || ''}` : '読み込み中…'}</div>
+              <div className="text-[11px] text-slate-500 leading-tight truncate">{data ? '背景づくり用の指示文をコピーして使います' : '読み込み中…'}</div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 shrink-0"><X className="w-5 h-5" /></button>
         </div>
 
+        <div className="px-4 pt-2 shrink-0 flex gap-1.5">
+          {kataDefs.length > 0 && <button onClick={() => setTab('kata')} className={`flex-1 text-xs font-bold py-2 rounded-lg ${tab === 'kata' ? 'bg-[#2F6D80] text-white' : 'bg-slate-100 text-slate-600'}`}>🎨 型から作る</button>}
+          {themes.length > 0 && <button onClick={() => setTab('theme')} className={`flex-1 text-xs font-bold py-2 rounded-lg ${tab === 'theme' ? 'bg-[#2F6D80] text-white' : 'bg-slate-100 text-slate-600'}`}>📅 9月のテーマ集</button>}
+        </div>
+
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          {!themes.length ? (
+          {sched && (
+            <div className="bg-[#EDF6F0] border border-[#BFDCCB] rounded-lg p-2.5 text-[11px] text-emerald-900">
+              <div className="font-bold">📅 {(sched.date || '').replace(/-/g, '/')}「{sched.catchTitle || sched.title || '無題'}」の予定に紐付いています</div>
+              {tab === 'kata'
+                ? <div className="mt-0.5 text-emerald-800/80">{schedKata ? `予定の型（型${schedKata}）に合わせています。テーマと画像メモを差し込み済みです` : '予定に型が未設定です。型を選んでください'}</div>
+                : <div className="mt-0.5 text-emerald-800/80">{touched ? 'テーマは手で選んでいます' : auto.reason === 'kw' ? '症状キーワードが近いテーマを選びました' : auto.reason === 'date' ? '日付が近いテーマを選びました（キーワードは一致せず）' : ''}</div>}
+            </div>
+          )}
+
+          {tab === 'kata' && (!kataDefs.length ? (
+            <p className="text-sm text-slate-500 py-8 text-center">型のプロンプトを読み込めませんでした</p>
+          ) : (<>
+            <div className="grid grid-cols-4 gap-1.5">
+              {kataDefs.map((k, i) => (
+                <button key={k.kata} onClick={() => setKIdx(i)} className={`rounded-lg border p-1.5 text-[11px] leading-tight ${kIdx === i ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E] font-bold' : 'border-slate-200 bg-white text-slate-600'}`}>
+                  <div className="text-base">{k.emoji}</div>型{k.kata}
+                </button>
+              ))}
+            </div>
+            {kd && <p className="text-[11px] text-slate-500">{kd.name}：{kd.note}</p>}
+            <div>
+              <label className="text-xs font-medium text-slate-500">画像のパターン</label>
+              <div className="flex gap-1.5 mt-1">
+                {kMode === 'choice' ? ['person', 'scenery'].map(k => (
+                  <button key={k} onClick={() => setKVariant(k)} className={`btn-press flex-1 text-sm py-2 rounded-lg border font-medium ${kVariant === k ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E]' : 'border-slate-200 bg-white text-slate-600'}`}>
+                    {k === 'person' ? '🧍 人物あり' : '🏞 風景のみ'}
+                  </button>
+                )) : (
+                  <div className="flex-1 text-sm py-2 rounded-lg bg-slate-100 text-slate-600 text-center font-medium">{kMode === 'person' ? '🧍 人物あり（この型の決まり）' : '🏞 風景のみ（この型の決まり）'}</div>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">プロンプト（直してからコピーもできます）</label>
+              <textarea value={kText} onChange={(e) => setKText(e.target.value)} rows={5} className="mt-1 w-full text-[12.5px] leading-relaxed font-mono bg-slate-900 text-slate-100 rounded-lg p-3 border-0" />
+              {/[{][^}]+[}]/.test(kText) && <p className="text-[11px] text-amber-700 mt-1">⚠️ { }の部分（場面・タイトル）を書き換えてから使ってください</p>}
+            </div>
+            {kd && kd.kata === '2' && (
+              <div className="text-[11px] bg-[#EAF3F4] border border-[#CBDFE4] text-[#24505E] rounded-lg p-2.5 leading-relaxed">
+                <b>☑️ 型2の文字の決まり</b><br />・ラベル：「セルフチェックしてみよう」で固定<br />・タイトル：「〇〇チェックリスト」「〇〇をチェック」の形式で短く<br />・サブ：「- 〇〇な方へ -」の形式（ターゲットを入れる）
+              </div>
+            )}
+          </>))}
+
+          {tab === 'theme' && (!themes.length ? (
             <p className="text-sm text-slate-500 py-8 text-center">プロンプトを読み込めませんでした。通信状況を確かめて開き直してください</p>
           ) : (<>
             {errs && errs.length > 0 && (
               <div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠️ 運用ルールに合わない項目が {errs.length} 件あります（詳細はコンソール）</div>
-            )}
-            {sched && (
-              <div className="bg-[#EDF6F0] border border-[#BFDCCB] rounded-lg p-2.5 text-[11px] text-emerald-900">
-                <div className="font-bold">📅 {(sched.date || '').replace(/-/g, '/')}「{sched.catchTitle || sched.title || '無題'}」の予定に紐付いています</div>
-                <div className="mt-0.5 text-emerald-800/80">
-                  {touched ? 'テーマは手で選んでいます'
-                    : auto.reason === 'kw' ? '症状キーワードが近いテーマを選びました'
-                    : auto.reason === 'date' ? '日付が近いテーマを選びました（キーワードは一致せず）'
-                    : ''}
-                </div>
-              </div>
             )}
             <div>
               <label className="text-xs font-medium text-slate-500">テーマ（日付順）</label>
@@ -973,22 +1059,18 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, s
                 <button onClick={() => { setIdx(i => Math.min(themes.length - 1, i + 1)); setTouched(true); }} disabled={idx === themes.length - 1} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronRight className="w-4 h-4" /></button>
               </div>
             </div>
-
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${t.abType === 'A' ? 'bg-[#DCE9EE] text-[#24505E]' : 'bg-[#F7E3D8] text-[#B25B44]'}`}>{t.abType} {t.abType === 'A' ? 'メイン' : 'サブ'}</span>
               <span className="text-[11px] text-slate-500">第{t.week}週</span>
               <span className="text-sm font-bold text-slate-800">{t.theme}</span>
             </div>
-
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
               <div className="text-[10px] text-slate-500 mb-0.5">画像に入れる文字（全店舗共通タイトル）</div>
               <div className="text-sm font-bold text-slate-800 break-all">{t.title}</div>
             </div>
-
             <div className="flex flex-wrap gap-1">
               {(t.keywords || []).map(k => <span key={k} className="text-[10px] bg-[#EAF3F4] text-[#24505E] rounded-full px-2 py-0.5">🔑 {k}</span>)}
             </div>
-
             <div>
               <label className="text-xs font-medium text-slate-500">画像のパターン</label>
               <div className="flex gap-1.5 mt-1">
@@ -999,41 +1081,40 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, s
                 ))}
               </div>
             </div>
-
             <div>
               <label className="text-xs font-medium text-slate-500">プロンプト（このままコピーして使います）</label>
               <div className="mt-1 text-[12.5px] leading-relaxed font-mono whitespace-pre-wrap break-all bg-slate-900 text-slate-100 rounded-lg p-3 select-all">{text}</div>
             </div>
+          </>))}
 
-            {data.rules && (
-              <details className="text-[11px] text-slate-500">
-                <summary className="cursor-pointer">画像づくりの決まりごと</summary>
-                <ul className="mt-1 space-y-0.5 pl-4 list-disc">
-                  <li>{data.rules.person}</li>
-                  <li>風景パターンは「人物は入れないでください」を必ず入れる</li>
-                  <li>使わない場面：{(data.rules.ngScenes || []).join('・')}</li>
-                  <li>{data.rules.note}</li>
-                </ul>
-              </details>
-            )}
-          </>)}
+          {data && data.rules && (
+            <details className="text-[11px] text-slate-500">
+              <summary className="cursor-pointer">画像づくりの決まりごと</summary>
+              <ul className="mt-1 space-y-0.5 pl-4 list-disc">
+                <li>{data.rules.person}</li>
+                <li>風景パターンは「人物は入れないでください」を必ず入れる</li>
+                <li>使わない場面：{(data.rules.ngScenes || []).join('・')}</li>
+                <li>{data.rules.note}</li>
+              </ul>
+            </details>
+          )}
         </div>
 
-        {!!themes.length && (
-          <div className="border-t bg-white px-4 pt-3 shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
-            <button onClick={doCopy} className={`btn-press w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm shadow ${copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-              {copied ? <><CheckCircle2 className="w-4 h-4" />コピーしました</> : <><Copy className="w-4 h-4" />プロンプトをコピー</>}
-            </button>
+        <div className="border-t bg-white px-4 pt-3 shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
+          <button onClick={() => doCopy(copyTarget)} disabled={!copyTarget} className={`btn-press w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm shadow ${copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-slate-300'}`}>
+            {copied ? <><CheckCircle2 className="w-4 h-4" />コピーしました</> : <><Copy className="w-4 h-4" />プロンプトをコピー</>}
+          </button>
+          {tab === 'theme' && t && (
             <button onClick={() => onApplyTitle(t.title)} className="btn-press w-full mt-2 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
               {inCreate ? '✏️ このタイトルを文字入力欄に入れる' : '✨ このタイトルで作成をはじめる'}
             </button>
-            {sched && (sched.catchTitle || sched.title) && (sched.catchTitle || sched.title) !== t.title && (
-              <button onClick={() => onApplyTitle(sched.catchTitle || sched.title)} className="btn-press w-full mt-1.5 py-2.5 rounded-xl border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-sm font-medium">
-                📅 予定のタイトル「{(sched.catchTitle || sched.title).slice(0, 14)}{(sched.catchTitle || sched.title).length > 14 ? '…' : ''}」を使う
-              </button>
-            )}
-          </div>
-        )}
+          )}
+          {sched && (sched.catchTitle || sched.title) && (tab === 'kata' || (t && (sched.catchTitle || sched.title) !== t.title)) && (
+            <button onClick={() => onApplyTitle(sched.catchTitle || sched.title)} className="btn-press w-full mt-1.5 py-2.5 rounded-xl border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-sm font-medium">
+              📅 予定のタイトル「{(sched.catchTitle || sched.title).slice(0, 14)}{(sched.catchTitle || sched.title).length > 14 ? '…' : ''}」を{inCreate ? '文字に入れる' : '使って作成をはじめる'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1057,7 +1138,7 @@ function Sel({ label, value, opts, onChange }) {
 function Acc({ title, open, children }) {
   return (<details open={open} className="border border-slate-200 rounded-lg bg-white"><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-700">{title}</summary><div className="px-3 pb-3 space-y-2">{children}</div></details>);
 }
-function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign, onOpenPrompts }) {
+function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign, onOpenPrompts, schedTitle }) {
   const d = design;
   const up = (path, v) => setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); let cur = o; const ks = path.split('.'); for (let i = 0; i < ks.length - 1; i++) { if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; return o; });
   const n = TD.cellCount(d.template);
@@ -1069,12 +1150,19 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
   const isNone = d.template === 'none';
   const pct = v => Math.round(v * 100) + '%';
   const [tplName, setTplName] = useState('');
+  const [tplKata, setTplKata] = useState('');
   const [presetKey, setPresetKey] = useState(d.template === 'none' ? 'none' : (TD.PRESET_ORDER.find(k => TD.PRESETS[k].apply().template === d.template) || 'single'));
   useEffect(() => {
     if (d.template === 'none') setPresetKey('none');
     else if (presetKey === 'none') setPresetKey(TD.PRESET_ORDER.find(k => k !== 'none' && TD.PRESETS[k].apply().template === d.template) || 'single');
   }, [d.template]);
-  const applySaved = (saved) => setDesign(prev => { const o = TD.merge(prev, saved || {}); const n2 = TD.cellCount(o.template); o.photos = (prev.photos || []).slice(0, n2); while (o.photos.length < n2) o.photos.push({ zoom: 1, dx: 0, dy: 0 }); return o; });
+  const applySaved = (saved, tpl) => setDesign(prev => {
+    let o = TD.merge(prev, saved || {});
+    const n2 = TD.cellCount(o.template); o.photos = (prev.photos || []).slice(0, n2); while (o.photos.length < n2) o.photos.push({ zoom: 1, dx: 0, dy: 0 });
+    // 型付きテンプレ＋予定紐付け中なら、テーマタイトルを所定の欄（型2はサブ欄）に流し込む
+    if (tpl && tpl.kata && schedTitle) { const tgt = tpl.fillTarget || (tpl.kata === '2' ? 'sub' : 'title'); o = { ...o, [tgt]: { ...o[tgt], text: kataFillText(tpl.kata, schedTitle) } }; }
+    return o;
+  });
   // まとめて配置：ラベル・タイトル・サブを縦横9か所へ
   const placeAll = (h, v) => setDesign(prev => {
     const o = JSON.parse(JSON.stringify(prev));
@@ -1098,14 +1186,18 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
       <div className="flex flex-wrap gap-1.5">
         {lastDesign && <button type="button" onClick={() => { applySaved(lastDesign); showToast && showToast('前回のデザインを呼び出しました'); }} className="text-[11px] bg-white border border-slate-300 rounded-full px-2.5 py-1">⏪ 前回のデザイン</button>}
         {templates.map(t => (<span key={t.id} className="inline-flex items-center bg-white border border-[#2F6D80]/40 rounded-full pl-2.5 pr-1 py-0.5 text-[11px]">
-          <button type="button" onClick={() => { applySaved(t.design); showToast && showToast(`「${t.name}」を呼び出しました`); }} className="font-medium text-[#24505E]">{t.name}</button>
+          <button type="button" onClick={() => { applySaved(t.design, t); showToast && showToast(`「${t.name}」を呼び出しました${t.kata && schedTitle ? '（テーマタイトル入り）' : ''}`); }} className="font-medium text-[#24505E]">{t.kata ? `${(KATA_META[t.kata] || {}).emoji || ''}型${t.kata}｜` : ''}{t.name}</button>
           <button type="button" onClick={() => onDeleteTemplate && onDeleteTemplate(t)} className="ml-1 w-5 h-5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50" title="削除">×</button></span>))}
         {!templates.length && !lastDesign && <span className="text-[11px] text-slate-400">まだありません</span>}
       </div>
       <div className="flex gap-1.5">
         <input value={tplName} onChange={e => setTplName(e.target.value)} placeholder="名前をつけて保存（例：定期コラム用）" className="flex-1 min-w-0 p-1.5 border rounded text-xs" />
-        <button type="button" disabled={!tplName.trim()} onClick={() => { onSaveTemplate && onSaveTemplate(tplName.trim(), TD.strip(d)); setTplName(''); }} className="text-xs bg-[#2F6D80] disabled:bg-slate-300 text-white px-3 py-1.5 rounded font-medium">保存</button>
+        <select value={tplKata} onChange={e => setTplKata(e.target.value)} className="p-1.5 border rounded text-xs shrink-0" title="どの投稿の型で使うか（任意）">
+          <option value="">型なし</option><option value="1">🍂型1</option><option value="2">☑️型2</option><option value="3">📖型3</option><option value="4">🎫型4</option>
+        </select>
+        <button type="button" disabled={!tplName.trim()} onClick={() => { onSaveTemplate && onSaveTemplate(tplName.trim(), TD.strip(d), tplKata); setTplName(''); setTplKata(''); }} className="text-xs bg-[#2F6D80] disabled:bg-slate-300 text-white px-3 py-1.5 rounded font-medium">保存</button>
       </div>
+      <p className="text-[10px] text-slate-400">型を付けておくと、その型の予定から開いたときに自動で適用され、テーマタイトルが入ります</p>
     </div>)}
     <div className={`grid ${n === 4 ? 'grid-cols-4' : n === 3 ? 'grid-cols-3' : 'grid-cols-1'} gap-1.5`}>{Array.from({ length: n }).map((_, i) => { const src = photoSrcs[i]; const sel = selectedCell === i; return (
       <button key={i} type="button" onClick={() => pick(i)} className={`relative ${n > 1 ? 'aspect-square' : 'h-28'} rounded-lg overflow-hidden border-2 ${sel ? 'border-[#2F6D80]' : 'border-slate-200'} bg-slate-100`}>
@@ -1299,6 +1391,26 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   const onPointerUp = () => { dragRef.current = null; };
   // 動作確認用フック（写真をコードから差し込む）
   useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; window.__thumbSetDesign = (patch) => setDesign(prev => TD.merge(prev, patch)); return () => { delete window.__thumbSetPhotos; delete window.__thumbSetDesign; }; }, []);
+  // 予定の「投稿の型」に合うマイテンプレを自動適用し、テーマタイトルを流し込む
+  const kataAppliedRef = useRef('');
+  useEffect(() => {
+    if (isRegister || editImg) return;
+    const sc = (schedules || []).find(x => x.id === schedId);
+    if (!sc || !sc.formatId) return;
+    const kata = FORMAT_KATA[sc.formatId]; if (!kata) return;
+    if (kataAppliedRef.current === schedId) return;
+    const tpl = (designTemplates || []).find(x => x.kata === kata);
+    if (!tpl) return;
+    kataAppliedRef.current = schedId;
+    setDesign(prev => {
+      let o = TD.merge(prev, tpl.design || {});
+      const n = TD.cellCount(o.template); o.photos = Array.from({ length: n }, (_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 });
+      const title = sc.catchTitle || sc.title || '';
+      if (title) { const tgt = tpl.fillTarget || (kata === '2' ? 'sub' : 'title'); o = { ...o, [tgt]: { ...o[tgt], text: kataFillText(kata, title) } }; }
+      return o;
+    });
+    showToast(`${(KATA_META[kata] || {}).emoji || ''}型${kata}のテンプレ「${tpl.name}」を適用し、テーマタイトルを入れました`);
+  }, [schedId, designTemplates]);
   // 紐付け中の予定を画面全体（プロンプト集）にも知らせる
   useEffect(() => { if (onSchedChange) onSchedChange(schedId); }, [schedId]);
   // 画像プロンプト集で選んだタイトルを文字入力欄へ流し込む
@@ -1464,7 +1576,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               </div>
             ) : (
               <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={dragOver ? 'dnd-hi rounded-xl p-1' : ''}>
-                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} onOpenPrompts={onOpenPrompts} />
+                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} onOpenPrompts={onOpenPrompts} schedTitle={selSched ? (selSched.catchTitle || selSched.title || '') : ''} />
               </div>
             )}
           </section>
@@ -2090,7 +2202,7 @@ function App() {
 
   if (viewerId) return (<><Toast msg={toastMsg} /><ViewerMode id={viewerId} showToast={showToast} /></>);
   const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
-  const saveTemplate = async (name, design) => { try { await addDoc(colRef('thumb_design_templates'), { name, design, createdAt: Date.now(), authorId: user ? user.uid : '' }); showToast(`「${name}」を保存しました`); } catch (e) { console.error(e); showToast('保存に失敗しました'); } };
+  const saveTemplate = async (name, design, kata) => { try { await addDoc(colRef('thumb_design_templates'), { name, design, kata: kata || '', fillTarget: kata === '2' ? 'sub' : 'title', createdAt: Date.now(), authorId: user ? user.uid : '' }); showToast(`「${name}」を保存しました${kata ? `（型${kata}用）` : ''}`); } catch (e) { console.error(e); showToast('保存に失敗しました'); } };
   const deleteTemplate = (t) => setTplConfirm({ title: `「${t.name}」を削除しますか？`, body: 'チーム全員のマイテンプレから消えます', confirmLabel: '削除', onCancel: () => setTplConfirm(null), onConfirm: async () => { try { await deleteDoc(docRefFn('thumb_design_templates', t.id)); showToast('削除しました'); } catch (e) { showToast('削除に失敗しました'); } setTplConfirm(null); } });
   const goGallery = (hl) => { setView('gallery'); setEditImg(null); if (hl) { setHighlightId(hl); setTimeout(() => setHighlightId(''), 4000); } window.scrollTo(0, 0); };
   return (

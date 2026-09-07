@@ -518,7 +518,7 @@
     <label class="mt">投稿ボタン</label>
     <select id="sm_btnType"><option value="">店舗の設定にしたがう（既定：予約）</option></select>
     <label class="mt">投稿の型</label>
-    <select id="sm_formatId"></select>
+    <select id="sm_formatId" onchange="smFormatChanged()"></select>
     <div class="row mt" id="sm_evRow" style="display:none;">
       <div><label>掲載開始日</label><input type="date" id="sm_evStart"></div>
       <div><label>開始時間</label><span class="tfrow"><input type="hidden" id="sm_evStartTime"><input class="tf" id="sm_evStartTime_v" type="text" inputmode="numeric" maxlength="5" placeholder="--:--" onfocus="this.select()" oninput="tfType('sm_evStartTime','sm_evEndTime')" onblur="tfNorm('sm_evStartTime')"></span></div>
@@ -2483,6 +2483,18 @@ window.addEventListener("formats-ready", ()=>{
   if(typeof renderFormatList==="function") renderFormatList();
 });
 function formatById(id){ return FORMATS.find(f=>f.id===id) || null; }
+// 投稿の型 → カレンダー等で使う型番号・絵文字・色（f_story と f_rhythm は「型3」ファミリー）
+const FORMAT_META = {
+  f_season:  { kata:"型1", icon:"🍂", bg:"#FBE9DE", color:"#B25B44" },
+  f_symptom: { kata:"型2", icon:"☑️", bg:"#DCE9EE", color:"#2F6D80" },
+  f_story:   { kata:"型3", icon:"📖", bg:"#E3F0E4", color:"#3E8E7E" },
+  f_rhythm:  { kata:"型3", icon:"📖", bg:"#E3F0E4", color:"#3E8E7E" },
+  f_menu:    { kata:"型4", icon:"🎫", bg:"#EDE9FE", color:"#6D28D9" },
+};
+function kataBadge(s){
+  const m = FORMAT_META[s.formatId]; if(!m) return "";
+  return `<span class="pill" style="background:${m.bg};color:${m.color};font-weight:700;">${m.icon}${m.kata}</span> `;
+}
 let editingFormatId = null;
 window.renderFormatList = ()=>{
   const box = document.getElementById("formatList"); if(!box) return;
@@ -3492,7 +3504,7 @@ function schedCard(s){
       ${thumb?`<img class="sc-thumb" src="${esc(thumb)}">`:`<div class="sc-thumb ph">${im.icon}</div>`}
       <div style="min-width:0; flex:1;">
         <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;">
-          <span class="sc-when">${when}</span>${abBadge(s)}${chips.join("")}
+          <span class="sc-when">${when}</span>${abBadge(s)}${kataBadge(s)}${chips.join("")}
         </div>
         <div class="sc-title">${esc(s.catchTitle||s.title||"（無題）")}</div>
       </div>
@@ -3878,7 +3890,12 @@ function renderCalendar(){
       const st = postStatusOf(s);
       const mark = st ? (PS_META[st]||{}).icon : IMG_META[imgState(s)].icon;
       const shift = isShifted(s) ? "↷" : "";
-      items.push(`<div class="cal-chip ${schedChipClass(s)}">${shift}${mark}${esc(label)}</div>`);
+      // 型が設定されていれば、通常状態のチップは型の色＋絵文字で表示
+      const fm = FORMAT_META[s.formatId];
+      const cls = schedChipClass(s);
+      const useKata = fm && (cls==="a" || cls==="b" || cls==="");
+      const style = useKata ? ` style="background:${fm.bg};color:${fm.color}"` : "";
+      items.push(`<div class="cal-chip ${cls}"${style}>${shift}${mark}${fm?fm.icon:""}${esc(label)}</div>`);
     });
     bucket.events.forEach(e=>{
       const m = EV_META[e.type]||EV_META.other;
@@ -3896,8 +3913,10 @@ function renderCalendar(){
     <div class="cal-dow">${DOW_JA.map((d,i)=>`<div class="${i===0?'sun':i===6?'sat':''}">${d}</div>`).join("")}</div>
     <div class="cal-grid">${cells}</div>
     <div class="cal-legend">
-      <span><span class="dot" style="background:#DCE9EE"></span>A投稿</span>
-      <span><span class="dot" style="background:#F7E3D8"></span>B投稿</span>
+      <span><span class="dot" style="background:#FBE9DE"></span>🍂型1 季節×症状</span>
+      <span><span class="dot" style="background:#DCE9EE"></span>☑️型2 チェック</span>
+      <span><span class="dot" style="background:#E3F0E4"></span>📖型3 物語・リズム</span>
+      <span><span class="dot" style="background:#EDE9FE"></span>🎫型4 イベント</span>
       <span>🖼️画像済 ❌画像未作成</span>
       <span><span class="dot" style="background:#FBE9DE"></span>✅投稿済</span>
       <span><span class="dot" style="background:#e2e8f0"></span>🚫取消</span>
@@ -4399,7 +4418,7 @@ function renderDayModalBody(){
       <div style="display:flex; gap:8px; align-items:flex-start;">
         ${galUrlById(s.imageId)?`<img src="${esc(galUrlById(s.imageId))}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:""}
         <div style="min-width:0; flex:1;">
-          <div class="di-title">${abBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${postStatusOf(s)==='posted'?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
+          <div class="di-title">${abBadge(s)}${kataBadge(s)}<b class="small">${esc(s.catchTitle||s.title||"（無題）")}</b> ${postStatusOf(s)==='posted'?'<span class="pill badge-done">✅完了</span>':(s.done?'<span class="pill badge-done">出力済</span>':'')}</div>
           <div class="di-meta">🕐 ${s.time||"時間未定"} ・ ${scopeLabel(s)}${!(s.catchTitle||s.title)?' ・ <span style="color:var(--warn)">📝 テーマ未作成</span>':''}</div>
           ${s.imageTitle?`<div class="di-meta" style="display:flex;align-items:center;gap:5px;"><span style="flex:1;min-width:0;word-break:break-all;">🖼️ ${esc(s.imageTitle)}</span>
             <button class="act" style="padding:3px 7px;font-size:10px;" onclick="copyStr(${JSON.stringify(s.imageTitle)},event)">📋 コピー</button></div>`:""}
@@ -4516,6 +4535,13 @@ window.openSchedEdit = (id, presetDate)=>{
   const smEv = (v)=> ["sm_evRow","sm_evRow2"].forEach(id=>{ document.getElementById(id).style.display = (["イベント","クーポン"].includes(v)) ? "" : "none"; });
   smEv(s?.postType);
   document.getElementById("sm_postType").onchange = (e)=> smEv(e.target.value);
+  window.smFormatChanged = ()=>{
+    // 型4（メニュー訴求）は毎月1日のイベント投稿にする運用 → 投稿タイプを自動でイベントへ
+    if(document.getElementById("sm_formatId").value==="f_menu"){
+      const pt = document.getElementById("sm_postType");
+      if(pt.value==="最新情報"){ pt.value="イベント"; smEv("イベント"); toast("🎫 型4はイベント投稿にしました（掲載期間を確認してください）"); }
+    }
+  };
   document.getElementById("sm_btnType").innerHTML = btnTypeOptions(s?.btnType || "");
   document.getElementById("sm_formatId").innerHTML = formatOptions(s?.formatId || "");
   document.getElementById("sm_timing").value = s?.timing || "scheduled";
@@ -6067,7 +6093,9 @@ function bindCreate(){
   const ev6=document.getElementById("x_evEndTime"); if(ev6) ev6.onchange=()=>{ cur.evEndTime=ev6.value; refreshEvPreview(); };
   const bt=document.getElementById("c_btnType"); if(bt) bt.onchange=e=>cur.btnType=e.target.value;
   const ff=document.getElementById("c_formatId");
-  if(ff){ ff.onchange=e=>{ cur.formatId=e.target.value; renderFormatHint(); }; renderFormatHint(); }
+  if(ff){ ff.onchange=e=>{ cur.formatId=e.target.value;
+    if(cur.formatId==="f_menu" && (cur.postType||"最新情報")==="最新情報"){ cur.postType="イベント"; toast("🎫 型4はイベント投稿にしました（掲載期間を確認してください）"); renderCreate(); return; }
+    renderFormatHint(); }; renderFormatHint(); }
   const tm=document.getElementById("c_timing"); if(tm) tm.onchange=e=>cur.timing=e.target.value;
   const sc=document.getElementById("c_scope");
   if(sc){ sc.onclick=e=>{ const b=e.target.closest("button"); if(!b)return;
@@ -6444,9 +6472,13 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-05.2";
+const STUDIO_VERSION = "2026-09-08.1";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-08.1", items:[
+      `<b>カレンダーが投稿の型ごとの色と絵文字に</b>：🍂型1 季節×症状／☑️型2 チェックリスト／📖型3 物語・縦リズム／🎫型4 イベント。予定リスト・日付ポップにも型バッジが付きます`,
+      `<b>型4（メニュー訴求）を選ぶと投稿タイプが自動で「イベント」に</b>：毎月1日に配信する月1のイベント投稿として運用します（イベントのタイトルはキャッチコピー欄がそのままGMOのタイトルになります）`,
+      `<b>投稿割合のめやす</b>：型4＝月1回（毎月1日）、型1〜3＝月5回でローテーション` ] },
   { v:"2026-09-05.2", items:[
       `<b>予定のボタンを整理しました</b>：カードには「つぎにやること」のボタンを1つだけ表示し、それ以外は「その他の操作」を開くと出てきます。各ボタンに何が起きるかの説明も付けました`,
       `<b>進み具合が一目で分かるように</b>：🖼️画像 → ✍️本文 → 📤出力 → ✅投稿 の4段階を、いまどこまで終わっているかで表示します`,
