@@ -22,7 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="design-engine.js?v=2026-09-05.4"></script>
+<script src="design-engine.js?v=2026-09-07.1"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -86,7 +86,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-05.4";
+  window.APP_VERSION = "2026-09-07.1";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -206,7 +206,13 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.3 デザインの保存と配置（2026-09-05）】
+const RELEASE_NOTES = `【v2.4 画像プロンプト集（2026-09-07）】
+・AI画像づくり用のプロンプトを、ツールの中から選んでコピーできるようにしました（9月の8テーマ × 人物／風景の2パターン）
+・テーマを選ぶと、そのタイトルをサムネイルの文字入力欄にそのまま流し込めます
+・A投稿は「人物」、B投稿は「風景」が最初から選ばれます。狙う症状キーワードも一緒に表示します
+・開く場所：作成画面の「タイトル・文字」の中、またはメニューの「画像プロンプト集」
+
+【v2.3 デザインの保存と配置（2026-09-05）】
 ・作ったデザインを「マイテンプレ」として保存・呼び出し・削除できます（チーム共有）。前回のデザインもワンタップで呼び出せます
 ・新しいテンプレ5種：下帯グラデ／左パネル／白フチ／1＋2コラージュ／上帯ラベル
 ・文字の配置：左・中・右揃え、横位置、上下位置、行間を調整できます。「まとめて配置」で全体を9か所へ一発配置
@@ -235,6 +241,26 @@ const RELEASE_NOTES = `【v2.3 デザインの保存と配置（2026-09-05）】
 ・チームギャラリーにフィルタ・検索・分類変更・リンク発行を追加
 ・リンク集タブ（チーム共有／個人ローカル）を追加
 ・画像アップロードを枠全体クリック＆ドラッグ&ドロップ対応`;
+
+// 画像プロンプト集（同ディレクトリのJSON。月ごとにテーマを追記していく）
+const PROMPTS_URL = 'image-prompts.json';
+// 改善・問合せのNotion送信先。決まったらここにURLを入れる（空ならテンプレのコピー案内を表示）
+const NOTION_FEEDBACK_URL = '';
+// 運用ルール（プロンプト末尾の文言／風景に人物を入れない）を読み込み時にチェックする
+function validatePrompts(data) {
+  const errs = [];
+  ((data && data.themes) || []).forEach(t => {
+    Object.entries(t.variants || {}).forEach(([k, raw]) => {
+      const v = String(raw || '').trim();
+      if (!v.endsWith('文字はタイトルのみにしてください')) errs.push(`${t.id}／${k}：末尾が「文字はタイトルのみにしてください」で終わっていません`);
+      if (k === 'scenery' && !v.includes('人物は入れないでください')) errs.push(`${t.id}／風景：「人物は入れないでください」が入っていません`);
+    });
+  });
+  if (errs.length) console.warn('[画像プロンプト] 運用ルールに合わない項目があります:', errs);
+  return errs;
+}
+const VARIANT_LABEL = { person: '人物', scenery: '風景' };
+function defaultVariant(t) { return (t && t.abType === 'B') ? 'scenery' : 'person'; }
 
 const CONTACT_TEMPLATE = `件名：サムネツール 改善要望／不具合連絡
 
@@ -626,7 +652,7 @@ function CompressSection({ showToast }) {
 }
 
 // ============ HamburgerMenu ============
-function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjectId, setSelectedProjectId, showToast }) {
+function HamburgerMenu({ onOpenPrompts, onClose, accounts, categories, projects, selectedProjectId, setSelectedProjectId, showToast }) {
   const [section, setSection] = useState('main');
   const [confirm, setConfirm] = useState(null);
 
@@ -717,6 +743,7 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {section === 'main' && (
             <>
+              <MenuBtn icon={Sparkles} label="🎨 画像プロンプト集" onClick={() => { onClose(); onOpenPrompts(); }} sub="AI画像づくり用の指示文をコピー" />
               <MenuBtn icon={Sparkles} label="リリース情報" onClick={() => setSection('release')} />
               <MenuBtn icon={Mail} label="改善・問合せ" onClick={() => setSection('contact')} />
               <div className="border-t my-3" />
@@ -731,6 +758,9 @@ function HamburgerMenu({ onClose, accounts, categories, projects, selectedProjec
           {section === 'contact' && (
             <div className="space-y-3">
               <p className="text-sm text-slate-600">下記のテンプレートをコピーして、担当（HARUKA）宛にお送りください。</p>
+              {NOTION_FEEDBACK_URL
+                ? <a href={NOTION_FEEDBACK_URL} target="_blank" rel="noopener" className="flex items-center justify-center gap-1.5 w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-medium"><ExternalLink className="w-4 h-4" />Notionの改善・問合せ窓口を開く</a>
+                : <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">※ Notionの窓口URLは未設定です。決まり次第ここにボタンを出します（それまでは下のテンプレをコピーして連絡してください）</p>}
               <textarea readOnly value={CONTACT_TEMPLATE} className="w-full h-56 p-3 border rounded-lg text-sm font-mono bg-slate-50" />
               <button onClick={async () => { await copyToClipboard(CONTACT_TEMPLATE); showToast('テンプレートをコピーしました'); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2"><Copy className="w-4 h-4" />コピーする</button>
             </div>
@@ -853,6 +883,119 @@ function ProjectManager({ accounts, categories, projects, selectedProjectId, set
   );
 }
 
+// ============ 画像プロンプト集（参照・コピー用） ============
+function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, baseDate }) {
+  const themes = (data && data.themes) || [];
+  const [idx, setIdx] = useState(() => {
+    if (!themes.length) return 0;
+    const base = baseDate || todayISO();
+    const i = themes.findIndex(t => (t.date || '') >= base);
+    return i < 0 ? themes.length - 1 : i;   // 期間を過ぎていたら最後のテーマ
+  });
+  const t = themes[idx] || null;
+  const [variant, setVariant] = useState(() => defaultVariant(themes[idx]));
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setVariant(defaultVariant(themes[idx])); setCopied(false); }, [idx]);
+  const text = (t && t.variants && t.variants[variant]) || '';
+  const fmtOpt = (x) => `${(x.date || '').replace(/-/g, '/')}（${x.abType}）${x.theme}`;
+  const doCopy = async () => {
+    if (!text) return;
+    await copyToClipboard(text);
+    setCopied(true); setTimeout(() => setCopied(false), 1800);
+    showToast('プロンプトをコピーしました。ChatGPTなどに貼り付けてください');
+  };
+  return (
+    <div className="fixed inset-0 z-[80] bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center" onClick={onClose}>
+      <div className="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col max-h-[88vh] fade-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-5 h-5 text-blue-600 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-slate-800 leading-tight">画像プロンプト集</div>
+              <div className="text-[11px] text-slate-500 leading-tight truncate">{data ? `${data.scope || ''}` : '読み込み中…'}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 shrink-0"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {!themes.length ? (
+            <p className="text-sm text-slate-500 py-8 text-center">プロンプトを読み込めませんでした。通信状況を確かめて開き直してください</p>
+          ) : (<>
+            {errs && errs.length > 0 && (
+              <div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠️ 運用ルールに合わない項目が {errs.length} 件あります（詳細はコンソール）</div>
+            )}
+            <div>
+              <label className="text-xs font-medium text-slate-500">テーマ（日付順）</label>
+              <div className="flex items-center gap-1.5 mt-1">
+                <button onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronLeft className="w-4 h-4" /></button>
+                <select value={idx} onChange={(e) => setIdx(Number(e.target.value))} className="flex-1 min-w-0 p-2 border rounded-lg text-sm">
+                  {themes.map((x, i) => <option key={x.id} value={i}>{fmtOpt(x)}</option>)}
+                </select>
+                <button onClick={() => setIdx(i => Math.min(themes.length - 1, i + 1))} disabled={idx === themes.length - 1} className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 shrink-0"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${t.abType === 'A' ? 'bg-[#DCE9EE] text-[#24505E]' : 'bg-[#F7E3D8] text-[#B25B44]'}`}>{t.abType} {t.abType === 'A' ? 'メイン' : 'サブ'}</span>
+              <span className="text-[11px] text-slate-500">第{t.week}週</span>
+              <span className="text-sm font-bold text-slate-800">{t.theme}</span>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              <div className="text-[10px] text-slate-500 mb-0.5">画像に入れる文字（全店舗共通タイトル）</div>
+              <div className="text-sm font-bold text-slate-800 break-all">{t.title}</div>
+            </div>
+
+            <div className="flex flex-wrap gap-1">
+              {(t.keywords || []).map(k => <span key={k} className="text-[10px] bg-[#EAF3F4] text-[#24505E] rounded-full px-2 py-0.5">🔑 {k}</span>)}
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-500">画像のパターン</label>
+              <div className="flex gap-1.5 mt-1">
+                {Object.keys(t.variants || {}).map(k => (
+                  <button key={k} onClick={() => setVariant(k)} className={`btn-press flex-1 text-sm py-2 rounded-lg border font-medium ${variant === k ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E]' : 'border-slate-200 bg-white text-slate-600'}`}>
+                    {k === 'person' ? '🧍 人物' : '🏞 風景'}{defaultVariant(t) === k ? '（既定）' : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-500">プロンプト（このままコピーして使います）</label>
+              <div className="mt-1 text-[12.5px] leading-relaxed font-mono whitespace-pre-wrap break-all bg-slate-900 text-slate-100 rounded-lg p-3 select-all">{text}</div>
+            </div>
+
+            {data.rules && (
+              <details className="text-[11px] text-slate-500">
+                <summary className="cursor-pointer">画像づくりの決まりごと</summary>
+                <ul className="mt-1 space-y-0.5 pl-4 list-disc">
+                  <li>{data.rules.person}</li>
+                  <li>風景パターンは「人物は入れないでください」を必ず入れる</li>
+                  <li>使わない場面：{(data.rules.ngScenes || []).join('・')}</li>
+                  <li>{data.rules.note}</li>
+                </ul>
+              </details>
+            )}
+          </>)}
+        </div>
+
+        {!!themes.length && (
+          <div className="border-t bg-white px-4 pt-3 shrink-0" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
+            <button onClick={doCopy} className={`btn-press w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm shadow ${copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+              {copied ? <><CheckCircle2 className="w-4 h-4" />コピーしました</> : <><Copy className="w-4 h-4" />プロンプトをコピー</>}
+            </button>
+            <button onClick={() => onApplyTitle(t.title)} className="btn-press w-full mt-2 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
+              {inCreate ? '✏️ このタイトルを文字入力欄に入れる' : '✨ このタイトルで作成をはじめる'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ============ デザイン編集パネル ============
 const TD = window.ThumbDesign;
 function Sl({ label, value, min, max, step, onChange, fmt }) {
@@ -871,7 +1014,7 @@ function Sel({ label, value, opts, onChange }) {
 function Acc({ title, open, children }) {
   return (<details open={open} className="border border-slate-200 rounded-lg bg-white"><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-700">{title}</summary><div className="px-3 pb-3 space-y-2">{children}</div></details>);
 }
-function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign }) {
+function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign, onOpenPrompts }) {
   const d = design;
   const up = (path, v) => setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); let cur = o; const ks = path.split('.'); for (let i = 0; i < ks.length - 1; i++) { if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; return o; });
   const n = TD.cellCount(d.template);
@@ -884,7 +1027,10 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
   const pct = v => Math.round(v * 100) + '%';
   const [tplName, setTplName] = useState('');
   const [presetKey, setPresetKey] = useState(d.template === 'none' ? 'none' : (TD.PRESET_ORDER.find(k => TD.PRESETS[k].apply().template === d.template) || 'single'));
-  useEffect(() => { if (d.template === 'none') setPresetKey('none'); }, [d.template]);
+  useEffect(() => {
+    if (d.template === 'none') setPresetKey('none');
+    else if (presetKey === 'none') setPresetKey(TD.PRESET_ORDER.find(k => k !== 'none' && TD.PRESETS[k].apply().template === d.template) || 'single');
+  }, [d.template]);
   const applySaved = (saved) => setDesign(prev => { const o = TD.merge(prev, saved || {}); const n2 = TD.cellCount(o.template); o.photos = (prev.photos || []).slice(0, n2); while (o.photos.length < n2) o.photos.push({ zoom: 1, dx: 0, dy: 0 }); return o; });
   // まとめて配置：ラベル・タイトル・サブを縦横9か所へ
   const placeAll = (h, v) => setDesign(prev => {
@@ -932,6 +1078,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
     <p className="text-[11px] text-slate-500">プレビューの写真をドラッグすると位置を動かせます</p>
     {!isNone && (<>
       <Acc title="✏️ タイトル・文字" open>
+        {onOpenPrompts && <button type="button" onClick={onOpenPrompts} className="btn-press w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#EAF3F4] text-[#24505E] border border-[#CBDFE4] text-xs font-bold">🎨 画像プロンプト集からタイトルを選ぶ</button>}
         <div className="text-xs text-slate-600 flex items-center gap-2"><span className="w-14 shrink-0">まとめて配置</span>
           <div className="grid grid-cols-3 gap-0.5">{['top', 'center', 'bottom'].map(v => ['left', 'center', 'right'].map(h => <button key={v + h} type="button" onClick={() => placeAll(h, v)} title={`${v === 'top' ? '上' : v === 'bottom' ? '下' : '中'}・${h === 'left' ? '左' : h === 'right' ? '右' : '中'}`} className="w-7 h-6 border border-slate-300 bg-white rounded-sm hover:bg-[#EAF3F4] flex items-center justify-center"><span className={`block w-2.5 h-1.5 bg-slate-500 rounded-sm ${h === 'left' ? 'mr-auto ml-0.5' : h === 'right' ? 'ml-auto mr-0.5' : ''} ${v === 'top' ? 'mb-auto mt-0.5' : v === 'bottom' ? 'mt-auto mb-0.5' : ''}`} /></button>))}</div>
           <span className="text-[10px] text-slate-400">ラベル・タイトル・サブを一括で</span></div>
@@ -1008,7 +1155,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
 }
 
 // ============ CreateTab ============
-function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate }) {
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply }) {
   const canvasRef = useRef(null);
   const isRegister = mode === 'register';
   const [saved, setSaved] = useState(null);      // 保存完了画面
@@ -1109,6 +1256,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   const onPointerUp = () => { dragRef.current = null; };
   // 動作確認用フック（写真をコードから差し込む）
   useEffect(() => { window.__thumbSetPhotos = (arr) => { setPhotoSrcs(arr); setDesign(prev => ({ ...prev, photos: arr.map((_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 }) })); }; window.__thumbSetDesign = (patch) => setDesign(prev => TD.merge(prev, patch)); return () => { delete window.__thumbSetPhotos; delete window.__thumbSetDesign; }; }, []);
+  // 画像プロンプト集で選んだタイトルを文字入力欄へ流し込む
+  useEffect(() => { if (titleToApply && titleToApply.text) setDesign(prev => ({ ...prev, title: { ...prev.title, text: titleToApply.text } })); }, [titleToApply]);
   // 最後に使ったデザインを次回の初期値に
   useEffect(() => { try { localStorage.setItem('thumb_design_last', JSON.stringify({ ...TD.strip(design), v: 2 })); } catch (e) {} }, [design]);
   // ギャラリーの「編集」から開いたとき：デザインと元写真を復元
@@ -1270,7 +1419,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               </div>
             ) : (
               <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={dragOver ? 'dnd-hi rounded-xl p-1' : ''}>
-                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} />
+                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} onOpenPrompts={onOpenPrompts} />
               </div>
             )}
           </section>
@@ -1851,6 +2000,10 @@ function App() {
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [designTemplates, setDesignTemplates] = useState([]);
+  const [prompts, setPrompts] = useState(null);
+  const [promptErrs, setPromptErrs] = useState([]);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [titleToApply, setTitleToApply] = useState(null);
   const [tplConfirm, setTplConfirm] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useLocalStorage('selected_project_id', null);
   // 最初はギャラリー。統合ツールから ?sched=ID で来たときは作成画面へ
@@ -1860,6 +2013,14 @@ function App() {
   const [highlightId, setHighlightId] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   const showToast = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(''), 3000); };
+
+  // 画像プロンプト集（静的JSON）を読み込み、運用ルールをチェック
+  useEffect(() => {
+    fetch(`${PROMPTS_URL}?v=${window.APP_VERSION || ''}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(d => { setPrompts(d); setPromptErrs(validatePrompts(d)); })
+      .catch(e => console.warn('画像プロンプトを読み込めませんでした', e));
+  }, []);
 
   useEffect(() => {
     if (!auth) return;
@@ -1901,11 +2062,22 @@ function App() {
       {(view === 'create' || view === 'register') && (
         <CreateTab key={view} mode={view} user={user} accounts={accounts} categories={categories} projects={projects}
           selectedProject={selectedProject} showToast={showToast} openGallery={() => goGallery()} schedules={schedules} editImg={editImg}
-          onSaved={(id) => { setHighlightId(id); }} designTemplates={designTemplates} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate} />
+          onSaved={(id) => { setHighlightId(id); }} designTemplates={designTemplates} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate}
+          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} />
       )}
       {tplConfirm && <ConfirmModal {...tplConfirm} />}
+      {promptOpen && (
+        <PromptModal data={prompts} errs={promptErrs} inCreate={view === 'create'} showToast={showToast}
+          onClose={() => setPromptOpen(false)}
+          onApplyTitle={(text) => {
+            setTitleToApply({ text, at: Date.now() });
+            setPromptOpen(false);
+            if (view !== 'create') { setEditImg(null); setView('create'); }
+            showToast('タイトルを入れました');
+          }} />
+      )}
       {menuOpen && (
-        <HamburgerMenu onClose={() => setMenuOpen(false)}
+        <HamburgerMenu onOpenPrompts={() => setPromptOpen(true)} onClose={() => setMenuOpen(false)}
           accounts={accounts} categories={categories} projects={projects}
           selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId}
           showToast={showToast} />
