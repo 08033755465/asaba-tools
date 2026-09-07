@@ -501,7 +501,7 @@
     <label class="mt">共通タイトル（キャッチコピー・CSV/サムネに使用）</label>
     <input id="sm_catch" placeholder="例：正しい呼吸で自律神経を整え、心も体もスッキリ！">
     <div class="row mt">
-      <div><label>投稿予定日</label><input type="date" id="sm_date"></div>
+      <div><label>投稿予定日</label><input type="date" id="sm_date" onchange="smDateChanged(this.value)"></div>
       <div><label>投稿時間</label><span class="tfrow"><input type="hidden" id="sm_time"><input class="tf" id="sm_time_v" type="text" inputmode="numeric" maxlength="5" placeholder="--:--" onfocus="this.select()" oninput="tfType('sm_time',null)" onblur="tfNorm('sm_time')"></span></div>
     </div>
     <div class="row mt">
@@ -4504,6 +4504,17 @@ window.dupEvent = (id)=>{
 let editingSchedId = null;
 let smImage = null; // 予定編集中に紐付けたサムネ画像 {title, id, url}
 let smPrevImageId = null; // モーダルを開いた時点で紐付いていた画像ID（解除の逆側クリア用）
+// 2026/10/01以降の配信カデンス：毎月1日（8:30）＋火8:30／金17:00（GMO日別インサイト12ヶ月分析による）
+function cadenceTime(dateStr){
+  if(!dateStr || dateStr < "2026-10-01") return "";
+  if(dateStr.slice(8)==="01") return "08:30";                    // 毎月1日（月の主テーマ・型4イベント）
+  const dow = new Date(dateStr+"T00:00:00").getDay();
+  if(dow===2) return "08:30";                                    // 火 → 水木の山をカバー
+  if(dow===5) return "17:00";                                    // 金 → 土日月をカバー
+  return "";
+}
+// 手入力した時刻は上書きしない（既定値のときだけ差し替える）
+function isDefaultTime(t){ return !t || ["07:00","16:00","08:30","17:00"].includes(t); }
 const defaultTime = (ab)=>{
   // パターン→そのパターンを含む配信枠の時刻を既定に。無ければ現行フォールバック
   const pt = patternOf(ab);
@@ -4535,6 +4546,13 @@ window.openSchedEdit = (id, presetDate)=>{
   const smEv = (v)=> ["sm_evRow","sm_evRow2"].forEach(id=>{ document.getElementById(id).style.display = (["イベント","クーポン"].includes(v)) ? "" : "none"; });
   smEv(s?.postType);
   document.getElementById("sm_postType").onchange = (e)=> smEv(e.target.value);
+  window.smDateChanged = (v)=>{
+    const ct = cadenceTime(v);
+    if(ct && isDefaultTime(document.getElementById("sm_time").value)){
+      setTf("sm_time", ct);
+      toast(`🕐 ${v.slice(8)==="01"?"毎月1日":(new Date(v+"T00:00:00").getDay()===2?"火曜":"金曜")}の配信時刻 ${ct} にしました`);
+    }
+  };
   window.smFormatChanged = ()=>{
     // 型4（メニュー訴求）は毎月1日のイベント投稿にする運用 → 投稿タイプを自動でイベントへ
     if(document.getElementById("sm_formatId").value==="f_menu"){
@@ -6472,9 +6490,12 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-08.1";
+const STUDIO_VERSION = "2026-09-08.2";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-08.2", items:[
+      `<b>10月からの配信スケジュールに対応しました</b>：月8投稿＝毎月1日（型4イベント・8:30）＋火曜8:30・金曜17:00、全19店舗一括配信。予定の日付を選ぶと配信時刻が自動で入ります（手で変えた時刻はそのまま）`,
+      `根拠：19店舗×12ヶ月の実データ分析。閲覧・アクションの山は水木土月にあり、火・金配信で翌日の山をカバーします。前回投稿から4日以内の間隔を保つ設計です` ] },
   { v:"2026-09-08.1", items:[
       `<b>カレンダーが投稿の型ごとの色と絵文字に</b>：🍂型1 季節×症状／☑️型2 チェックリスト／📖型3 物語・縦リズム／🎫型4 イベント。予定リスト・日付ポップにも型バッジが付きます`,
       `<b>型4（メニュー訴求）を選ぶと投稿タイプが自動で「イベント」に</b>：毎月1日に配信する月1のイベント投稿として運用します（イベントのタイトルはキャッチコピー欄がそのままGMOのタイトルになります）`,

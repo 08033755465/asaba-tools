@@ -32,7 +32,7 @@ const TOOLS = [
   { name: 'update_store', description: '店舗マスタを部分更新する。fields に変更したい項目だけを渡す（例 {"phone":"04-...","hours":"月〜土 9:20〜18:30"}）。', inputSchema: S({ store: str('店舗ID または 店名'), fields: { type: 'object', description: '更新する項目', additionalProperties: true } }, ['store', 'fields']) },
   { name: 'list_schedules', description: '投稿予定の一覧。month（"2026-09"）または from/to（YYYY-MM-DD）で絞る。省略時は今月。', inputSchema: S({ month: str('対象月 YYYY-MM'), from: str('開始日 YYYY-MM-DD'), to: str('終了日 YYYY-MM-DD'), include_past: bool('過去すべて') }) },
   { name: 'get_schedule', description: '予定1件の全項目。with_contents=true で保存済み本文も返す。', inputSchema: S({ id: str('予定ID'), with_contents: bool('本文も返す') }, ['id']) },
-  { name: 'create_schedule', description: '投稿予定を新規作成する。date必須。time省略時は abType A=16:00 / B=07:00。scope は category_common（整体整骨＋Peaceの2本）か per_store（店舗別）。storeIds 省略時は全店。', inputSchema: S({
+  { name: 'create_schedule', description: '投稿予定を新規作成する。date必須。time省略時は配信カデンスから自動（2026/10以降：毎月1日と火曜=8:30、金曜=17:00。それ以外は A=16:00/B=07:00）。scope は category_common（整体整骨＋Peaceの2本）か per_store（店舗別）。storeIds 省略時は全店。', inputSchema: S({
     title: str('テーマ／共通タイトル'), catchTitle: str('キャッチコピー（GMOのタイトル欄）'), date: str('投稿日 YYYY-MM-DD'), time: str('投稿時間 HH:MM'), abType: str('配信枠 A/B'),
     kw: str('狙うキーワード'), context: str('今回の文脈・特別指示'), imageMemo: str('画像メモ（「人物なし」で情景のみ）'), formatId: str('投稿の型 f_season/f_symptom/f_story/f_rhythm/f_menu'),
     postType: str('最新情報/イベント/クーポン'), btnType: str('予約/詳細/今すぐ電話/なし など'), scope: str('category_common または per_store'), storeIds: { type: 'array', items: { type: 'string' }, description: '対象店舗IDの配列' },
@@ -99,7 +99,7 @@ async function callTool(name, a, ctx) {
       const { STORES } = await M.loadStores();
       const id = M.uid();
       const ab = (a.abType || 'A').toUpperCase();
-      const rec = { id, title: a.title, catchTitle: a.catchTitle || '', themeTitle: a.title, date: a.date, time: a.time || TIME_DEFAULT[ab] || '16:00', abType: ab,
+      const rec = { id, title: a.title, catchTitle: a.catchTitle || '', themeTitle: a.title, date: a.date, time: a.time || M.cadenceTime(a.date) || TIME_DEFAULT[ab] || '16:00', abType: ab,
         kw: a.kw || '', context: a.context || '', imageMemo: a.imageMemo || '', imageTitle: '', imageId: '', imageUrl: '',
         postType: a.postType || '最新情報', btnType: a.btnType || '', formatId: a.formatId || '', evStart: a.evStart || '', evEnd: a.evEnd || '', evStartTime: a.evStartTime || '', evEndTime: a.evEndTime || '',
         timing: a.timing || 'scheduled', scope: a.scope || 'category_common', storeIds: (a.storeIds && a.storeIds.length) ? a.storeIds.map(String) : STORES.map(s => s.gmo),
