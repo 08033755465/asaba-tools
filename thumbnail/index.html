@@ -22,7 +22,7 @@
 }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-<script src="design-engine.js?v=2026-09-08.1"></script>
+<script src="design-engine.js?v=2026-09-09.1"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
@@ -86,7 +86,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-08.1";
+  window.APP_VERSION = "2026-09-09.1";
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -206,7 +206,12 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.6 投稿の型ごとのサムネ運用（2026-09-08）】
+const RELEASE_NOTES = `【v2.7 9月・10月のテーマ別プロンプト（2026-09-09）】
+・「テーマ集」タブが、実際の配信予定（9月8本・10月8本）のプロンプトに入れ替わりました
+・各テーマに型のバッジが付き、その型の決まり（型1＝人物・画像内に文字／型2＝風景のみ／型3・4＝人物と風景を選択）どおりのプロンプトが出ます
+・予定に紐付けて開くと、その日のテーマが自動で選ばれます
+
+【v2.6 投稿の型ごとのサムネ運用（2026-09-08）】
 ・プロンプト集に「型から作る」タブを追加：型1〜4それぞれの背景プロンプトが入っていて、紐付けた予定のテーマ・画像メモが自動で差し込まれます
 ・型1＝人物あり（文字まで画像内に生成）／型2＝風景のみ／型3・4＝人物あり・風景を手動で選択
 ・マイテンプレに「使う型」を設定できます。予定から開くと、その型のテンプレが自動で適用され、テーマタイトルが文字に入ります（型2はサブ欄＝メインの位置に入ります）
@@ -261,11 +266,21 @@ const NOTION_FEEDBACK_URL = '';
 function validatePrompts(data) {
   const errs = [];
   ((data && data.themes) || []).forEach(t => {
+    // 型1＝画像内にタイトルまで生成／型2〜4＝背景だけ生成し文字はツールで載せる
+    const withText = !t.kata || t.kata === '1';
     Object.entries(t.variants || {}).forEach(([k, raw]) => {
       const v = String(raw || '').trim();
-      if (!v.endsWith('文字はタイトルのみにしてください')) errs.push(`${t.id}／${k}：末尾が「文字はタイトルのみにしてください」で終わっていません`);
+      if (withText) {
+        if (!v.endsWith('文字はタイトルのみにしてください')) errs.push(`${t.id}／${k}：末尾が「文字はタイトルのみにしてください」で終わっていません`);
+        if (t.title && !v.includes(t.title)) errs.push(`${t.id}／${k}：タイトルが入っていません`);
+      } else if (!v.endsWith('文字は入れないでください')) {
+        errs.push(`${t.id}／${k}：末尾が「文字は入れないでください」で終わっていません`);
+      }
       if (k === 'scenery' && !v.includes('人物は入れないでください')) errs.push(`${t.id}／風景：「人物は入れないでください」が入っていません`);
+      ['施術', '白衣', '骨格模型', 'ビフォーアフター'].forEach(ng => { if (v.includes(ng)) errs.push(`${t.id}／${k}：使わない場面「${ng}」が入っています`); });
     });
+    if (t.kata === '1' && !t.variants.person) errs.push(`${t.id}：型1は人物ありのプロンプトが必要です`);
+    if (t.kata === '2' && t.variants.person) errs.push(`${t.id}：型2は風景のみです（人物ありは不要）`);
   });
   if (errs.length) console.warn('[画像プロンプト] 運用ルールに合わない項目があります:', errs);
   return errs;
@@ -953,8 +968,8 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, s
   const [touched, setTouched] = useState(false);
   useEffect(() => { if (!touched) setIdx(auto.idx); }, [auto.idx]);
   const t = themes[idx] || null;
-  const [variant, setVariant] = useState(() => defaultVariant(themes[idx]));
-  useEffect(() => { setVariant(defaultVariant(themes[idx])); setCopied(false); }, [idx]);
+  const [variant, setVariant] = useState(() => { const th = themes[idx]; const vs = Object.keys((th && th.variants) || {}); const d = defaultVariant(th); return vs.includes(d) ? d : (vs[0] || 'scenery'); });
+  useEffect(() => { const th = themes[idx]; const vs = Object.keys((th && th.variants) || {}); const dv = defaultVariant(th); setVariant(vs.includes(dv) ? dv : (vs[0] || 'scenery')); setCopied(false); }, [idx]);
   const text = (t && t.variants && t.variants[variant]) || '';
   const fmtOpt = (x) => `${(x.date || '').replace(/-/g, '/')}（${x.abType}）${x.theme}`;
   // --- 型タブ ---
@@ -1062,10 +1077,11 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, s
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${t.abType === 'A' ? 'bg-[#DCE9EE] text-[#24505E]' : 'bg-[#F7E3D8] text-[#B25B44]'}`}>{t.abType} {t.abType === 'A' ? 'メイン' : 'サブ'}</span>
               <span className="text-[11px] text-slate-500">第{t.week}週</span>
+              {t.kata && <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-[#EAF3F4] text-[#24505E]">{(KATA_META[t.kata] || {}).emoji || ''}型{t.kata}</span>}
               <span className="text-sm font-bold text-slate-800">{t.theme}</span>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-              <div className="text-[10px] text-slate-500 mb-0.5">画像に入れる文字（全店舗共通タイトル）</div>
+              <div className="text-[10px] text-slate-500 mb-0.5">{t.kata === '1' ? '画像の中に入れる文字（型1は生成時に文字も入れます）' : 'サムネツールで載せる文字（画像内には入れません）'}</div>
               <div className="text-sm font-bold text-slate-800 break-all">{t.title}</div>
             </div>
             <div className="flex flex-wrap gap-1">
@@ -1074,11 +1090,13 @@ function PromptModal({ data, errs, onClose, onApplyTitle, inCreate, showToast, s
             <div>
               <label className="text-xs font-medium text-slate-500">画像のパターン</label>
               <div className="flex gap-1.5 mt-1">
-                {Object.keys(t.variants || {}).map(k => (
+                {Object.keys(t.variants || {}).length > 1 ? Object.keys(t.variants).map(k => (
                   <button key={k} onClick={() => setVariant(k)} className={`btn-press flex-1 text-sm py-2 rounded-lg border font-medium ${variant === k ? 'border-[#2F6D80] bg-[#EAF3F4] text-[#24505E]' : 'border-slate-200 bg-white text-slate-600'}`}>
-                    {k === 'person' ? '🧍 人物' : '🏞 風景'}{defaultVariant(t) === k ? '（既定）' : ''}
+                    {k === 'person' ? '🧍 人物あり' : '🏞 風景のみ'}{defaultVariant(t) === k ? '（既定）' : ''}
                   </button>
-                ))}
+                )) : (
+                  <div className="flex-1 text-sm py-2 rounded-lg bg-slate-100 text-slate-600 text-center font-medium">🏞 風景のみ（型{t.kata}の決まり）</div>
+                )}
               </div>
             </div>
             <div>
