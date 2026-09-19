@@ -166,18 +166,21 @@ async function callTool(name, a, ctx) {
     case 'export_file': {
       const s = await getSched(a.id);
       const { STORES } = await M.loadStores();
-      const rows = M.buildRowsFrom(s, STORES);
+      const tpl = await M.loadBulkTemplate();
+      const COLS = tpl.cols.map;
+      const rows = M.buildRowsFrom(s, STORES, tpl);
       const errs = [];
+      if (tpl.cols.missing.length) errs.push(`一括投稿テンプレートの列が見つかりません：${tpl.cols.missing.join('・')}（アプリの設定タブで最新テンプレートを読み込んでください）`);
       if (!(s.title || '').trim()) errs.push('タイトルが未入力です');
       if (s.timing !== 'immediate' && !s.date) errs.push('投稿日が未確定です');
       if (!rows.length) errs.push('対象店舗がありません');
-      rows.forEach(r => { const c = r[M.COL.CONTENT]; if (!String(c || '').trim()) { errs.push(`${r[M.COL.STORE_NAME]}：本文が空です`); return; } const v = M.validate(c); if (v.ng.length) errs.push(`${r[M.COL.STORE_NAME]}：NGワード（${v.ng.map(n => n.word).join('、')}）`); if (v.phone) errs.push(`${r[M.COL.STORE_NAME]}：電話番号あり`); });
+      rows.forEach(r => { const c = r[COLS.body]; if (!String(c || '').trim()) { errs.push(`${r[COLS.storeName]}：本文が空です`); return; } const v = M.validate(c); if (v.ng.length) errs.push(`${r[COLS.storeName]}：NGワード（${v.ng.map(n => n.word).join('、')}）`); if (v.phone) errs.push(`${r[COLS.storeName]}：電話番号あり`); });
       if (errs.length && !a.force) return { ok: false, errors: errs, note: '直してから再実行するか、force:true で出力してください' };
       const fmt = a.fmt === 'csv' ? 'csv' : 'xlsx';
       const url = `${ctx.origin}/api/export/${ctx.key}?id=${encodeURIComponent(s.id)}&fmt=${fmt}`;
       await M.addDoc('studio_posts', { schedId: s.id, title: s.title || '', catchTitle: s.catchTitle || '', date: s.date || '', time: s.time || '', abType: s.abType || '', kw: s.kw || '', postType: s.postType || '最新情報', timing: s.timing || 'scheduled', scope: s.scope || 'category_common', storeIds: s.storeIds || [], contents: s.contents || {}, overrides: s.overrides || {}, imageTitle: M.safeImgName(s.imageTitle || ''), imageId: s.imageId || '', createdAt: Date.now(), source: 'claude-mcp' });
       await M.mergeDoc('studio_schedule', s.id, { done: true });
-      return { ok: true, url, fileName: `【あさば様】一括投稿_${M.mmddFrom(s)}.${fmt}`, rows: rows.length, columns: rows[0].length, warnings: errs, imageTitle: M.safeImgName(s.imageTitle || ''), note: 'このURLを開くとファイルがダウンロードされます。画像はGMOのライブラリに同じ名前で先にアップしてください' };
+      return { ok: true, url, fileName: `あさば様_一括投稿_${M.mmddFrom(s)}.${fmt}`, rows: rows.length, columns: rows[0].length, template: tpl.version, warnings: errs, imageTitle: M.safeImgName(s.imageTitle || ''), note: 'このURLを開くとファイルがダウンロードされます。画像はGMOのライブラリに同じ名前で先にアップしてください' };
     }
     case 'set_post_status': {
       const s = await getSched(a.id);

@@ -17,18 +17,19 @@ module.exports = async (req, res) => {
     const s = await M.getDoc('studio_schedule', id);
     if (!s) { res.status(404).send('予定が見つかりません: ' + id); return; }
     const { STORES } = await M.loadStores();
-    const rows = M.buildRowsFrom(s, STORES);
+    const tpl = await M.loadBulkTemplate();
+    const rows = M.buildRowsFrom(s, STORES, tpl);
     const fmt = req.query.fmt === 'csv' ? 'csv' : 'xlsx';
-    const name = `【あさば様】一括投稿_${M.mmddFrom(s)}.${fmt}`;
+    const name = `あさば様_一括投稿_${M.mmddFrom(s)}.${fmt}`;
     const ascii = `asaba_post_${M.mmddFrom(s)}.${fmt}`;
     res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`);
     res.setHeader('Cache-Control', 'no-store');
     if (fmt === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.status(200).send(M.csvFrom(rows));
+      res.status(200).send(M.csvFrom(rows, tpl));
     } else {
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.status(200).send(M.xlsxFrom(rows));
+      res.status(200).send(M.xlsxFrom(rows, tpl));
     }
   } catch (e) {
     res.status(500).send('出力エラー: ' + (e && e.message ? e.message : String(e)));

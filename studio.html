@@ -100,6 +100,8 @@
   .cal-chip.a { background:#DCE9EE; color:#2F6D80; } .cal-chip.b { background:#F7E3D8; color:#B25B44; }
   .cal-chip.posted { background:#FBE9DE; color:#B25B44; }
   .cal-chip.overdue { background:#F8ECD9; color:#B07A2E; }
+  .cal-chip.gbpok { background:#E3F0E4; color:#2F6B4F; font-weight:700; }
+  .cal-chip.gbpng { background:#F6DEDA; color:#A34A3E; font-weight:700; }
   .cal-chip.canceled { background:#e2e8f0; color:#64748b; text-decoration:line-through; }
   .cal-chip.mistake { background:#F6DEDA; color:#A34A3E; }
   .cal-chip.ghost { background:transparent; color:#b6bec9; border:1px dashed #d7dde5; text-decoration:line-through; }
@@ -389,6 +391,22 @@
       <input id="role_gmo_upload" placeholder="https://...">
       <button class="btn btn-ghost mt" onclick="saveRoleLinks()">保存</button>
       <div id="roleLinkStatus" class="hint mt"></div>
+    </div>
+    <div class="card">
+      <h2>📋 一括投稿テンプレート</h2>
+      <p class="hint" style="margin-top:0;">GMOの一括投稿テンプレートは予告なく列が増減します。<b>新しいテンプレートXLSXを読み込むだけ</b>で、出力する列がそのまま追従します（チーム全員に共有）</p>
+      <div id="tplStatus" class="mt"></div>
+      <label class="mt" style="font-size:12px; font-weight:600;">テンプレートXLSXを読み込む</label>
+      <input type="file" id="tpl_file" accept=".xlsx,.xls" style="font-size:12px;" onchange="importBulkTemplate(this)">
+      <p class="hint">GMO管理画面 → 投稿一括インポート → テンプレートのダウンロード で取得したファイルをそのまま選んでください</p>
+      <div id="tplDiff" class="mt"></div>
+      <label class="mt" style="font-size:12px; font-weight:600;">本文の改行の出し方</label>
+      <select id="tpl_newline" onchange="setTplNewline(this.value)">
+        <option value="real">実際の改行で出力（現行・推奨）</option>
+        <option value="literal">\n の2文字で出力</option>
+      </select>
+      <p class="hint">GBP上で「\n」がそのまま表示される場合だけ切り替えてください</p>
+      <button class="btn btn-ghost mt" onclick="resetBulkTemplate()">初期テンプレート（55列）に戻す</button>
     </div>
     <div class="card">
       <h2>🏪 店舗マスタ</h2>
@@ -1093,6 +1111,11 @@ try {
     delPattern: (id) => deleteDoc(doc(db, ...basePath('studio_patterns'), id)),
     setSlotset: (rec) => setDoc(doc(db, ...basePath('studio_slotsets'), rec.id), rec),
     delSlotset: (id) => deleteDoc(doc(db, ...basePath('studio_slotsets'), id)),
+    // 一括投稿テンプレート（列定義・店舗一覧。チーム共有）
+    setBulkTpl: (rec) => setDoc(doc(db, ...basePath('studio_settings'), 'bulk_template'), rec),
+    // GBP掲載チェック（1日1ドキュメント。id = YYYY-MM-DD）
+    setGbpCheck: (rec) => setDoc(doc(db, ...basePath('studio_gbpcheck'), rec.id), rec),
+    delGbpCheck: (id) => deleteDoc(doc(db, ...basePath('studio_gbpcheck'), id)),
   };
   try {
     const snap = await getDocs(collection(db, ...basePath('studio_schedule')));
@@ -1136,6 +1159,22 @@ try {
     window.__slotsets = arr;
     window.dispatchEvent(new Event('slotsets-ready'));
   }, (e)=> console.warn('slotsets read error', e));
+
+  // ===== 一括投稿テンプレート（チーム共有・Firestore） =====
+  onSnapshot(doc(db, ...basePath('studio_settings'), 'bulk_template'), (d) => {
+    if (!d.exists()) return;
+    window.__bulkTpl = d.data();
+    window.dispatchEvent(new Event('bulktpl-ready'));
+  }, (e)=> console.warn('bulk template read error', e));
+
+  // ===== GBP掲載チェック（チーム共有・Firestore） =====
+  onSnapshot(collection(db, ...basePath('studio_gbpcheck')), (s) => {
+    const arr = [];
+    s.forEach(d => arr.push({ ...d.data(), id: d.id }));
+    arr.sort((a,b)=> (a.date||'').localeCompare(b.date||''));
+    window.__gbpchecks = arr;
+    window.dispatchEvent(new Event('gbpcheck-ready'));
+  }, (e)=> console.warn('gbpcheck read error', e));
 
   // ===== 指示テンプレート（チーム共有・Firestore） =====
   onSnapshot(collection(db, ...basePath('studio_templates')), (s) => {
@@ -1265,6 +1304,13 @@ let CAT_LABEL = { seitai_seikotsu:"整体整骨グループ", pilates:"マシン
 // ============================================================
 
 // ---- 共通項目：どの業態でも表示される ----
+const GBP_URL_SEED = {"117528": ["あさば整骨院 江戸川台店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E6%B1%9F%E6%88%B8%E5%B7%9D%E5%8F%B0%E5%BA%97&stick=H4sIAAAAAAAA_wFOALH_CAYiJTB4NjAxODk5NjRmYTZjMDJkZjoweDRhZjdiNTNhNjNlNDE3MzeiBSLjgYLjgZXjgbDmlbTpqqjpmaIg5rGf5oi45bed5Y-w5bqXg-shTk4AAAA&hl=ja#mpd=~9303201307678823283/promote/updates"], "117413": ["あさば整骨院 南流山店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E5%8D%97%E6%B5%81%E5%B1%B1%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODliZTA2NGVkMDdjOToweDEzNzNmMjVhZmNhMjIyNzCiBR_jgYLjgZXjgbDmlbTpqqjpmaIg5Y2X5rWB5bGx5bqX78SN40sAAAA&hl=ja#mpd=~11848074848005183820/promote/updates"], "117411": ["あさば整骨院 柏の葉店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E6%9F%8F%E3%81%AE%E8%91%89%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODlkYTJhMDIzMTUxMzoweDlmYWRiMDk5OWMxMDQ3NjeiBR_jgYLjgZXjgbDmlbTpqqjpmaIg5p-P44Gu6JGJ5bqXtRnalksAAAA&hl=ja#mpd=~269076033844285934/promote/updates"], "117529": ["あさば整骨院 新松戸店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E6%96%B0%E6%9D%BE%E6%88%B8%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODliOGYxYjA4MDk4NToweDYyNTgyYzg4ZWM4NjViMjOiBR_jgYLjgZXjgbDmlbTpqqjpmaIg5paw5p2-5oi45bqXZh8lkksAAAA&hl=ja#mpd=~7271646181846699978/promote/updates"], "117530": ["あさば整骨院 八潮店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E9%AA%A8%E9%99%A2+%E5%85%AB%E6%BD%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFIALf_CAYiJTB4NjAxODkxNDlhMGQ0NWVkNToweDU5MmIyMzA5MmVlYjkyZGaiBRzjgYLjgZXjgbDmlbTpqqjpmaIg5YWr5r2u5bqXGKMxLUgAAAA&hl=ja#mpd=~2533570065212041805/promote/updates"], "117531": ["あさば整体院 我孫子店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E6%88%91%E5%AD%AB%E5%AD%90%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODlkOTk0ZjRjODliZDoweDlkZDc4YzFiNTVmMDQyMDeiBR_jgYLjgZXjgbDmlbTkvZPpmaIg5oiR5a2r5a2Q5bqXgatpQksAAAA&hl=ja#mpd=~16904396832143391775/promote/updates"], "117532": ["あさば整体院 三ノ輪店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E4%B8%89%E3%83%8E%E8%BC%AA%E5%BA%97&stick=H4sIAAAAAAAA_wFLALT_CAYiJTB4NjAxODhmYTIyMWE4NDAwNToweDg1MzI3OGJhMWZkOWQ0ZTeiBR_jgYLjgZXjgbDmlbTkvZPpmaIg5LiJ44OO6Lyq5bqX9FVviksAAAA&hl=ja#mpd=~273039544295756561/promote/updates"], "117533": ["あさば整体院 三郷中央店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E4%B8%89%E9%83%B7%E4%B8%AD%E5%A4%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFOALH_CAYiJTB4NjAxODliNjA3ZmFlNzhmZjoweGE5NWE5NDkzZWM1ZmM2MDSiBSLjgYLjgZXjgbDmlbTkvZPpmaIg5LiJ6YO35Lit5aSu5bqXfCHDdk4AAAA&hl=ja#mpd=~13531277050526437677/promote/updates"], "117534": ["あさば整体院 守谷店", "https://www.google.com/search?q=%E3%81%82%E3%81%95%E3%81%B0%E6%95%B4%E4%BD%93%E9%99%A2+%E5%AE%88%E8%B0%B7%E5%BA%97&stick=H4sIAAAAAAAA_wFHALj_CAYiJDB4NjAxODlmYzkwN2ViNjg0MzoweDkzMTE4MmVkZTU2NzVmNaIFHOOBguOBleOBsOaVtOS9k-mZoiDlrojosLflupeGONoiRwAAAA&hl=ja#mpd=~8210251970703958832/promote/updates"], "117600": ["マシンピラティスPeace 柏の葉店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E6%9F%8F%E3%81%AE%E8%91%89&stick=H4sIAAAAAAAA_-NgU1I1qDAzMLSwTLE0MzNJTDIyNkqzMqhINjBKTjJKNje3SLVMAwouYlV_3DzvcdP2x82bHzdPedy88nFz2-OmxY-bdgakJianKjyb3_-4cd2LiZ0AYPKWwlMAAAA&hl=ja#mpd=~17574575285139669075/promote/updates"], "117599": ["マシンピラティスPeace 南流山店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E5%8D%97%E6%B5%81%E5%B1%B1%E5%BA%97&stick=H4sIAAAAAAAA_wFWAKn_CAYiJTB4NjAxODliZGYxNmZiOGI0MzoweDk4NjQxMGVkZDdmZTNjOTOiBSrjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDljZfmtYHlsbHlupcr70KsVgAAAA&hl=ja#mpd=~7486440184043492746/promote/updates"], "117601": ["マシンピラティスPeace 八潮店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E5%85%AB%E6%BD%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFTAKz_CAYiJTB4NjAxODkxNTViN2ZjNmY5MToweDZhNzY0YTI2MzA3YTQyZDiiBSfjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDlhavmva7lupdykOMXUwAAAA&hl=ja#mpd=~8330506207161410416/promote/updates"], "117598": ["マシンピラティスPeace 新松戸店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9+Peace+%E6%96%B0%E6%9D%BE%E6%88%B8%E5%BA%97&stick=H4sIAAAAAAAA_wFXAKj_CAYiJTB4NjAxODliM2NhZTIxNzdkZjoweGMzNTFiYTdlOTMyMGI4OWOiBSvjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrkgUGVhY2Ug5paw5p2-5oi45bqXdOxy-FcAAAA&hl=ja#mpd=~10493512015318642119/promote/updates"], "117597": ["マシンピラティスPeace 守谷店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E5%AE%88%E8%B0%B7%E5%BA%97&stick=H4sIAAAAAAAA_wFTAKz_CAYiJTB4NjAxODlmMTE0NjBjZjJiOToweDM0OWZlN2IzOTE3ODkyNmWiBSfjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDlrojosLflupfyWDarUwAAAA&hl=ja#mpd=~17705515810348660797/promote/updates"], "117595": ["マシンピラティスPeace 三郷中央店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E4%B8%89%E9%83%B7%E4%B8%AD%E5%A4%AE%E5%BA%97&stick=H4sIAAAAAAAA_wFZAKb_CAYiJTB4NjAxODliNGFhNDM4YTAxYjoweGZmM2RkNzg1ZmRiMWE4YjCiBS3jg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDkuInpg7fkuK3lpK7lupcQKF-2WQAAAA&hl=ja#mpd=~13239316991715832423/promote/updates"], "117537": ["マシンピラティスPeace 我孫子店", "https://www.google.com/search?q=%E3%83%9E%E3%82%B7%E3%83%B3%E3%83%94%E3%83%A9%E3%83%86%E3%82%A3%E3%82%B9Peace+%E6%88%91%E5%AD%AB%E5%AD%90%E5%BA%97&stick=H4sIAAAAAAAA_wFWAKn_CAYiJTB4NjAxODlkZDdjNzgxNWJlNzoweDQ3MTQyZDU5ZTdiZGM1OTCiBSrjg57jgrfjg7Pjg5Tjg6njg4bjgqPjgrlQZWFjZSDmiJHlravlrZDlupfCWQ2QVgAAAA&hl=ja#mpd=~3956768292643683592/promote/updates"]};
+function gbpUrlOf(st){
+  if(!st) return "";
+  if(st.gbpUrl) return st.gbpUrl;
+  const s = GBP_URL_SEED[String(st.gmoId||"").trim()];
+  return s ? s[1] : "";
+}
 const STORE_CORE = [
   { g:"基本",   key:"name",        label:"店舗名",             type:"text", req:1, ph:"マシンピラティスPeace 東川口店" },
   { g:"基本",   key:"brand",       label:"ブランド・屋号",     type:"text", ph:"マシンピラティスPeace" },
@@ -1284,6 +1330,7 @@ const STORE_CORE = [
   { g:"リンク", key:"instagram",   label:"Instagram",          type:"text", ph:"@xxxx" },
   { g:"リンク", key:"otherUrl",    label:"その他リンク",       type:"url" },
   { g:"リンク", key:"btnType",     label:"投稿ボタンの種類",   type:"select", opts:["","予約","オンライン注文","購入","詳細","登録","今すぐ電話","なし"] },
+  { g:"リンク", key:"gbpUrl",     label:"GBP投稿ページURL", type:"url", ph:"https://www.google.com/search?q=...#mpd=.../promote/updates" },
   { g:"リンク", key:"driveUrl",    label:"この店の写真フォルダ（Drive）", type:"url", ph:"https://drive.google.com/drive/folders/..." },
   { g:"連携ID", key:"gmoId",       label:"GMO店舗ID",          type:"text", req:1, ph:"117528" },
   { g:"連携ID", key:"gbpStoreCode",label:"GBP店舗コード",      type:"text" },
@@ -2392,10 +2439,67 @@ const CLAIM_RE = /(年間|月間|累計)?\s*[0-9０-９][0-9０-９,，]*\s*(件
 const PRIVACY_RE = /[0-9０-９]{2,3}\s*(kg|ｋｇ|キロ|cm|ｃｍ|センチ)/i;
 
 // ============ 52列ヘッダー（新テンプレ 2026-07更新） ============
-const HEADERS = ["店舗ID","店舗名","投稿タイプ","下書き保存","即時投稿","予約投稿日","予約投稿時間","Google繰り返し投稿日","Google繰り返し投稿時間","Google繰り返し設定_繰り返し","Google繰り返し設定_間隔","Google繰り返し設定_曜日（週 選択時）","Google繰り返し設定_日付（月_日付 選択時）","Google繰り返し設定_週指定（月_曜日 選択時）","Google繰り返し投稿終了日（省略可）","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日","Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間","A_掲載期間の設定（Apple記載欄）の予約投稿日 ","A_掲載期間の設定（Apple記載欄）の予約投稿終了日","タイトル(GoogleとSNSは任意入力、Yahoo!は必須）","投稿内容","投稿内容２","画像","クーポンコード（省略可）","特典利用へのリンク","利用規約","ボタンの追加","ボタンURL","A_アクションボタン（Apple）","ハッシュタグ","開始日","開始時間","終了日","終了時間","Facebook","Instagram","X（旧Twitter）","Yahoo!","Apple","エキテン","エ_投稿カテゴリー","エ_掲載開始日（エキテン記載欄）","エ_掲載開始時間（エキテン記載欄）","エ_掲載終了日（エキテン記載欄）","エ_掲載終了時間（エキテン記載欄）","エ_タイムライン通知"];
-const COL = { STORE_ID:0,STORE_NAME:1,POST_TYPE:2,IMMEDIATE:4,SDATE:5,STIME:6,TITLE:25,CONTENT:26,IMAGE:28,BTYPE:32,BURL:33,EV_SDATE:36,EV_STIME:37,EV_EDATE:38,EV_ETIME:39 };
-// SNS連携列（Facebook/Instagram/X/Yahoo!/Apple/エキテン/エ_タイムライン通知）。実運用では空欄で出力する
-const COL_SNS = [40,41,42,43,44,45,51];
+// ============ 一括投稿テンプレート（列定義はテンプレXLSXから取り込む） ============
+// GMOのテンプレートは予告なく列が増減する（2026/09に3列追加）。列位置を埋め込まず、
+// ヘッダー文字列 → 列位置 を毎回解決する方式にしている。既定は2026/09/18版（55列）。
+const TPL_DEFAULT_HEADERS = ["店舗ID", "店舗名", "投稿タイプ", "下書き保存", "即時投稿", "予約投稿日", "予約投稿時間", "Google繰り返し投稿日", "Google繰り返し投稿時間", "Google繰り返し設定_繰り返し", "Google繰り返し設定_間隔", "Google繰り返し設定_曜日（週 選択時）", "Google繰り返し設定_日付（月_日付 選択時）", "Google繰り返し設定_週指定（月_曜日 選択時）", "Google繰り返し投稿終了日（省略可）", "Y_掲載期間の設定（Yahoo!記載欄）の予約投稿日", "Y_掲載期間の設定（Yahoo!記載欄）の予約投稿時間", "Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了日", "Y_掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間", "Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿日", "Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿時間", "Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了日", "Y_概要タブ掲載期間の設定（Yahoo!記載欄）の予約投稿終了時間", "A_掲載期間の設定（Apple記載欄）の予約投稿日 ", "A_掲載期間の設定（Apple記載欄）の予約投稿終了日", "タイトル(GoogleとSNSは任意入力、Yahoo!は必須）", "投稿内容", "投稿内容２", "画像", "クーポンコード（省略可）", "特典利用へのリンク", "利用規約", "ボタンの追加", "ボタンURL", "A_アクションボタン（Apple）", "ハッシュタグ", "開始日", "開始時間", "終了日", "終了時間", "【Google】繰り返し頻度", "【Google】繰り返し指定曜日", "【Google】繰り返し投稿の終了日", "Facebook", "Instagram", "X（旧Twitter）", "Yahoo!", "Apple", "エキテン", "エ_投稿カテゴリー", "エ_掲載開始日（エキテン記載欄）", "エ_掲載開始時間（エキテン記載欄）", "エ_掲載終了日（エキテン記載欄）", "エ_掲載終了時間（エキテン記載欄）", "エ_タイムライン通知"];
+const TPL_DEFAULT_VERSION = "2026-09-18（55列・初期値）";
+// ヘッダー照合用の正規化（末尾スペース・全角半角括弧のゆれが実在するため）
+function normHdr(v){
+  return String(v==null?"":v).normalize("NFKC").replace(/\s+/g,"").replace(/（/g,"(").replace(/）/g,")").trim();
+}
+// 内部キー → ヘッダー。req:true は解決できないと書き出しをブロックする
+const FIELD_SPECS = [
+  { key:"storeId",     label:"店舗ID",       req:true,  match:h=> h==="店舗ID" },
+  { key:"storeName",   label:"店舗名",       req:true,  match:h=> h==="店舗名" },
+  { key:"postType",    label:"投稿タイプ",   req:true,  match:h=> h==="投稿タイプ" },
+  { key:"immediate",   label:"即時投稿",     req:true,  match:h=> h==="即時投稿" },
+  { key:"schedDate",   label:"予約投稿日",   req:false, match:h=> h==="予約投稿日" },
+  { key:"schedTime",   label:"予約投稿時間", req:false, match:h=> h==="予約投稿時間" },
+  { key:"title",       label:"タイトル",     req:true,  match:h=> h.indexOf("タイトル")===0 },
+  { key:"body",        label:"投稿内容",     req:true,  match:h=> h==="投稿内容" },
+  { key:"image",       label:"画像",         req:true,  match:h=> h==="画像" },
+  { key:"btnType",     label:"ボタンの追加", req:true,  match:h=> h==="ボタンの追加" },
+  { key:"btnUrl",      label:"ボタンURL",    req:true,  match:h=> h==="ボタンURL" },
+  { key:"evStart",     label:"開始日",       req:false, match:h=> h==="開始日" },
+  { key:"evStartTime", label:"開始時間",     req:false, match:h=> h==="開始時間" },
+  { key:"evEnd",       label:"終了日",       req:false, match:h=> h==="終了日" },
+  { key:"evEndTime",   label:"終了時間",     req:false, match:h=> h==="終了時間" },
+];
+// ヘッダー配列 → {map:{key:列位置}, missing:[必須で見つからないキー], missingOpt:[任意で見つからないキー]}
+function resolveCols(headers){
+  const norm = (headers||[]).map(normHdr);
+  const map = {}, missing = [], missingOpt = [];
+  FIELD_SPECS.forEach(f=>{
+    const i = norm.findIndex(h=> h && f.match(h));
+    if(i>=0) map[f.key] = i;
+    else (f.req ? missing : missingOpt).push(f);
+  });
+  return { map, missing, missingOpt };
+}
+// 現在有効なテンプレート（Firestore＞ローカル＞既定）
+let BULK_TPL = { version:TPL_DEFAULT_VERSION, headers:TPL_DEFAULT_HEADERS.slice(), stores:[], columnCount:TPL_DEFAULT_HEADERS.length, newline:"real", takenAt:"" };
+try{
+  const cached = JSON.parse(localStorage.getItem("meo_bulk_template")||"null");
+  if(cached && Array.isArray(cached.headers) && cached.headers.length) BULK_TPL = Object.assign(BULK_TPL, cached);
+}catch(e){}
+let TPL_COLS = resolveCols(BULK_TPL.headers);
+function applyBulkTpl(rec, opt){
+  BULK_TPL = Object.assign({ newline:"real" }, rec||{});
+  if(!Array.isArray(BULK_TPL.headers) || !BULK_TPL.headers.length) BULK_TPL.headers = TPL_DEFAULT_HEADERS.slice();
+  BULK_TPL.columnCount = BULK_TPL.headers.length;
+  TPL_COLS = resolveCols(BULK_TPL.headers);
+  try{ localStorage.setItem("meo_bulk_template", JSON.stringify(BULK_TPL)); }catch(e){}
+  if(opt && opt.push && window.fs && window.fs.setBulkTpl) window.fs.setBulkTpl(BULK_TPL).catch(e=>console.warn("tpl sync", e));
+  if(typeof renderBulkTpl==="function") renderBulkTpl();
+}
+// 本文の改行の出し方（real＝実際の改行／literal＝\n の2文字）
+function bodyOut(t){
+  const v = String(t==null?"":t);
+  return BULK_TPL.newline==="literal" ? v.replace(/\r?\n/g,"\\n") : v;
+}
+// 互換用：旧コードが参照していた HEADERS / COL は、現在のテンプレートから作る
+Object.defineProperty(window, "HEADERS", { get:()=> BULK_TPL.headers });
 // 店舗の営業時間から開始・終了時刻を拾う（例「月〜土 9:20〜18:30」→ 9:20 / 18:30）
 function hoursRange(m){
   const t = String((m && m.hours) || "").replace(/[０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
@@ -2593,8 +2697,8 @@ if(!load("meo_studio_seed_v2", false)){
 // ===== Firestore同期（チーム共有） =====
 // 接続後はFirestoreが正。localStorageはキャッシュ（オフライン時のフォールバック）
 // 各データの受信状態（読み込み中と0件を区別する）
-window.__READY = { sched:false, gallery:false, posts:false, links:false, templates:false, patterns:false, slotsets:false };
-["sched","gallery","posts","links","templates","patterns","slotsets"].forEach(k=>{
+window.__READY = { sched:false, gallery:false, posts:false, links:false, templates:false, patterns:false, slotsets:false, gbpcheck:false };
+["sched","gallery","posts","links","templates","patterns","slotsets","gbpcheck"].forEach(k=>{
   window.addEventListener(k+"-ready", ()=>{ window.__READY[k]=true; });
 });
 function loadingOrEmpty(key, emptyMsg){
@@ -2723,6 +2827,51 @@ function removeTpl(id){
 // ===== 投稿パターン／配信枠セット =====
 const LS_PATTERNS = "meo_studio_patterns";
 const LS_SLOTSETS = "meo_studio_slotsets";
+// ===== GBP掲載チェック（毎朝の自動確認結果）=====
+const LS_GBPCHECK = "meo_studio_gbpcheck";
+let gbpChecks = load(LS_GBPCHECK, []);
+window.addEventListener('bulktpl-ready', ()=>{
+  const rec = window.__bulkTpl; if(!rec) return;
+  applyBulkTpl(rec);   // 他の端末で取り込んだテンプレートを反映（保存し直さない）
+});
+window.addEventListener('gbpcheck-ready', ()=>{
+  gbpChecks = (window.__gbpchecks||[]).slice();
+  save(LS_GBPCHECK, gbpChecks);
+  if(typeof renderSchedule==="function") renderSchedule();
+  if(typeof renderNextAction==="function") renderNextAction();
+});
+function gbpCheckByDate(ds){ return (gbpChecks||[]).find(x=> x.date===ds) || null; }
+const GBP_RESULT_META = {
+  ok:      {icon:"\u2705", label:"\u63b2\u8f09OK",     color:"#2F6B4F"},
+  missing: {icon:"\u274c", label:"\u672a\u63b2\u8f09", color:"#A34A3E"},
+  thumb:   {icon:"\u26a0\ufe0f", label:"\u30b5\u30e0\u30cd\u8981\u78ba\u8a8d", color:"#A3712E"},
+  skip:    {icon:"\u2796", label:"\u672a\u78ba\u8a8d",  color:"#5B7280"}
+};
+// 自動チェック（毎朝のタスク）から呼ぶ保存口。1日ぶんをまとめて渡す。
+window.saveGbpCheck = function(rec){
+  if(!rec || !rec.date) throw new Error("date is required");
+  const stores = (rec.stores||[]).map(x=>({
+    storeId: String(x.storeId||""), name: String(x.name||""),
+    result: (["ok","missing","thumb","skip"].includes(x.result) ? x.result : "skip"),
+    latest: String(x.latest||""), note: String(x.note||"")
+  }));
+  const sum = { total: stores.length, ok:0, missing:0, thumb:0, skip:0 };
+  stores.forEach(x=> sum[x.result]++);
+  const doc = { id: rec.date, date: rec.date, checkedAt: rec.checkedAt || new Date().toLocaleString("ja-JP"),
+                source: rec.source || "auto", summary: sum, stores };
+  const i = gbpChecks.findIndex(x=> x.id===doc.id);
+  if(i>=0) gbpChecks[i]=doc; else gbpChecks.push(doc);
+  save(LS_GBPCHECK, gbpChecks);
+  if(window.fs && window.fs.setGbpCheck) return window.fs.setGbpCheck(doc).then(()=>doc);
+  return Promise.resolve(doc);
+};
+// 自動チェック側が対象店舗とURLを取りにくる口
+window.gbpCheckTargets = function(){
+  return (typeof STORE_MASTER!=="undefined" ? STORE_MASTER : [])
+    .filter(st=> st && (st.active!==false))
+    .map(st=> ({ storeId:String(st.gmoId||st.id||""), name:st.name||"", url:gbpUrlOf(st) }))
+    .filter(x=> x.url);
+};
 let patterns = load(LS_PATTERNS, []);
 let slotsets = load(LS_SLOTSETS, []);
 // 既定シード（A/Bの現行運用と互換）
@@ -3218,7 +3367,7 @@ function go(view){
   window.scrollTo(0,0);
   if(view==="home"){ renderLinks(); renderNextAction(); renderSchedule(); }
   if(view==="create") renderCreate();
-  if(view==="settings"){ renderMyLinks(); renderRoleLinks(); renderRules(); renderTplList(); renderFormatList(); renderPatternList(); renderSlotsetList(); }
+  if(view==="settings"){ renderMyLinks(); renderRoleLinks(); renderRules(); renderTplList(); renderFormatList(); renderPatternList(); renderSlotsetList(); renderBulkTpl(); }
   if(view==="stores") renderStoresView();
   if(view==="history") renderHistory();
 }
@@ -3651,6 +3800,132 @@ function impDateFromName(name){
   return `${new Date().getFullYear()}-${m[1]}-${m[2]}`;
 }
 function impNorm(v){ return String(v==null?"":v).trim(); }
+// ===== 一括投稿テンプレートの取り込み =====
+// 取り込んだXLSXから「1行目のヘッダー」と「▼店舗ID 一覧」を読み、列定義と店舗一覧を更新する
+function parseTplRows(rows){
+  const headers = (rows[0]||[]).slice();
+  while(headers.length && String(headers[headers.length-1]||"").trim()==="") headers.pop();
+  // 「▼店舗ID」で始まるマーカー行を探し、その次の行から A列が数値の行を店舗として読む
+  const mi = rows.findIndex(r=> normHdr(r&&r[0]).indexOf("▼店舗ID")===0);
+  const stores = [];
+  if(mi>=0){
+    for(let i=mi+1;i<rows.length;i++){
+      const id = String((rows[i]||[])[0]==null?"":rows[i][0]).trim();
+      const nm = String((rows[i]||[])[1]==null?"":rows[i][1]).trim();
+      if(!/^\d+$/.test(id)) continue;
+      stores.push({ id, name: nm });
+    }
+  }
+  return { headers, stores, hasMarker: mi>=0 };
+}
+// 前回との差分（追加・削除・移動・列数・店舗）
+function tplDiff(oldH, newH, oldS, newS){
+  const o = (oldH||[]).map(normHdr), n = (newH||[]).map(normHdr);
+  const added = [], removed = [], moved = [];
+  n.forEach((h,i)=>{ if(h && o.indexOf(h)<0) added.push({ name:newH[i], at:i }); });
+  o.forEach((h,i)=>{ if(h && n.indexOf(h)<0) removed.push({ name:oldH[i], at:i }); });
+  n.forEach((h,i)=>{ const j=o.indexOf(h); if(h && j>=0 && j!==i) moved.push({ name:newH[i], from:j, to:i }); });
+  const oIds = (oldS||[]).map(x=>String(x.id)), nIds = (newS||[]).map(x=>String(x.id));
+  const sAdded = (newS||[]).filter(x=> oIds.indexOf(String(x.id))<0);
+  const sRemoved = (oldS||[]).filter(x=> nIds.indexOf(String(x.id))<0);
+  return { added, removed, moved, sAdded, sRemoved, oldCount:(oldH||[]).length, newCount:(newH||[]).length };
+}
+function colLetter(i){ let s="", n=i+1; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26);} return s; }
+// 店舗名がGMO登録名と違うと取込に失敗するため、テンプレの店舗と突き合わせる
+function tplStoreMismatch(){
+  const list = BULK_TPL.stores||[];
+  if(!list.length) return { miss:[], diff:[], extra:[] };
+  const miss = [], diff = [];
+  list.forEach(t=>{
+    const st = STORES.find(x=> String(x.gmo)===String(t.id));
+    if(!st){ miss.push(t); return; }
+    if(t.name && st.name!==t.name) diff.push({ id:t.id, app:st.name, tpl:t.name });
+  });
+  const ids = list.map(x=>String(x.id));
+  const extra = STORES.filter(x=> ids.indexOf(String(x.gmo))<0);
+  return { miss, diff, extra };
+}
+window.renderBulkTpl = ()=>{
+  const box = document.getElementById("tplStatus"); if(!box) return;
+  const sel = document.getElementById("tpl_newline"); if(sel) sel.value = BULK_TPL.newline||"real";
+  const ng = TPL_COLS.missing, opt = TPL_COLS.missingOpt;
+  const mm = tplStoreMismatch();
+  const urlless = (BULK_TPL.stores||[]).filter(t=>{ const st=STORES.find(x=>String(x.gmo)===String(t.id)); return st && !btnFor({btnType:"予約"}, st).url; });
+  box.innerHTML = `
+    <div class="card" style="background:var(--pbg); border:1px solid #CBDFE4; margin:0;">
+      <div class="small"><b>${BULK_TPL.headers.length}列</b> ・ 店舗 ${(BULK_TPL.stores||[]).length}件</div>
+      <div class="di-meta">取り込み：${esc(BULK_TPL.version||TPL_DEFAULT_VERSION)}</div>
+      ${ng.length
+        ? `<div class="di-meta" style="color:var(--ng); font-weight:700;">⚠️ 必須の列が見つかりません：${ng.map(f=>esc(f.label)).join("・")}<br>この状態では出力できません。最新のテンプレートを読み込んでください</div>`
+        : `<div class="di-meta" style="color:var(--ok)">✅ 出力に必要な列はすべて見つかりました</div>`}
+      ${opt.length?`<div class="di-meta">任意の列は未検出：${opt.map(f=>esc(f.label)).join("・")}</div>`:""}
+      ${mm.diff.length?`<div class="di-meta" style="color:var(--warn)">⚠️ 店舗名がテンプレートと違います（${mm.diff.length}件）<br>${mm.diff.slice(0,3).map(d=>`${esc(d.app)} → <b>${esc(d.tpl)}</b>`).join("<br>")}${mm.diff.length>3?"<br>…":""}
+        <button class="pill" style="margin-top:4px;" onclick="applyTplStoreNames()">テンプレートの店舗名に合わせる</button></div>`:""}
+      ${mm.miss.length?`<div class="di-meta" style="color:var(--warn)">⚠️ テンプレートにあって店舗マスタに無い：${mm.miss.map(t=>esc(t.name||t.id)).join("、")}（店舗タブで追加してください）</div>`:""}
+      ${urlless.length?`<div class="di-meta" style="color:var(--warn)">⚠️ 予約リンク未設定：${urlless.map(t=>esc(t.name)).join("、")}</div>`:""}
+    </div>`;
+};
+window.setTplNewline = (v)=>{ applyBulkTpl(Object.assign({}, BULK_TPL, { newline:v }), { push:true }); toast(v==="literal"?"改行を \\n の2文字で出力します":"改行はそのまま出力します"); };
+window.resetBulkTemplate = async ()=>{
+  if(!(await askPop({ title:"初期テンプレート（55列）に戻しますか？", body:"読み込んだテンプレートの列定義・店舗一覧を破棄します" }))) return;
+  applyBulkTpl({ version:TPL_DEFAULT_VERSION, headers:TPL_DEFAULT_HEADERS.slice(), stores:[], newline:BULK_TPL.newline||"real", takenAt:"" }, { push:true });
+  document.getElementById("tplDiff").innerHTML = "";
+  toast("初期テンプレートに戻しました");
+};
+window.importBulkTemplate = async (input)=>{
+  const file = input.files && input.files[0]; if(!file) return;
+  const box = document.getElementById("tplDiff");
+  if(typeof XLSX==="undefined"){ box.innerHTML = `<p class="hint" style="color:var(--ng)">XLSXライブラリ読み込み中。数秒後に再度お試しください</p>`; return; }
+  box.innerHTML = `<p class="hint">読み込み中…</p>`;
+  try{
+    const rows = await impReadRows(file);
+    const { headers, stores, hasMarker } = parseTplRows(rows);
+    if(headers.length < 5 || normHdr(headers[0])!=="店舗ID"){
+      box.innerHTML = `<p class="hint" style="color:var(--ng)">テンプレートの形式ではありません（1行目が「店舗ID」から始まるファイルを選んでください）</p>`;
+      input.value=""; return;
+    }
+    const res = resolveCols(headers);
+    const df = tplDiff(BULK_TPL.headers, headers, BULK_TPL.stores, stores);
+    const rec = { version: `${new Date().toLocaleString("ja-JP")} 取込（${file.name}）`, headers,
+                  stores: hasMarker ? stores : (BULK_TPL.stores||[]), columnCount: headers.length,
+                  newline: BULK_TPL.newline||"real", takenAt: new Date().toISOString() };
+    applyBulkTpl(rec, { push:true });
+    const none = !df.added.length && !df.removed.length && !df.moved.length && df.oldCount===df.newCount && !df.sAdded.length && !df.sRemoved.length;
+    box.innerHTML = `
+      <div class="card" style="border:1px solid var(--line); margin:0;">
+        <div class="small" style="font-weight:700;">📊 前回との差分</div>
+        ${res.missing.length?`<div class="di-meta" style="color:var(--ng); font-weight:700;">⚠️ 列が見つかりませんでした：${res.missing.map(f=>esc(f.label)).join("・")}<br>このままでは書き出しできません（ヘッダー名が変わった可能性があります）</div>`:""}
+        ${none?`<div class="di-meta">変更はありません</div>`:`
+          <div class="di-meta">列数：${df.oldCount} → <b>${df.newCount}</b></div>
+          ${df.added.length?`<div class="di-meta" style="color:var(--ok)">＋ 追加された列（${df.added.length}）：${df.added.map(a=>`${colLetter(a.at)}列「${esc(a.name)}」`).join(" / ")}</div>`:""}
+          ${df.removed.length?`<div class="di-meta" style="color:var(--warn)">－ 削除された列（${df.removed.length}）：${df.removed.map(a=>`「${esc(a.name)}」`).join(" / ")}</div>`:""}
+          ${df.moved.length?`<div class="di-meta">↔ 位置が変わった列（${df.moved.length}）：${df.moved.slice(0,4).map(a=>`「${esc(a.name)}」${colLetter(a.from)}→${colLetter(a.to)}`).join(" / ")}${df.moved.length>4?" …":""}</div>`:""}
+          ${df.sAdded.length?`<div class="di-meta" style="color:var(--ok)">＋ 店舗：${df.sAdded.map(x=>esc(x.name||x.id)).join("、")}</div>`:""}
+          ${df.sRemoved.length?`<div class="di-meta" style="color:var(--warn)">－ 店舗：${df.sRemoved.map(x=>esc(x.name||x.id)).join("、")}</div>`:""}`}
+        ${!hasMarker?`<div class="di-meta" style="color:var(--warn)">⚠️ 店舗ID一覧（▼店舗ID の行）が見つからなかったため、店舗一覧は前回のままにしました</div>`:""}
+      </div>`;
+    toast(`📋 テンプレートを更新しました（${headers.length}列）`);
+  }catch(e){
+    console.warn(e);
+    box.innerHTML = `<p class="hint" style="color:var(--ng)">読み込みに失敗しました（ファイル形式をご確認ください）</p>`;
+  }
+  input.value="";
+};
+// 店舗名をテンプレート（GMO登録名）に合わせる
+window.applyTplStoreNames = async ()=>{
+  const mm = tplStoreMismatch();
+  if(!mm.diff.length){ toast("違いはありません"); return; }
+  if(!(await askPop({ title:`店舗名を${mm.diff.length}件そろえますか？`, body: mm.diff.map(d=>`${d.app} → ${d.tpl}`).join("\n"), okLabel:"そろえる" }))) return;
+  let n=0;
+  for(const d of mm.diff){
+    const rec = STORE_MASTER.find(x=> String(x.gmoId)===String(d.id));
+    if(!rec) continue;
+    await saveStoreRec(Object.assign({}, rec, { name:d.tpl, updatedAt:Date.now(), updatedBy:"tpl" }));
+    n++;
+  }
+  toast(`🏪 ${n}件の店舗名をそろえました`);
+  renderBulkTpl();
+};
 window.importExportFile = async (input)=>{
   const file = input.files && input.files[0]; if(!file) return;
   const st = document.getElementById("imp_status");
@@ -3658,26 +3933,29 @@ window.importExportFile = async (input)=>{
   st.style.color="var(--muted)"; st.textContent="読み込み中…";
   try{
     const rows = await impReadRows(file);
-    let hi = rows.findIndex(r=> impNorm(r[0])==="店舗ID" && impNorm(r[1])==="店舗名");
+    let hi = rows.findIndex(r=> normHdr(r[0])==="店舗ID" && normHdr(r[1])==="店舗名");
     if(hi<0) hi = 0;
-    const data = rows.slice(hi+1).filter(r=> impNorm(r[COL.STORE_ID]) && impNorm(r[COL.STORE_NAME]));
+    // 読み込むファイル自身のヘッダーで列位置を解決（52列の古いファイルでも55列でも読める）
+    const IM = resolveCols(rows[hi]||[]).map;
+    if(IM.storeId==null || IM.body==null){ st.style.color="var(--ng)"; st.textContent="ヘッダーを読み取れませんでした（GMOの一括投稿ファイルを選んでください）"; return; }
+    const data = rows.slice(hi+1).filter(r=> impNorm(r[IM.storeId]) && impNorm(r[IM.storeName]));
     if(!data.length){ st.style.color="var(--ng)"; st.textContent="投稿データが見つかりませんでした（GMOの一括投稿ファイルを選んでください）"; return; }
     const first = data[0];
-    const immediate = impNorm(first[COL.IMMEDIATE])==="○";
-    const rawDate = impNorm(first[COL.SDATE]);
+    const immediate = impNorm(first[IM.immediate])==="○";
+    const rawDate = impNorm(first[IM.schedDate]);
     const date = rawDate ? rawDate.replace(/\//g,"-").replace(/^(\d{4})-(\d{1,2})-(\d{1,2})$/,(m,y,mo,d)=>`${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`)
                          : impDateFromName(file.name);
-    const time = impNorm(first[COL.STIME]) ? impNorm(first[COL.STIME]).replace(/^(\d):/,"0$1:") : "";
-    const title = impNorm(first[COL.TITLE]);
-    const imageTitle = impNorm(first[COL.IMAGE]);
-    const postType = impNorm(first[COL.POST_TYPE]) || "最新情報";
+    const time = impNorm(first[IM.schedTime]) ? impNorm(first[IM.schedTime]).replace(/^(\d):/,"0$1:") : "";
+    const title = impNorm(first[IM.title]);
+    const imageTitle = impNorm(first[IM.image]);
+    const postType = impNorm(first[IM.postType]) || "最新情報";
     const contents = {}; const storeIds = []; const unknown = [];
     data.forEach(r=>{
-      const gid = impNorm(r[COL.STORE_ID]);
-      const body = impNorm(r[COL.CONTENT]);
+      const gid = impNorm(r[IM.storeId]);
+      const body = impNorm(r[IM.body]).replace(/\\n/g,"\n");
       const st2 = STORES.find(x=>String(x.gmo)===gid);
       if(st2){ contents[st2.gmo] = body; storeIds.push(st2.gmo); }
-      else unknown.push(`${gid} ${impNorm(r[COL.STORE_NAME])}`);
+      else unknown.push(`${gid} ${impNorm(r[IM.storeName])}`);
     });
     let scope = "per_store", catContents = {};
     const cats = [...new Set(STORES.filter(x=>storeIds.includes(x.gmo)).map(x=>x.cat))];
@@ -3901,13 +4179,21 @@ function renderCalendar(){
       const m = EV_META[e.type]||EV_META.other;
       items.push(`<div class="cal-chip ${m.cls}">${m.icon}${esc(e.title||m.label)}</div>`);
     });
+    const gc = gbpCheckByDate(ds);
+    let gchip = "";
+    if(gc){
+      const ng = (gc.summary.missing||0) + (gc.summary.thumb||0);
+      gchip = ng > 0
+        ? `<div class="cal-chip gbpng">\ud83e\ude7a${ng}\u5e97 \u8981\u78ba\u8a8d</div>`
+        : `<div class="cal-chip gbpok">\ud83e\ude7a\u5168${gc.summary.ok}\u5e97OK</div>`;
+    }
     const shown = items.slice(0,4).join("");
     const more = items.length>4 ? `<div class="cal-more">他${items.length-4}件</div>` : "";
     const dnumCls = dow===0?"sun":(dow===6?"sat":"");
     cells += `<div class="cal-cell${ds===today?" today":""}" onclick="openDayModal('${ds}')"
       ontouchstart="calCellDown('${ds}')" ontouchend="calCellUp()" ontouchmove="calCellUp()"
       onmousedown="calCellDown('${ds}')" onmouseup="calCellUp()" onmouseleave="calCellUp()">
-      <div class="cal-dnum ${dnumCls}">${d}</div>${shown}${more}</div>`;
+      <div class="cal-dnum ${dnumCls}">${d}</div>${gchip}${shown}${more}</div>`;
   }
   box.innerHTML = monthHeader() + `
     <div class="cal-dow">${DOW_JA.map((d,i)=>`<div class="${i===0?'sun':i===6?'sat':''}">${d}</div>`).join("")}</div>
@@ -3922,6 +4208,7 @@ function renderCalendar(){
       <span><span class="dot" style="background:#e2e8f0"></span>🚫取消</span>
       <span><span class="dot" style="background:#F6DEDA"></span>⚠️誤投稿</span>
       <span><span class="dot" style="background:#F8ECD9"></span>期限すぎ</span>
+      <span><span class="dot" style="background:#E3F0E4"></span>🩺掲載チェック</span>
       <span>点線=ズレた予定 / ↷=実績日</span>
       <span>👥MTG 📊抽出</span>
     </div>`;
@@ -4412,6 +4699,25 @@ function renderDayModalBody(){
   const posts = schedule.filter(s=> s.date===ds);
   const evs = (events||[]).filter(e=> e.date===ds);
   let html = "";
+  const gc = gbpCheckByDate(ds);
+  if(gc){
+    const ng = (gc.stores||[]).filter(x=> x.result==="missing" || x.result==="thumb");
+    const head = ng.length
+      ? `<b class="small" style="color:#A34A3E">\ud83e\ude7a 掲載チェック：${ng.length}店で要確認</b>`
+      : `<b class="small" style="color:#2F6B4F">\ud83e\ude7a 掲載チェック：全${gc.summary.ok}店 掲載OK</b>`;
+    const rows = (gc.stores||[])
+      .slice().sort((a,b)=> (a.result==="ok"?1:0)-(b.result==="ok"?1:0))
+      .map(x=>{
+        const m = GBP_RESULT_META[x.result]||GBP_RESULT_META.skip;
+        if(x.result==="ok") return "";
+        return `<div class="di-meta" style="color:${m.color}">${m.icon} ${esc(x.name)}：${m.label}${x.latest?`（最終投稿 ${esc(x.latest)}）`:""}${x.note?` / ${esc(x.note)}`:""}</div>`;
+      }).join("");
+    html += `<div class="day-item">
+      <div class="di-title">${head}</div>
+      <div class="di-meta">確認 ${esc(gc.checkedAt||"")}${gc.source==="manual"?"（手動）":""}</div>
+      ${rows || `<div class="di-meta">全店で最新投稿の表示を確認しました。</div>`}
+    </div>`;
+  }
   posts.forEach(s=>{
     const body = bodyForSched(s);
     html += `<div class="day-item${s.posted?' posted':''}">
@@ -5813,6 +6119,10 @@ window.resetStoreContent = (gmo)=>{
 function exportStores(){ return storesOf(cur); }
 function validateExport(){
   const errs=[];
+  // テンプレートの必須列が見つからないときは出力させない（黙って空欄を出すと原因不明の取込失敗になる）
+  if(TPL_COLS.missing.length) errs.push(`テンプレートの列が見当たりません：${TPL_COLS.missing.map(f=>"「"+f.label+"」").join("・")}（設定タブ →「一括投稿テンプレート」で最新のテンプレートを読み込んでください）`);
+  const noUrl = exportStores().filter(s=> { const b=btnFor(cur,s); return b.type!=="なし" && b.type!=="今すぐ電話" && !b.url; });
+  if(noUrl.length) errs.push(`ボタンURLが未設定：${noUrl.map(s=>s.name).join("、")}`);
   if(!cur.title.trim()) errs.push("共通タイトルが未入力です");
   if(cur.timing!=="immediate" && !cur.date) errs.push("予約投稿日が未確定です");
   if(cur.timing!=="immediate" && !cur.time) errs.push("投稿時間が未確定です");
@@ -5882,22 +6192,23 @@ function buildRowsFrom(d){
     const immediate = timing==="immediate";
     const date = ov.date!==undefined ? ov.date : d.date;
     const time = ov.time!==undefined ? ov.time : d.time;
-    const c=new Array(HEADERS.length).fill("");
-    c[COL.STORE_ID]=s.gmo; c[COL.STORE_NAME]=s.name; c[COL.POST_TYPE]=d.postType||"最新情報";
-    if(immediate) c[COL.IMMEDIATE]="○"; else { c[COL.SDATE]=date?fmtDate(date):""; c[COL.STIME]=time?fmtTime(time):""; }
-    c[COL.TITLE]=d.title||"";
-    c[COL.CONTENT]= ov.content!==undefined ? ov.content : contentFromFor(d,s);
-    c[COL.IMAGE]= safeImgName(ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||""));
-    const b = btnFor(d, s); c[COL.BTYPE]=b.type; c[COL.BURL]=b.url;
+    const M = TPL_COLS.map;
+    const c = new Array(BULK_TPL.headers.length).fill("");
+    const put = (k,v)=>{ if(M[k]!=null) c[M[k]] = v; };
+    put("storeId", s.gmo); put("storeName", s.name); put("postType", d.postType||"最新情報");
+    if(immediate) put("immediate","○"); else { put("schedDate", date?fmtDate(date):""); put("schedTime", time?fmtTime(time):""); }
+    put("title", d.title||"");
+    put("body", bodyOut(ov.content!==undefined ? ov.content : contentFromFor(d,s)));
+    put("image", safeImgName(ov.imageTitle!==undefined ? ov.imageTitle : (d.imageTitle||"")));
+    const b = btnFor(d, s); put("btnType", b.type); put("btnUrl", b.url);
     if(d.postType==="イベント" || d.postType==="クーポン"){
       // イベント・クーポンは 開始日/開始時間/終了日/終了時間 の4つがそろっている必要があります
       const hr = hoursRange(s._m || {});
       const evs = d.evStart || date || todayISO();
       const eve = d.evEnd || monthEndOf(evs);
-      c[COL.EV_SDATE]=fmtDate(evs); c[COL.EV_STIME]=fmtTime(d.evStartTime || hr.st);
-      c[COL.EV_EDATE]=fmtDate(eve); c[COL.EV_ETIME]=fmtTime(d.evEndTime || hr.et);
-      // SNS連携列（40-45,51）は空欄のままにする。
-      // テンプレの記入例は「✕」だが、実際に取込成功している運用データは全て空欄。
+      put("evStart", fmtDate(evs)); put("evStartTime", fmtTime(d.evStartTime || hr.st));
+      put("evEnd", fmtDate(eve));  put("evEndTime", fmtTime(d.evEndTime || hr.et));
+      // SNS連携列は空欄のままにする。テンプレの記入例は「✕」だが、取込成功している運用データは全て空欄。
       // 「✕」を入れた回は画像エラーになったため空欄に戻した（2026-09-04）
     }
     rows.push(c);
@@ -5912,26 +6223,27 @@ function mmddFrom(d){
 // CSV/XLSXファイル生成（作成中でも履歴からでも同じ関数）
 function saveCsvFrom(d){
   const rows=buildRowsFrom(d);
-  const lines=[HEADERS.map(q).join(",")].concat(rows.map(r=>r.map(q).join(",")));
+  const lines=[BULK_TPL.headers.map(q).join(",")].concat(rows.map(r=>r.map(q).join(",")));
   const csv="﻿"+lines.join("\r\n")+"\r\n";
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`【あさば様】一括投稿_${mmddFrom(d)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`あさば様_一括投稿_${mmddFrom(d)}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 function saveXlsxFrom(d){
   const rows=buildRowsFrom(d);
   // GMO互換: 店舗IDは数値セル、空欄は本当の空セル
-  const aoa=[HEADERS.slice()].concat(rows.map(r=> r.map((v,i)=>{
+  const M = TPL_COLS.map;
+  const aoa=[BULK_TPL.headers.slice()].concat(rows.map(r=> r.map((v,i)=>{
     if(v==null||v==="") return null;
-    if(i===COL.STORE_ID && /^\d+$/.test(String(v))) return Number(v);
+    if(i===M.storeId && /^\d+$/.test(String(v))) return Number(v);
     return v;
   })));
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=HEADERS.map((_,i)=> i===COL.CONTENT?{wch:60}:(i===COL.STORE_NAME||i===COL.TITLE?{wch:26}:{wch:14}));
+  ws['!cols']=BULK_TPL.headers.map((_,i)=> i===M.body?{wch:60}:((i===M.storeName||i===M.title)?{wch:26}:{wch:14}));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
   // bookSST:true = 文字列をsharedStrings形式（Excel標準）で保存。
   // 既定のt="str"形式だとGMOの読取が店舗名を認識できず「店舗名が存在していません」になる
-  XLSX.writeFile(wb, `【あさば様】一括投稿_${mmddFrom(d)}.xlsx`, {bookSST:true});
+  XLSX.writeFile(wb, `あさば様_一括投稿_${mmddFrom(d)}.xlsx`, {bookSST:true});
 }
 window.downloadCsv = async ()=>{
   if(!(await preExportImageCheck())) return;
@@ -6490,9 +6802,17 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-08.2";
+const STUDIO_VERSION = "2026-09-19.1";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-19.1", items:[
+      `<b>📋 一括投稿テンプレートの変更に自動で追従します</b>：GMOのテンプレート（XLSX）を設定タブで読み込むだけで、出力する列がそのまま切り替わります。列が増えても減っても作り直しは不要です`,
+      `<b>新しい55列のテンプレートに対応</b>：2026/09にGMO側で3列増えて「項目数が不一致」で取り込めなくなった件を解消しました`,
+      `<b>取り込むと差分が出ます</b>：増えた列・減った列・位置が変わった列・店舗の増減を一覧表示。必要な列が見つからないときは出力を止めて警告します（原因不明の取込失敗を防ぐため）`,
+      `<b>店舗名の不一致を検知</b>：GMO登録名とツールの店舗名が違うとき、ワンタップでそろえられます`,
+      `本文の改行の出し方（そのまま／\\n の2文字）を設定で選べるようにしました` ] },
+  { v:"2026-09-08.3", items:[
+      `<b>🩺 GBP掲載チェックの結果をカレンダーに表示</b>：その日の投稿が全店に載っているかを「全◯店OK／◯店 要確認」で確認できます` ] },
   { v:"2026-09-08.2", items:[
       `<b>10月からの配信スケジュールに対応しました</b>：月8投稿＝毎月1日（型4イベント・8:30）＋火曜8:30・金曜17:00、全19店舗一括配信。予定の日付を選ぶと配信時刻が自動で入ります（手で変えた時刻はそのまま）`,
       `根拠：19店舗×12ヶ月の実データ分析。閲覧・アクションの山は水木土月にあり、火・金配信で翌日の山をカバーします。前回投稿から4日以内の間隔を保つ設計です` ] },
