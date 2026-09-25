@@ -1,3 +1,8 @@
+【v2.7 保存先の自動選択・読み込み対策（2026-09-25）】
+・保存先（運用アカウント／画像カテゴリ）がボタン選択になりました。1タップで選べて、選択中がひと目で分かります
+・予定（テーマ）から作ったときは、前回同じ形で保存した保存先を自動で選びます（チーム共有）。予定なしのときは前回使った保存先が最初から入っています
+・読み込みが止まって画面が真っ白のままのとき、12秒で案内と「再読み込み」ボタンを出すようにしました。部品の配信元も安定したものに切り替えています
+・統合ツール側：ギャラリーを半画面で開き、カレンダーやテーマを見ながら作れるようになりました
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -21,7 +26,7 @@
   }
 }
 </script>
-<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js" onerror="var s=document.createElement('script');s.src='https://unpkg.com/@babel/standalone@7.24.7/babel.min.js';document.head.appendChild(s);"></script>
 <script src="design-engine.js?v=2026-09-09.1"></script>
 <style>
   html, body, #root { height: 100%; margin: 0; }
@@ -86,7 +91,19 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-09.1";
+  window.APP_VERSION = "2026-09-25.1";
+  // 起動監視：CDN（React/Babel/Firebase）のどれかが読めず画面が真っ白のままなら、案内と再読込ボタンを出す
+  window.__bootOk = false; window.__bootErr = "";
+  window.addEventListener("error", function(e){ var t=e.target; if(t && (t.tagName==="SCRIPT"||t.tagName==="LINK")) window.__bootErr = t.src||t.href||""; }, true);
+  setTimeout(function(){
+    if(window.__bootOk) return;
+    var r=document.getElementById("root"); if(!r || r.children.length) return;
+    r.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:-apple-system,\'Hiragino Sans\',sans-serif;color:#1C2B33;">'
+      + '<div><div style="font-size:15px;font-weight:700;margin-bottom:6px;">読み込みに時間がかかっています</div>'
+      + '<div style="font-size:12px;color:#5B7280;margin-bottom:14px;">通信が不安定か、部品の配信元が一時的に遅い可能性があります。<br>再読み込みで直ることがほとんどです。</div>'
+      + '<button onclick="location.reload()" style="border:0;background:#2F6D80;color:#fff;border-radius:99px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer;">↻ 再読み込み</button>'
+      + (window.__bootErr ? '<div style="font-size:10px;color:#94a3b8;margin-top:12px;word-break:break-all;">読めなかった部品：'+window.__bootErr+'</div>' : '') + '</div></div>';
+  }, 12000);
   // 新バージョン検知→バナー
   (function(){
     function chk(){
@@ -470,6 +487,21 @@ function ConfirmModal({ title, body, confirmLabel = '削除', onConfirm, onCance
 }
 
 // ============ Editable list row (name-only) ============
+// ボタン式の選択（プルダウンの代わり）。1タップで選べて、選択中がひと目で分かる
+function ChipPick({ items, value, onChange, disabled = false, empty = '' }) {
+  if (!items.length) return <p className="text-xs text-slate-400">{empty}</p>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map(it => {
+        const on = it.id === value;
+        return <button key={it.id} type="button" disabled={disabled} onClick={() => onChange(on ? '' : it.id)}
+          className={`btn-press px-3 py-1.5 rounded-full text-sm border transition ${on ? 'bg-[#2F6D80] border-[#2F6D80] text-white font-semibold shadow-sm' : 'bg-white border-slate-300 text-slate-700 hover:border-[#2F6D80] hover:text-[#2F6D80]'} disabled:opacity-60`}>
+          {on ? '✓ ' : ''}{it.name}
+        </button>;
+      })}
+    </div>
+  );
+}
 function EditableRow({ item, onSave, onDelete, extraFields = null }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
@@ -1308,7 +1340,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
 }
 
 // ============ CreateTab ============
-function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply, onSchedChange }) {
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply, onSchedChange, linkDefault = null }) {
   const canvasRef = useRef(null);
   const isRegister = mode === 'register';
   const [saved, setSaved] = useState(null);      // 保存完了画面
@@ -1352,6 +1384,22 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   }, [selectedProject]);
 
   const accountLocked = !!selectedProject;
+  // 保存先の自動選択：予定（テーマ）から来たときはチーム共有の既定→それ以外は前回使った保存先→アカウントが1つならそれ
+  const [autoPicked, setAutoPicked] = useState('');
+  useEffect(() => {
+    if (!accounts.length || accountId || editImg || selectedProject) return;
+    const has = (a, c) => a && accounts.find(x => x.id === a) && (!c || categories.find(x => x.id === c && x.accountId === a));
+    let pick = null, why = '';
+    if (schedId && linkDefault && has(linkDefault.accountId, linkDefault.categoryId)) { pick = linkDefault; why = '予定から作成：前回と同じ保存先を選びました'; }
+    if (!pick) { try { const l = JSON.parse(localStorage.getItem('thumb_last_acc') || 'null'); if (l && has(l.accountId, l.categoryId)) { pick = l; why = '前回と同じ保存先を選びました'; } } catch (e) {} }
+    if (!pick && accounts.length === 1) { pick = { accountId: accounts[0].id, categoryId: '' }; why = ''; }
+    if (pick) {
+      // カテゴリが1つしかないアカウントなら、それも選んでおく（毎回同じものを選ぶ手間を省く）
+      let cat = pick.categoryId || '';
+      if (!cat) { const cs = categories.filter(c => c.accountId === pick.accountId); if (cs.length === 1) cat = cs[0].id; }
+      setAccountId(pick.accountId); if (cat) setCategoryId(cat); setAutoPicked(why);
+    }
+  }, [accounts.length, categories.length, schedId, linkDefault]);
   const account = accounts.find(a => a.id === accountId);
   const category = categories.find(c => c.id === categoryId);
   const catsForAcc = categories.filter(c => c.accountId === accountId);
@@ -1534,6 +1582,9 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         await setDoc(docRefFn('studio_schedule', schedId), { imageTitle: `${folderName}.jpg`, imageId: ref.id }, { merge: true });
       }
       showToast(schedId ? '保存＆予定と紐付けました' : 'チームギャラリーに保存しました');
+      // 次回の自動選択用に保存先を覚える（自分の端末／予定から作ったときはチーム共有にも）
+      try { localStorage.setItem('thumb_last_acc', JSON.stringify({ accountId, categoryId })); } catch (e) {}
+      if (schedId) setDoc(docRefFn('studio_settings', 'thumb_link_default'), { accountId, categoryId, updatedAt: Date.now() }, { merge: true }).catch(() => {});
       sendGalleryNotify({ accountId, accountName: account?.name || '', categoryName: category?.name || '', folderName });
       setSaved({ id: ref.id, name: `${folderName}.jpg`, kb: dataUrlKb(url), sched: schedId ? { id: schedId, title: linkTitle } : null });
       if (onSaved) onSaved(ref.id);
@@ -1624,18 +1675,12 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               )}
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-500">運用アカウント{accountId ? <span className="ok-badge">OK</span> : <span className="req">必須</span>}</label>
-              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={accountLocked} className="w-full p-2 border rounded text-sm disabled:bg-slate-100">
-                <option value="">選択してください</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <label className="text-xs font-medium text-slate-500">運用アカウント{accountId ? <span className="ok-badge">OK</span> : <span className="req">必須</span>}{autoPicked && accountId ? <span className="ml-2 text-[10px] text-emerald-700">✨ {autoPicked}</span> : null}</label>
+              <ChipPick items={accounts} value={accountId} onChange={(v) => { setAccountId(v); setAutoPicked(''); }} disabled={accountLocked} empty="運用アカウントがまだありません（メニュー→運用アカウント管理）" />
             </div>
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-500">画像カテゴリ{categoryId ? <span className="ok-badge">OK</span> : <span className="req">必須</span>}</label>
-              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={accountLocked || !accountId} className="w-full p-2 border rounded text-sm disabled:bg-slate-100">
-                <option value="">選択してください</option>
-                {catsForAcc.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <ChipPick items={catsForAcc} value={categoryId} onChange={setCategoryId} disabled={accountLocked || !accountId} empty={accountId ? 'このアカウントにカテゴリがありません（メニュー→画像カテゴリ管理）' : '先に運用アカウントを選んでください'} />
             </div>
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-500">日付</label>
@@ -2089,17 +2134,11 @@ function EditImageModal({ img, accounts, categories, onSaveMeta, onClose }) {
         <h3 className="font-bold text-slate-800">分類を変更</h3>
         <div className="space-y-2">
           <label className="text-xs font-medium text-slate-500">運用アカウント</label>
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="w-full p-2 border rounded text-sm">
-            <option value="">選択</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+          <ChipPick items={accounts} value={accountId} onChange={setAccountId} empty="運用アカウントがありません" />
         </div>
         <div className="space-y-2">
           <label className="text-xs font-medium text-slate-500">画像カテゴリ</label>
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={!accountId} className="w-full p-2 border rounded text-sm">
-            <option value="">選択</option>
-            {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <ChipPick items={cats} value={categoryId} onChange={setCategoryId} disabled={!accountId} empty={accountId ? 'カテゴリがありません' : '先にアカウントを選択'} />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
@@ -2180,6 +2219,7 @@ function App() {
   const [promptOpen, setPromptOpen] = useState(false);
   const [titleToApply, setTitleToApply] = useState(null);
   const [linkedSchedId, setLinkedSchedId] = useState(() => params.get('sched') || '');
+  const [linkDefault, setLinkDefault] = useState(null); // 予定から作るときの既定の運用アカウント／カテゴリ（studio_settings/thumb_link_default）
   const [tplConfirm, setTplConfirm] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useLocalStorage('selected_project_id', null);
   // 最初はギャラリー。統合ツールから ?sched=ID で来たときは作成画面へ
@@ -2200,6 +2240,7 @@ function App() {
 
   useEffect(() => {
     if (!auth) return;
+    window.__bootOk = true;
     signInAnonymously(auth).catch(e => console.error("Auth error", e));
     const unsub = onAuthStateChanged(auth, setUser);
     return () => unsub();
@@ -2213,6 +2254,7 @@ function App() {
       onSnapshot(colRef('projects'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setProjects(arr); }),
       onSnapshot(colRef('shared_thumbnails'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); setImages(arr); setImagesLoaded(true); }),
       onSnapshot(colRef('studio_schedule'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999')); setSchedules(arr); }),
+      onSnapshot(docRefFn('studio_settings', 'thumb_link_default'), s => { setLinkDefault(s.exists() ? s.data() : null); }, () => {}),
       onSnapshot(colRef('thumb_design_templates'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setDesignTemplates(arr); }),
     ];
     return () => subs.forEach(u => u());
@@ -2239,7 +2281,7 @@ function App() {
         <CreateTab key={view} mode={view} user={user} accounts={accounts} categories={categories} projects={projects}
           selectedProject={selectedProject} showToast={showToast} openGallery={() => goGallery()} schedules={schedules} editImg={editImg}
           onSaved={(id) => { setHighlightId(id); }} designTemplates={designTemplates} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate}
-          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} onSchedChange={setLinkedSchedId} />
+          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} onSchedChange={setLinkedSchedId} linkDefault={linkDefault} />
       )}
       {tplConfirm && <ConfirmModal {...tplConfirm} />}
       {promptOpen && (

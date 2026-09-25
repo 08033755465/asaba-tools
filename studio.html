@@ -223,8 +223,20 @@
   .fchip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
   .fchip.clear { color:var(--ng); border-color:#fecaca; }
   .bd-week { font-size:10px; font-weight:700; color:var(--muted); background:#f1f5f9; border-radius:6px; padding:3px 8px; margin:10px 0 4px; }
-  /* アプリ内ギャラリー */
+  /* 店舗本文の横スライド比較 */
+  .cmp-nav { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:8px 0 6px; }
+  .cmp-nav .pill { width:auto; }
+  .cmp-strip { display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory; padding:2px 2px 10px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+  .cmp-card { flex:0 0 min(86vw, 380px); scroll-snap-align:start; border:1px solid var(--line); border-radius:12px; padding:10px; background:#fff; }
+  .cmp-card textarea { width:100%; min-height:300px; font-size:12.5px; line-height:1.55; margin-top:6px; }
+  .pill.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+  /* アプリ内ギャラリー（全画面／半画面） */
   #galFrameWrap { position:fixed; inset:0; z-index:90; background:#fff; display:none; flex-direction:column; }
+  #galFrameWrap.half { top:auto; height:min(60vh, 620px); border-top-left-radius:16px; border-top-right-radius:16px; box-shadow:0 -12px 34px rgba(15,23,42,.28); border-top:1px solid var(--line); }
+  #galFrameWrap.half #galFrameBar { padding-top:8px; }
+  body.gal-half { padding-bottom:min(60vh, 620px); }
+  .gal-handle { width:44px; height:5px; border-radius:99px; background:#cbd5e1; margin:6px auto 0; display:none; }
+  #galFrameWrap.half .gal-handle { display:block; }
   #galFrameBar { display:flex; align-items:center; gap:8px; padding:8px 10px; padding-top:calc(8px + env(safe-area-inset-top)); border-bottom:1px solid var(--line); background:#fff; flex-shrink:0; }
   /* .btn は width:100% なので、このバーの中だけ内容幅に戻す（タイトルが縦書きに潰れるのを防ぐ） */
   #galFrameBar .btn, #galFrameBar .pill { width:auto; flex:0 0 auto; white-space:nowrap; }
@@ -838,12 +850,25 @@
 
 <!-- アプリ内サムネイルギャラリー（サムネ合成ツールを埋め込み） -->
 <div id="galFrameWrap">
+  <div class="gal-handle" onclick="toggleGalMode()"></div>
   <div id="galFrameBar">
     <b style="font-size:14px; flex:1;">🖼️ サムネイル・ギャラリー</b>
+    <button class="pill" id="galModeBtn" onclick="toggleGalMode()">⬍ 全画面</button>
     <button class="pill" onclick="reloadGalFrame()">↻ 再読込</button>
     <button class="btn btn-ghost" style="padding:6px 12px;" onclick="closeGalFrame()">✕ 閉じる</button>
   </div>
   <iframe id="galFrame" title="サムネイル合成ツール"></iframe>
+</div>
+
+<!-- 店舗別の投稿記録 -->
+<div id="storeLogModal" style="display:none; position:fixed; inset:0; z-index:79; background:rgba(0,0,0,.45); align-items:center; justify-content:center;">
+  <div class="popcard" style="background:#fff; width:calc(100% - 20px); max-width:640px; border-radius:16px; max-height:90dvh; overflow-y:auto; padding:14px calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; position:sticky; top:0; background:#fff; padding-bottom:6px; z-index:1;">
+      <b style="flex:1;">🏪 店舗別の投稿記録</b>
+      <button class="btn btn-ghost" style="width:auto; padding:6px 12px;" onclick="closeStoreLog()">✕ 閉じる</button>
+    </div>
+    <div id="storeLogBody"></div>
+  </div>
 </div>
 
 <!-- 出力済みファイルの逆読み込み -->
@@ -3752,16 +3777,30 @@ window.renderNextAction = ()=>{
 };
 // 投稿完了トグル（各所から呼べる共通関数）
 // ===== アプリ内サムネイルギャラリー（別タブに飛ばずアプリ内で完結） =====
+function galMode(){ return localStorage.getItem("meo_gal_mode")==="full" ? "full" : "half"; }
+function applyGalMode(){
+  const wrap=document.getElementById("galFrameWrap"), btn=document.getElementById("galModeBtn");
+  const half = galMode()==="half";
+  wrap.classList.toggle("half", half);
+  document.body.classList.toggle("gal-half", half && wrap.style.display==="flex");
+  document.body.style.overflow = (!half && wrap.style.display==="flex") ? "hidden" : "";
+  if(btn) btn.textContent = half ? "⬍ 全画面" : "⬍ 半画面";
+}
+window.toggleGalMode = ()=>{ localStorage.setItem("meo_gal_mode", galMode()==="half"?"full":"half"); applyGalMode(); };
+// 久しぶりに戻ったとき、iframeの中身が消えている（iOSのメモリ解放など）→ 自動で読み直す
+function galFrameBlank(f){ try{ const d=f.contentDocument; const r=d && d.getElementById("root"); return !d || !r || !r.children.length; }catch(e){ return false; } }
 window.openGalFrame = (schedId)=>{
   const f = document.getElementById("galFrame");
   // 予定を指定して開くと、サムネ側の保存時にその予定が選ばれる
   const src = "../thumbnail/" + (schedId?`?sched=${encodeURIComponent(schedId)}`:"");
   if(f.getAttribute("data-src") !== src){ f.src = src; f.setAttribute("data-src", src); }
+  else if(f.getAttribute("data-src") && galFrameBlank(f)){ f.src = src; }
   document.getElementById("galFrameWrap").style.display = "flex";
-  document.body.style.overflow = "hidden";
+  applyGalMode();
 };
 window.closeGalFrame = ()=>{
   document.getElementById("galFrameWrap").style.display = "none";
+  document.body.classList.remove("gal-half");
   document.body.style.overflow = "";
   // 戻ったらギャラリー・予定を最新化
   if(typeof renderSchedule==="function") renderSchedule();
@@ -6001,6 +6040,8 @@ function refreshEvPreview(){ const el=document.getElementById("x_evPrev"); if(el
 function viewExport(){
   const errs = validateExport();
   const stores = exportStores();
+  const timeNear = cur.timing!=="immediate" && cur.date && cur.time && (()=>{ const m=minutesUntil(cur.date,cur.time); return m!==null && m<180; })();
+  const cmpMode = (localStorage.getItem("meo_export_view")||"slide")==="slide" && stores.length>1;
   const rowsPreview = stores.map(st=>{
     const ov = (cur.overrides||{})[st.gmo] || {};
     const content = ov.content!==undefined ? ov.content : contentFor(st);
@@ -6058,11 +6099,30 @@ function viewExport(){
     ${imageNameCheckHTML()}
     <div class="hint">対象：${cur.scope==="category_common"?`カテゴリ共通（全${stores.length}店舗）`:`店舗別（${stores.length}店舗）`}</div>
   </div>
-  <details class="mt" ${stores.length<=4?"open":""}>
+  <details class="mt" ${(stores.length<=4||cmpMode)?"open":""}>
     <summary>📋 出力される内容を店舗ごとに確認・修正（${stores.length}店舗）</summary>
-    <div class="mt">${rowsPreview}</div>
+    <div style="display:flex; gap:6px; align-items:center; margin-top:8px; flex-wrap:wrap;">
+      <button class="pill ${cmpMode?'on':''}" onclick="setExportView('slide')">↔ 横に並べて比較</button>
+      <button class="pill ${!cmpMode?'on':''}" onclick="setExportView('list')">☰ 縦に一覧</button>
+      ${cmpMode?`<span class="hint" style="margin:0;">左右にスワイプで店舗を切り替え</span>`:""}
+    </div>
+    ${cmpMode?`<div class="cmp-nav"><button class="pill" onclick="cmpScroll(-1)">‹ 前の店舗</button><span id="cmpPos" class="small muted">1 / ${stores.length}</span><button class="pill" onclick="cmpScroll(1)">次の店舗 ›</button></div>
+    <div class="cmp-strip" id="cmpStrip" onscroll="cmpOnScroll(this)">${stores.map((st,i)=>{
+      const ov=(cur.overrides||{})[st.gmo]||{}; const content= ov.content!==undefined?ov.content:contentFor(st); const v=validate(content);
+      const isOv= ov.content!==undefined; const shared= cur.scope==="category_common" && !isOv;
+      return `<div class="cmp-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+          <b class="small" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${i+1}. ${esc(st.name)}</b>
+          <span class="chip ${v.charOk?'ok':'warn'}">${v.chars}字</span>${v.ng.length?`<span class="chip ng">NG${v.ng.length}</span>`:""}
+        </div>
+        <textarea data-exrow="${st.gmo}" oninput="onExportRowEdit('${st.gmo}', this.value)">${esc(content)}</textarea>
+        <div class="hint" style="margin-top:4px; display:flex; gap:6px; flex-wrap:wrap;">
+          ${shared?`<span class="pill">カテゴリ共通</span><button class="pill" onclick="forkStoreContent('${st.gmo}')">この店舗だけ個別に</button>`:(isOv?`<span class="pill" style="background:#F8ECD9;color:#B07A2E;">個別編集中</span><button class="pill" onclick="resetStoreContent('${st.gmo}')">共通に戻す</button>`:"")}
+        </div>
+      </div>`; }).join("")}</div>`
+    :`<div class="mt">${rowsPreview}</div>`}
   </details>
-  ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>`
+  ${errs.length?`<div class="err">出力前チェック：\n${errs.map(e=>"・"+e).join("\n")}</div>${timeNear?`<button class="btn btn-primary mt" style="width:100%;" onclick="switchToImmediate()">⚡ 即時投稿に切り替える（時刻の問題だけ解消）</button>`:""}`
     :`<div class="note">✅ チェックOK。出力形式を選んでダウンロードしてください。</div>`}
   <div class="mt" style="display:flex; flex-direction:column; gap:10px;">
     <div style="border:2px solid var(--blue); border-radius:12px; padding:12px; background:#f0f7ff;">
@@ -6126,6 +6186,11 @@ function validateExport(){
   if(!cur.title.trim()) errs.push("共通タイトルが未入力です");
   if(cur.timing!=="immediate" && !cur.date) errs.push("予約投稿日が未確定です");
   if(cur.timing!=="immediate" && !cur.time) errs.push("投稿時間が未確定です");
+  // GMOは「当日予約は現在時刻より3時間先」でないと取り込めない（過ぎた時刻も同様）
+  if(cur.timing!=="immediate" && cur.date && cur.time){
+    const m = minutesUntil(cur.date, cur.time);
+    if(m!==null && m < 180) errs.push(`予約時刻（${fmtJp(cur.date)} ${cur.time}）が${m<0?"すでに過ぎています":"今から3時間以内です"}。GMOは当日予約を「現在時刻より3時間先」にしないと取り込めません → 下の「⚡ 即時投稿に切り替える」か、時刻を3時間以上先に`);
+  }
   exportStores().forEach(s=>{
     const c=contentFor(s);
     if(!c.trim()){ errs.push(`${s.name}：本文が空です`); return; }
@@ -6137,6 +6202,13 @@ function validateExport(){
   if(exportStores().length===0) errs.push("対象店舗がありません");
   return errs;
 }
+// 予約日時までの残り分（日本時間）。判定できなければ null
+function minutesUntil(dateStr, timeStr){
+  const t = Date.parse(`${dateStr}T${String(timeStr).padStart(5,"0")}:00+09:00`);
+  if(isNaN(t)) return null;
+  return Math.round((t - Date.now())/60000);
+}
+window.switchToImmediate = ()=>{ cur.timing="immediate"; renderCreate(); toast("⚡ 即時投稿に切り替えました（DLして取り込むとすぐ投稿されます）"); };
 function fmtDate(d){ const[y,m,dd]=d.split("-"); return `${y}/${m}/${dd}`; }
 function fmtTime(t){ const[h,m]=t.split(":"); return `${parseInt(h,10)}:${m}`; }
 function q(v){ return `"${String(v==null?"":v).replace(/"/g,'""')}"`; }
@@ -6289,6 +6361,9 @@ function archivePost(){
     }).catch(e=>console.warn("post archive", e));
   }
 }
+window.setExportView = (v)=>{ localStorage.setItem("meo_export_view", v); renderCreate(); };
+window.cmpScroll = (dir)=>{ const el=document.getElementById("cmpStrip"); if(!el) return; const card=el.querySelector(".cmp-card"); const w=card?card.getBoundingClientRect().width+10:300; el.scrollBy({left:dir*w, behavior:"smooth"}); };
+window.cmpOnScroll = (el)=>{ const card=el.querySelector(".cmp-card"); if(!card) return; const w=card.getBoundingClientRect().width+10; const i=Math.round(el.scrollLeft/w)+1; const n=el.querySelectorAll(".cmp-card").length; const p=document.getElementById("cmpPos"); if(p) p.textContent=`${Math.min(Math.max(i,1),n)} / ${n}`; };
 window.downloadXlsx = async ()=>{
   if(typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
   if(!(await preExportImageCheck())) return;
@@ -6692,6 +6767,51 @@ function contentLabel(key){
   const s = STORES.find(x=>x.gmo===key); return s ? s.name : key;
 }
 let HIST_SHOW_ALL = false;
+// ===== 店舗別の投稿記録（過去の投稿と今後の予定本文を1店舗ずつ通しで読む） =====
+let STORELOG_ID = "";
+function bodyForStore(rec, st){
+  const ov = (rec.overrides||{})[st.gmo]; if(ov && ov.content!==undefined) return ov.content;
+  const c = rec.contents||{};
+  return (rec.scope==="category_common" ? c[st.cat] : c[st.gmo]) || c[st.gmo] || c[st.cat] || "";
+}
+function storeLogEntries(st){
+  const today = todayISO(); const seen = new Set(); const out=[];
+  (schedule||[]).forEach(sc=>{
+    const ids = sc.storeIds||[]; if(ids.length && !ids.includes(st.gmo)) return;
+    const body = bodyForStore(sc, st); if(!body.trim()) return;
+    seen.add(sc.id); out.push({ id:sc.id, date:sc.date||"", time:sc.time||"", title:sc.catchTitle||sc.title||"（無題）", body, status:postStatusOf(sc)||(sc.done?"exported":( (sc.date||"")<today?"unposted":"planned")), future:(sc.date||"")>=today, src:"sched" });
+  });
+  (window.__posts||[]).forEach(p=>{
+    if(p.schedId && seen.has(p.schedId)) return;
+    const body = bodyForStore(p, st); if(!body.trim()) return;
+    out.push({ id:p.id, date:p.date||"", time:p.time||"", title:p.catchTitle||p.title||"（無題）", body, status:"exported", future:false, src:"post" });
+  });
+  out.sort((a,b)=> (b.date+b.time).localeCompare(a.date+a.time));
+  return out;
+}
+const STORELOG_STATUS = { posted:["投稿済み","var(--ok)"], canceled:["取消","var(--muted)"], mistake:["誤投稿","var(--ng)"], retired:["未使用","var(--muted)"], exported:["出力済み","var(--blue)"], planned:["予定","var(--warn)"], unposted:["未出力","var(--muted)"] };
+window.openStoreLog = (gmo)=>{
+  const all = storesOf({scope:"per_store", storeIds:[]});
+  if(gmo) STORELOG_ID = gmo; if(!STORELOG_ID && all.length) STORELOG_ID = all[0].gmo;
+  const st = all.find(x=>String(x.gmo)===String(STORELOG_ID)) || all[0];
+  const box = document.getElementById("storeLogBody"); if(!box || !st) return;
+  const ents = storeLogEntries(st);
+  const fut = ents.filter(e=>e.future).reverse(), past = ents.filter(e=>!e.future);
+  const card = e=>{ const [lab,col]=STORELOG_STATUS[e.status]||[e.status,"var(--muted)"]; return `<div class="card" style="padding:10px 12px; margin:0 0 8px;">
+      <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
+        <div style="min-width:0;"><b class="small">${esc(e.date?fmtJp(e.date):"日付未定")}${e.time?" "+esc(e.time):""}</b> <span class="pill" style="border-color:${col}; color:${col};">${lab}</span><div class="small" style="font-weight:600; margin-top:2px;">${esc(e.title)}</div></div>
+        <button class="pill" style="flex-shrink:0;" onclick='copyStr(${JSON.stringify(e.body)},event)'>コピー</button>
+      </div>
+      <div class="small" style="white-space:pre-wrap; margin-top:6px; line-height:1.6;">${esc(e.body)}</div>
+    </div>`; };
+  box.innerHTML = `
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">${all.map(x=>`<button class="pill ${String(x.gmo)===String(st.gmo)?'on':''}" onclick="openStoreLog('${x.gmo}')">${esc(/Peace/.test(x.name) ? "🧘 "+x.name.replace(/^マシンピラティス ?Peace ?/,"") : x.name.replace(/^あさば/,"").replace(/_/," "))}</button>`).join("")}</div>
+    <div class="hint" style="margin-bottom:8px;">${esc(st.name)}：今後 ${fut.length}件 ／ これまで ${past.length}件。上から順に読むと、同じ言い回しの繰り返しに気づけます</div>
+    ${fut.length?`<div class="bd-week">📅 今後の予定（${fut.length}）</div>${fut.map(card).join("")}`:""}
+    <div class="bd-week">📜 これまでの投稿（${past.length}）</div>${past.length?past.map(card).join(""):`<p class="hint">まだありません</p>`}`;
+  document.getElementById("storeLogModal").style.display="flex";
+};
+window.closeStoreLog = ()=>{ document.getElementById("storeLogModal").style.display="none"; };
 function renderHistory(){
   const box = document.getElementById("histList"); if(!box) return;
   const posts = window.__posts || [];
@@ -6705,10 +6825,11 @@ function renderHistory(){
   // 検索していないときは月別表示（すべて表示トグルあり）
   const monthMode = !q && !HIST_SHOW_ALL;
   if(monthMode) filtered = filtered.filter(p=> (p.date||"").startsWith(pre));
-  const head = q ? "" : (monthMode?monthHeader():"") +
+  const storeBtn = `<button class="btn btn-ghost" style="width:100%; margin-bottom:10px;" onclick="openStoreLog()">🏪 店舗別に投稿を通して読む（過去＋今後の予定）</button>`;
+  const head = storeBtn + (q ? "" : (monthMode?monthHeader():"") +
     `<div class="hint" style="margin-bottom:6px;">${monthMode?`この月の出力：${filtered.length}件`:`全${filtered.length}件`}
-     <button class="pill" style="margin-left:6px;" onclick="HIST_SHOW_ALL=!HIST_SHOW_ALL; renderHistory();">${HIST_SHOW_ALL?"📅 月別表示に戻す":"📜 すべて表示"}</button></div>`;
-  if(!posts.length){ box.innerHTML = loadingOrEmpty("posts","まだ投稿履歴がありません。作成タブでCSV/XLSXを出力すると、その投稿文がここに貯まります。"); return; }
+     <button class="pill" style="margin-left:6px;" onclick="HIST_SHOW_ALL=!HIST_SHOW_ALL; renderHistory();">${HIST_SHOW_ALL?"📅 月別表示に戻す":"📜 すべて表示"}</button></div>`);
+  if(!posts.length){ box.innerHTML = storeBtn + loadingOrEmpty("posts","まだ投稿履歴がありません。作成タブでCSV/XLSXを出力すると、その投稿文がここに貯まります。"); return; }
   if(!filtered.length){ box.innerHTML = head + `<p class="hint">${q?`「${esc(q)}」に一致する投稿はありません。`:"この月の出力はありません。"}</p>`; return; }
   box.innerHTML = head + filtered.map(p=>{
     const entries = Object.entries(p.contents||{});
@@ -6802,9 +6923,14 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-19.1";
+const STUDIO_VERSION = "2026-09-25.1";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-25.1", items:[
+      `<b>⏰ 予約時刻が近いと出力前に止めます</b>：GMOは当日予約を「今から3時間先」にしないと取り込めません（19店舗すべてが同じエラーで弾かれた件）。3時間以内・過ぎた時刻のときは警告し、ワンタップで即時投稿に切り替えられます`,
+      `<b>↔ 店舗ごとの本文を横に並べて比較</b>：確認画面で左右スワイプ。同じ言い回しの繰り返しにその場で気づけます（縦一覧にも戻せます）`,
+      `<b>🏪 店舗別に投稿を通して読む</b>：履歴タブから、1店舗の「今後の予定」と「これまでの投稿」を時系列で一気読み。GBPを開かなくても店舗ごとの流れを確認できます`,
+      `<b>🖼️ ギャラリーを半画面で開けます</b>：カレンダーやテーマを見ながらサムネを作れます。バーの「⬍」で全画面と切替。久しぶりに開いて真っ白なときは自動で読み直します` ] },
   { v:"2026-09-19.1", items:[
       `<b>📋 一括投稿テンプレートの変更に自動で追従します</b>：GMOのテンプレート（XLSX）を設定タブで読み込むだけで、出力する列がそのまま切り替わります。列が増えても減っても作り直しは不要です`,
       `<b>新しい55列のテンプレートに対応</b>：2026/09にGMO側で3列増えて「項目数が不一致」で取り込めなくなった件を解消しました`,
