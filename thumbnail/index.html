@@ -47,6 +47,16 @@
   .req { display:inline-block; font-size:10px; font-weight:700; color:#B25B44; background:#F7E3D8; border-radius:99px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
   .ok-badge { display:inline-block; font-size:10px; font-weight:700; color:#3E8E7E; background:#EDF6F0; border-radius:99px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
   @media (max-width: 767px) { .safe-b { padding-bottom: calc(24px + env(safe-area-inset-bottom)); } }
+  /* 入力セクション：色帯つきカードで「どこが何の入力か」をはっきりさせる */
+  .sec-card { background:#fff; border:1px solid #DCE7EA; border-radius:14px; box-shadow:0 4px 14px rgba(47,109,128,.06); overflow:hidden; }
+  .sec-head { display:flex; align-items:center; gap:8px; padding:9px 12px; background:linear-gradient(90deg,#DCEDE2,#EAF3F4); border-bottom:1px solid #CBDFE4; }
+  .sec-head.done { background:linear-gradient(90deg,#DFF3EA,#EDF6F0); }
+  .sec-head.opt { background:#F5F7F9; }
+  .sec-num { width:24px; height:24px; border-radius:99px; background:#2F6D80; color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .sec-head.done .sec-num { background:#3E8E7E; }
+  .sec-head.opt .sec-num { background:#94a3b8; }
+  .sec-title { font-size:14px; font-weight:700; color:#1C2B33; margin:0; flex:1; min-width:0; }
+  .sec-body { padding:12px; display:flex; flex-direction:column; gap:10px; }
 </style>
 <style>
 /* ===== 統合ツールと同じトーンへのオーバーライド（ティール×コーラル） ===== */
@@ -86,7 +96,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-25.1";
+  window.APP_VERSION = "2026-09-28.1";
   // 起動監視：CDN（React/Babel/Firebase）のどれかが読めず画面が真っ白のままなら、案内と再読込ボタンを出す
   window.__bootOk = false; window.__bootErr = "";
   window.addEventListener("error", function(e){ var t=e.target; if(t && (t.tagName==="SCRIPT"||t.tagName==="LINK")) window.__bootErr = t.src||t.href||""; }, true);
@@ -126,7 +136,7 @@ import { Upload, Download, Image as ImageIcon, Settings, X, Share2, Library, Tra
 import JSZip from 'jszip';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, updateDoc, onSnapshot, deleteDoc, doc, getDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ============ Firebase init ============
 let app, auth, db;
@@ -141,6 +151,49 @@ try {
 const basePath = (name) => ['artifacts', appId, 'public', 'data', name];
 const colRef = (name) => collection(db, ...basePath(name));
 const docRefFn = (name, id) => doc(db, ...basePath(name), id);
+// ===== ギャラリー軽量化 =====
+// これまで完成画像（1枚200KB前後）を一覧のドキュメントに丸ごと入れていたため、開くたびに全画像分（数MB〜）を
+// ダウンロードしていた。一覧には小さなサムネ（thumbUrl）だけを持たせ、完成画像は thumb_full/{id} に分けて必要時だけ読む。
+const THUMB_W = 360;
+function makeThumb(dataUrl, w = THUMB_W, q = 0.72) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { const r = Math.min(1, w / img.width); const c = document.createElement('canvas'); c.width = Math.round(img.width * r); c.height = Math.round(img.height * r); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); resolve(c.toDataURL('image/jpeg', q)); };
+    img.onerror = () => resolve('');
+    img.src = dataUrl;
+  });
+}
+const FULL_CACHE = new Map();
+async function getFullImage(img) {
+  if (!img) return '';
+  if (img.imageUrl) return img.imageUrl;
+  if (FULL_CACHE.has(img.id)) return FULL_CACHE.get(img.id);
+  try { const s = await getDoc(docRefFn('thumb_full', img.id)); const u = s.exists() ? (s.data().dataUrl || '') : ''; FULL_CACHE.set(img.id, u); return u; } catch (e) { return ''; }
+}
+// 既存画像を1枚ずつ軽量化（サムネ生成→完成画像を thumb_full へ→一覧側から imageUrl を外す）。失敗しても元データは残る
+let MIGRATING = false;
+async function migrateHeavyImages(images, onProgress) {
+  if (MIGRATING) return; MIGRATING = true;
+  const heavy = images.filter(i => i.imageUrl && !i.thumbUrl);
+  let n = 0;
+  for (const img of heavy) {
+    try {
+      const thumb = await makeThumb(img.imageUrl);
+      if (!thumb) continue;
+      await setDoc(docRefFn('thumb_full', img.id), { dataUrl: img.imageUrl, updatedAt: Date.now() });
+      await updateDoc(docRefFn('shared_thumbnails', img.id), { thumbUrl: thumb, imageUrl: deleteField() });
+      n++; onProgress && onProgress(n, heavy.length);
+    } catch (e) { console.warn('軽量化に失敗', img.id, e); }
+  }
+  MIGRATING = false;
+}
+// GMOの画像アップロード画面（リンク集に登録があればそれを優先）
+const GMO_UPLOAD_URL_FALLBACK = 'https://app.meo-dash.com/groups/14324/list_bookings';
+function gmoUploadUrl(links) {
+  const t = (l) => `${l.label || ''}${l.title || ''}${l.name || ''}${l.role || ''}`;
+  const hit = (links || []).find(l => l.role === 'gmo_upload') || (links || []).find(l => /アップロード|upload|メディア|media|ライブラリ/i.test(t(l)) && /gmo|meo/i.test(t(l) + (l.url || '')));
+  return hit && hit.url ? hit.url : GMO_UPLOAD_URL_FALLBACK;
+}
 
 // ============ 画像圧縮（チーム共有設定） ============
 // 設定はFirestore settings/compress: { maxSize: 長辺px(0=原寸), quality: 0.5〜0.9 }
@@ -223,6 +276,11 @@ const RELEASE_NOTES = `【v2.7 9月・10月のテーマ別プロンプト（2026
 ・各テーマに型のバッジが付き、その型の決まり（型1＝人物・画像内に文字／型2＝風景のみ／型3・4＝人物と風景を選択）どおりのプロンプトが出ます
 ・予定に紐付けて開くと、その日のテーマが自動で選ばれます
 
+【v2.8 作業画面の見直し・ギャラリー高速化（2026-09-28）】
+・作成画面を広くしました。スマホではプレビューを小さめにして入力欄を優先（「🔼 大きく」で切替）、PCでは入力欄の幅を広げました
+・入力の区切りを「1 写真とデザイン／2 保存先／3 サイズ」の色帯つきカードにして、どこが何の入力かひと目で分かるようにしました
+・ギャラリーの表示が速くなりました。これまで開くたびに全画像（約8MB）を読み込んでいたのを、一覧は小さなサムネだけにしました。初回だけ裏で自動的に軽量化が走ります
+・ギャラリー右上に「🚀 GMOに画像をアップロード」を置きました。保存完了の画面からも直接開けます
 【v2.7 保存先の自動選択・読み込み対策（2026-09-25）】
 ・保存先（運用アカウント／画像カテゴリ）がボタン選択になりました。1タップで選べて、選択中がひと目で分かります
 ・予定（テーマ）から作ったときは、前回同じ形で保存した保存先を自動で選びます（チーム共有）。予定なしのときは前回使った保存先が最初から入っています
@@ -526,7 +584,7 @@ function EditableRow({ item, onSave, onDelete, extraFields = null }) {
 }
 
 // ============ Header ============
-function Header({ view, onHome, onMenu }) {
+function Header({ view, onHome, onMenu, gmoUrl }) {
   const title = view === 'create' ? '画像を作成' : view === 'register' ? '画像を登録' : 'チームギャラリー';
   const sub = view === 'create' ? '写真に文字やデザインを入れて保存' : view === 'register' ? '写真をそのまま保存（編集なし）' : 'ここから作成・登録ができます';
   return (
@@ -548,6 +606,11 @@ function Header({ view, onHome, onMenu }) {
         <div className="text-sm md:text-base font-bold text-slate-800 truncate">{view === 'gallery' ? '' : title}</div>
         <div className="text-[11px] text-slate-500 truncate hidden sm:block">{view === 'gallery' ? '' : sub}</div>
       </div>
+      {view === 'gallery' && gmoUrl && (
+        <a href={gmoUrl} target="_blank" rel="noopener" className="btn-press shrink-0 flex items-center gap-1.5 bg-[#E9A07C] hover:bg-[#DD8E66] text-white font-bold text-xs md:text-sm rounded-lg px-2.5 md:px-3 py-2 shadow-sm" title="GMO（byGMO）の画像アップロード画面を新しいタブで開きます">
+          🚀 <span className="hidden sm:inline">GMOに画像を</span>アップロード
+        </a>
+      )}
       <button onClick={onMenu} className="p-2 rounded-lg hover:bg-slate-100 shrink-0" title="メニュー"><Menu className="w-6 h-6 text-slate-700" /></button>
     </header>
   );
@@ -1374,6 +1437,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
     try{ return new URLSearchParams(location.search).get('sched') || ''; }catch(e){ return ''; }
   });
   const [dlOnShare, setDlOnShare] = useState(false); // 保存と同時にPCへDL
+  const [previewBig, setPreviewBig] = useState(false); // スマホでプレビューを大きく表示するか（通常は小さくして作業欄を広く）
   const selSched = (schedules||[]).find(x => x.id === schedId) || null;
   // 予定を選んだら日付を自動セット
   useEffect(() => { if (selSched && selSched.date) setDateISO(selSched.date); }, [schedId]);
@@ -1406,6 +1470,12 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   useEffect(() => {
     if (!accountLocked && !catsForAcc.find(c => c.id === categoryId)) setCategoryId('');
   }, [accountId, categories]);
+  // アカウント選択済みでカテゴリが1つしか無いなら、読み込みの順番に関係なく自動で選ぶ（※上の『合わないカテゴリを外す』処理より後に置くこと）
+  useEffect(() => {
+    if (!accountId || categoryId || editImg) return;
+    const cs = categories.filter(c => c.accountId === accountId);
+    if (cs.length === 1) setCategoryId(cs[0].id);
+  }, [accountId, categories.length]);
 
   const mmdd = isoToMMDD(dateISO);
   const folderName = buildFolderName({
@@ -1563,8 +1633,9 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
           sourceIds.push(sref.id);
         }
       }
+      const thumbUrl = await makeThumb(url);
       const ref = await addDoc(colRef('shared_thumbnails'), {
-        imageUrl: url, titleText: (design.template !== 'none' ? (design.title.text || '').replace(/[{}]/g, '').replace(/\n/g, ' ') : ''), folderName,
+        thumbUrl, titleText: (design.template !== 'none' ? (design.title.text || '').replace(/[{}]/g, '').replace(/\n/g, ' ') : ''), folderName,
         design: design.template !== 'none' ? TD.strip(design) : null, sourceIds,
         accountId, accountName: account?.name || '',
         categoryId, categoryName: category?.name || '',
@@ -1574,6 +1645,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         width: canvasWidth, height: canvasHeight,
         linkedScheduleId: schedId || '', linkedScheduleTitle: linkTitle,
       });
+      await setDoc(docRefFn('thumb_full', ref.id), { dataUrl: url, updatedAt: Date.now() });
+      FULL_CACHE.set(ref.id, url);
       // 予定側にも画像タイトルを書き戻し（双方向紐付け）。旧画像のリンクは先にクリア
       if (schedId) {
         if (selSched && selSched.imageId) {
@@ -1597,8 +1670,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
 
   return (
     <main className="flex-1 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row relative">
-      <div className="w-full md:w-[400px] bg-white border-r border-slate-200 md:overflow-y-auto shrink-0">
-        <div className="p-6 space-y-6">
+      <div className="w-full md:w-[470px] lg:w-[520px] bg-[#F3F7F8] border-r border-slate-200 md:overflow-y-auto shrink-0">
+        <div className="p-3 md:p-4 space-y-4">
           {selectedProject && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
               <div className="font-medium">📁 プロジェクト適用中</div>
@@ -1606,28 +1679,26 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
             </div>
           )}
 
-          {/* やることリスト */}
-          <div className="bg-gradient-to-br from-[#EAF3F4] to-white border border-[#CBDFE4] rounded-xl p-3 fade-up">
-            <div className="text-xs font-bold text-[#24505E] mb-1.5">やること</div>
-            <ol className="space-y-1">
-              {steps.map((st, i) => (
-                <li key={st.key}>
-                  <button type="button" onClick={() => st.ref && scrollTo(st.ref)} className={`w-full flex items-center gap-2 text-left text-sm rounded-lg px-2 py-1 ${st.done ? 'text-slate-400' : 'text-slate-800 hover:bg-white'}`}>
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${st.done ? 'bg-emerald-500 text-white pop' : 'bg-white border-2 border-[#2F6D80] text-[#2F6D80]'}`}>{st.done ? '✓' : i + 1}</span>
-                    <span className={st.done ? 'line-through' : ''}>{st.label}</span>
-                    {!st.done && (st.req ? <span className="req">必須</span> : <span className="text-[10px] text-slate-400">任意</span>)}
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </div>
+          {/* 進み具合（タップでその項目へ） */}
+          <ol className="flex gap-1.5 fade-up">
+            {steps.map((st, i) => (
+              <li key={st.key} className="flex-1 min-w-0">
+                <button type="button" onClick={() => st.ref && scrollTo(st.ref)} className={`btn-press w-full flex flex-col items-center gap-1 rounded-xl px-1 py-2 border text-center ${st.done ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-white border-slate-200 text-slate-700'}`}>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold ${st.done ? 'bg-emerald-500 text-white pop' : 'bg-white border-2 border-[#2F6D80] text-[#2F6D80]'}`}>{st.done ? '✓' : i + 1}</span>
+                  <span className="text-[11px] leading-tight font-medium truncate w-full">{st.label}</span>
+                  <span className={`text-[9px] ${st.done ? 'text-emerald-600' : st.req ? 'text-[#B25B44] font-bold' : 'text-slate-400'}`}>{st.done ? '完了' : st.req ? '必須' : '任意'}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
 
-          <section className="space-y-3" ref={secPhoto}>
-            <div className="flex items-center space-x-2 border-b pb-2">
-              <ImageIcon className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-semibold">1. {isRegister ? '写真を選ぶ' : '写真とデザイン'}</h2>
+          <section className="sec-card" ref={secPhoto}>
+            <div className={`sec-head ${baseImage ? 'done' : ''}`}>
+              <span className="sec-num">1</span>
+              <h2 className="sec-title">{isRegister ? '写真を選ぶ' : '写真とデザイン'}</h2>
               {baseImage ? <span className="ok-badge">OK</span> : <span className="req">必須</span>}
             </div>
+            <div className="sec-body">
             {isRegister ? (
               <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
                 <label className={`flex flex-col items-center justify-center w-full h-44 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : baseImage ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
@@ -1648,14 +1719,16 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
                 <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} onOpenPrompts={onOpenPrompts} schedTitle={selSched ? (selSched.catchTitle || selSched.title || '') : ''} />
               </div>
             )}
+            </div>
           </section>
 
-          <section className="space-y-3" ref={secFolder}>
-            <div className="flex items-center space-x-2 border-b pb-2">
-              <Folder className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-semibold">2. 保存先とファイル名</h2>
+          <section className="sec-card" ref={secFolder}>
+            <div className={`sec-head ${(accountId && categoryId) ? 'done' : ''}`}>
+              <span className="sec-num">2</span>
+              <h2 className="sec-title">保存先とファイル名</h2>
               {(accountId && categoryId) ? <span className="ok-badge">OK</span> : <span className="req">必須</span>}
             </div>
+            <div className="sec-body">
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-500">📅 投稿予定と紐付け（任意）</label>
               <select value={schedId} onChange={(e) => setSchedId(e.target.value)} className="w-full p-2 border rounded text-sm">
@@ -1695,14 +1768,16 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               <div className="font-mono break-all text-slate-800">{folderName}</div>
               <button onClick={async () => { const n = `${folderName}.jpg`; await copyToClipboard(n); showToast(`「${n}」をコピーしました`); }} className="mt-2 w-full bg-blue-50 text-blue-700 hover:bg-blue-100 py-2 rounded font-medium flex items-center justify-center gap-1.5"><Copy className="w-3.5 h-3.5" />タイトル.jpg をコピー（投稿ツール用）</button>
             </div>
+            </div>
           </section>
 
-          <section className="space-y-3 pb-6 safe-b" ref={secSize}>
-            <div className="flex items-center space-x-2 border-b pb-2">
-              <Settings className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-semibold">3. 画像サイズ</h2>
+          <section className="sec-card pb-2 safe-b" ref={secSize}>
+            <div className="sec-head opt">
+              <span className="sec-num">3</span>
+              <h2 className="sec-title">画像サイズ</h2>
               <span className="text-[10px] text-slate-400">任意（通常はこのまま）</span>
             </div>
+            <div className="sec-body">
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="block text-xs font-medium text-slate-500 mb-1">幅</label>
@@ -1718,20 +1793,22 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               <button onClick={() => { setCanvasWidth(1200); setCanvasHeight(900); }} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded font-medium">1200×900</button>
               <button onClick={() => { setCanvasWidth(1080); setCanvasHeight(1080); }} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded font-medium">1080×1080</button>
             </div>
+            </div>
           </section>
         </div>
       </div>
 
-      <div className="flex-none md:flex-1 h-[46vh] md:h-auto min-h-0 bg-[#E4EDF0] md:bg-slate-200/50 p-3 md:p-6 flex flex-col overflow-hidden md:overflow-auto order-first md:order-none sticky md:static top-0 z-20 md:z-auto shadow-md md:shadow-none">
+      <div className={`flex-none md:flex-1 ${previewBig ? 'h-[46vh]' : 'h-[24vh]'} md:h-auto min-h-0 bg-[#E4EDF0] md:bg-slate-200/50 p-2 md:p-6 flex flex-col overflow-hidden md:overflow-auto order-first md:order-none sticky md:static top-0 z-20 md:z-auto shadow-md md:shadow-none transition-[height] duration-200`}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2 md:mb-4">
-          <div className="text-[11px] md:text-xs text-slate-600 min-w-0">
+          <div className="text-[11px] md:text-xs text-slate-600 min-w-0 flex items-center gap-2">
+            <button type="button" onClick={() => setPreviewBig(v => !v)} className="md:hidden btn-press text-[11px] border border-slate-300 bg-white rounded-lg px-2 py-1" title="プレビューの大きさを切り替え">{previewBig ? '🔽 小さく' : '🔼 大きく'}</button>
             {canSave ? <span className="text-emerald-700 font-medium fade-up">✅ 保存できます</span> : <span>あと：<b className="text-[#B25B44]">{missing.join('・')}</b></span>}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleShare} disabled={isUploading || !canSave} title={canSave ? '' : `先に ${missing.join('・')} を設定してください`} className={`flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 md:px-4 py-2 rounded-lg font-medium text-sm shadow ${canSave && !isUploading ? 'glow' : ''}`}>
+            <button onClick={handleShare} disabled={isUploading || !canSave} title={canSave ? '' : `先に ${missing.join('・')} を設定してください`} className={`flex items-center gap-1.5 md:gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg font-medium text-xs md:text-sm shadow ${canSave && !isUploading ? 'glow' : ''}`}>
               {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}{isUploading ? '保存中…' : 'ギャラリーに保存'}
             </button>
-            <button onClick={handleDownload} disabled={!canSave} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 md:px-4 py-2 rounded-lg font-medium text-sm shadow">
+            <button onClick={handleDownload} disabled={!canSave} className="flex items-center gap-1.5 md:gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg font-medium text-xs md:text-sm shadow">
               <Download className="w-4 h-4" /><span className="hidden sm:inline">PCに保存</span><span className="sm:hidden">DL</span>
             </button>
           </div>
@@ -1744,6 +1821,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               <div className="text-xs text-slate-500 mt-1 break-all">{saved.name}（{saved.kb}KB）</div>
               {saved.sched && <div className="text-xs text-emerald-700 mt-1">📅「{saved.sched.title}」と紐付けました</div>}
               <div className="grid grid-cols-1 gap-2 mt-4">
+                <a href={GMO_UPLOAD_URL_FALLBACK} target="_blank" rel="noopener" className="bg-[#E9A07C] hover:bg-[#DD8E66] text-white px-3 py-2.5 rounded-xl text-sm font-bold">🚀 次：GMOにこの画像をアップロード</a>
                 {saved.sched && <a href={`/studio?sched=${saved.sched.id}`} target="_blank" rel="noopener" className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium">✍️ 投稿文の作成へ</a>}
                 <button onClick={() => { setSaved(null); openGallery(); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-medium">ギャラリーで確認する</button>
                 <button onClick={() => { setSaved(null); setPhotoSrcs([]); setSelectedCell(0); }} className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-3 py-2.5 rounded-xl text-sm font-medium">続けて{isRegister ? '登録' : '作成'}する</button>
@@ -2048,9 +2126,9 @@ function GalleryModal({ onClose, images, accounts, categories, showToast, schedu
                     className={`card-hover bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col ${draggingId === img.id ? 'opacity-40' : ''} ${highlightId === img.id ? 'ring-4 ring-emerald-400 glow' : ''}`}
                   >
                     <div className="aspect-[4/3] bg-slate-200 relative overflow-hidden group cursor-move">
-                      <img src={img.imageUrl} alt={img.folderName || img.titleText} className="w-full h-full object-cover" draggable={false} />
+                      <img src={img.thumbUrl || img.imageUrl} alt={img.folderName || img.titleText} className="w-full h-full object-cover" draggable={false} loading="lazy" />
                       <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button title="ダウンロード" onClick={() => { const a = document.createElement('a'); a.download = `${safeNameStr(img.folderName || img.titleText || 'image')}.jpg`; a.href = img.imageUrl; a.click(); }} className="bg-white/90 text-slate-800 hover:bg-white p-2 rounded-full shadow-lg"><Download className="w-4 h-4" /></button>
+                        <button title="ダウンロード" onClick={async () => { const full = await getFullImage(img); if (!full) { showToast('画像データを取得できませんでした'); return; } const a = document.createElement('a'); a.download = `${safeNameStr(img.folderName || img.titleText || 'image')}.jpg`; a.href = full; a.click(); }} className="bg-white/90 text-slate-800 hover:bg-white p-2 rounded-full shadow-lg"><Download className="w-4 h-4" /></button>
                         <button title="リンク発行" onClick={() => handleCopyLink(img.id)} className="bg-white/90 text-blue-700 hover:bg-white p-2 rounded-full shadow-lg"><Link2 className="w-4 h-4" /></button>
                         <button title="分類変更" onClick={() => setEditing(img)} className="bg-white/90 text-indigo-700 hover:bg-white p-2 rounded-full shadow-lg"><Edit3 className="w-4 h-4" /></button>
                         <button title="削除" onClick={() => handleDelete(img)} className="bg-white/90 text-red-600 hover:bg-red-50 p-2 rounded-full shadow-lg"><Trash2 className="w-4 h-4" /></button>
@@ -2191,10 +2269,10 @@ function ViewerMode({ id, showToast }) {
         <div className="text-xs text-slate-400">{fmtDateTime(data.createdAt)}</div>
       </header>
       <div className="flex-1 flex flex-col items-center justify-center p-4">
-        <img src={data.imageUrl} alt={data.folderName} className="max-w-full max-h-[70vh] rounded shadow-2xl bg-white" />
+        <img src={data.imageUrl || data.thumbUrl} alt={data.folderName} className="max-w-full max-h-[70vh] rounded shadow-2xl bg-white" />
         <p className="mt-4 font-mono break-all text-center text-sm text-slate-200">{data.folderName || data.titleText || '（未分類）'}</p>
         <div className="mt-4 flex gap-2">
-          <button onClick={() => { const a = document.createElement('a'); a.download = `${safeNameStr(data.folderName || data.titleText || 'image')}.jpg`; a.href = data.imageUrl; a.click(); }} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Download className="w-4 h-4" />画像をダウンロード</button>
+          <button onClick={() => { const a = document.createElement('a'); a.download = `${safeNameStr(data.folderName || data.titleText || 'image')}.jpg`; a.href = data.imageUrl || data.thumbUrl; a.click(); }} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Download className="w-4 h-4" />画像をダウンロード</button>
           <button onClick={async () => { await copyToClipboard(location.href); showToast('リンクをコピーしました'); }} className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><Copy className="w-4 h-4" />リンクをコピー</button>
         </div>
       </div>
@@ -2220,6 +2298,8 @@ function App() {
   const [titleToApply, setTitleToApply] = useState(null);
   const [linkedSchedId, setLinkedSchedId] = useState(() => params.get('sched') || '');
   const [linkDefault, setLinkDefault] = useState(null); // 予定から作るときの既定の運用アカウント／カテゴリ（studio_settings/thumb_link_default）
+  const [links, setLinks] = useState([]);             // リンク集（GMOアップロード画面のURL解決に使う）
+  const [migr, setMigr] = useState(null);             // 既存画像の軽量化 進捗 {n,total}
   const [tplConfirm, setTplConfirm] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useLocalStorage('selected_project_id', null);
   // 最初はギャラリー。統合ツールから ?sched=ID で来たときは作成画面へ
@@ -2255,11 +2335,19 @@ function App() {
       onSnapshot(colRef('shared_thumbnails'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); setImages(arr); setImagesLoaded(true); }),
       onSnapshot(colRef('studio_schedule'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999')); setSchedules(arr); }),
       onSnapshot(docRefFn('studio_settings', 'thumb_link_default'), s => { setLinkDefault(s.exists() ? s.data() : null); }, () => {}),
+      onSnapshot(colRef('links'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); setLinks(arr); }, () => {}),
       onSnapshot(colRef('thumb_design_templates'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setDesignTemplates(arr); }),
     ];
     return () => subs.forEach(u => u());
   }, [user]);
 
+  // 重い旧形式の画像が残っていれば、開いているあいだに裏で軽量化する（1回きり・次回から一覧が速くなる）
+  useEffect(() => {
+    if (!user || !imagesLoaded) return;
+    if (!images.some(i => i.imageUrl && !i.thumbUrl)) return;
+    migrateHeavyImages(images, (n, total) => setMigr({ n, total })).then(() => setTimeout(() => setMigr(null), 4000));
+  }, [user, imagesLoaded]);
+  const gmoUrl = gmoUploadUrl(links);
   if (viewerId) return (<><Toast msg={toastMsg} /><ViewerMode id={viewerId} showToast={showToast} /></>);
   const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
   const saveTemplate = async (name, design, kata) => { try { await addDoc(colRef('thumb_design_templates'), { name, design, kata: kata || '', fillTarget: kata === '2' ? 'sub' : 'title', createdAt: Date.now(), authorId: user ? user.uid : '' }); showToast(`「${name}」を保存しました${kata ? `（型${kata}用）` : ''}`); } catch (e) { console.error(e); showToast('保存に失敗しました'); } };
@@ -2268,14 +2356,15 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-800">
       <Toast msg={toastMsg} />
-      <Header view={view} onHome={() => goGallery()} onMenu={() => setMenuOpen(true)} />
+      <Header view={view} onHome={() => goGallery()} onMenu={() => setMenuOpen(true)} gmoUrl={gmoUrl} />
+      {migr && migr.n < migr.total && <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-[11px] px-3 py-1.5 text-center shrink-0">⚡ ギャラリーを軽量化しています… {migr.n} / {migr.total}（次回から表示が速くなります。このまま使えます）</div>}
       {view === 'gallery' && (
         <GalleryModal page images={images} accounts={accounts} categories={categories} showToast={showToast} schedules={schedules}
           loading={!imagesLoaded}
           highlightId={highlightId}
           onCreate={() => { setEditImg(null); setView('create'); }}
           onRegister={() => { setEditImg(null); setView('register'); }}
-          onEdit={(img) => { setEditImg({ ...img, _t: Date.now() }); setView('create'); }} />
+          onEdit={async (img) => { const full = await getFullImage(img); setEditImg({ ...img, imageUrl: full || img.thumbUrl || '', _t: Date.now() }); setView('create'); }} />
       )}
       {(view === 'create' || view === 'register') && (
         <CreateTab key={view} mode={view} user={user} accounts={accounts} categories={categories} projects={projects}

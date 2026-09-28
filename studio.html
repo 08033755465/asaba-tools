@@ -1069,7 +1069,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ===== サムネイルツールと同一のFirebase（既存の本番プロジェクトを共有） =====
 const FIREBASE_CONFIG = {
@@ -1094,7 +1094,8 @@ try {
   // ギャラリー画像
   onSnapshot(collection(db, ...basePath('shared_thumbnails')), (s) => {
     const arr = [];
-    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, folderName:v.folderName||'', titleText:v.titleText||'', imageUrl:v.imageUrl||'', createdAt:v.createdAt||0, linkedScheduleId:v.linkedScheduleId||'', linkedScheduleTitle:v.linkedScheduleTitle||'' }); });
+    // 一覧表示は軽いサムネ（thumbUrl）。旧形式の画像は imageUrl をそのまま使う。完成画像は fs.fullImage(id) で必要時だけ取得
+    s.forEach(d => { const v = d.data(); arr.push({ id:d.id, folderName:v.folderName||'', titleText:v.titleText||'', imageUrl:v.imageUrl||'', thumbUrl:v.thumbUrl||v.imageUrl||'', createdAt:v.createdAt||0, linkedScheduleId:v.linkedScheduleId||'', linkedScheduleTitle:v.linkedScheduleTitle||'' }); });
     arr.sort((a,b)=> b.createdAt - a.createdAt);
     window.__gallery = arr;
     window.dispatchEvent(new Event('gallery-ready'));
@@ -1118,6 +1119,8 @@ try {
     addPost: (rec) => addDoc(collection(db, ...basePath('studio_posts')), rec),
     // 画像←→予定の双方向紐付け：ギャラリー画像(shared_thumbnails)にも予定情報を書き戻す
     linkImage: (imageId, data) => setDoc(doc(db, ...basePath('shared_thumbnails'), imageId), data, { merge: true }),
+    // 完成画像（サムネツールが thumb_full に分けて保存）。旧形式なら一覧の imageUrl を返す
+    fullImage: async (imageId) => { const g=(window.__gallery||[]).find(x=>x.id===imageId); if(g && g.imageUrl) return g.imageUrl; try{ const snap=await getDoc(doc(db, ...basePath('thumb_full'), imageId)); return snap.exists()? (snap.data().dataUrl||'') : ''; }catch(e){ return ''; } },
     unlinkImage: (imageId) => setDoc(doc(db, ...basePath('shared_thumbnails'), imageId), { linkedScheduleId:"", linkedScheduleTitle:"" }, { merge: true }),
     // チーム共有リンクの編集・追加・削除（links コレクション。サムネツールと共通）
     setLink: (id, data) => setDoc(doc(db, ...basePath('links'), id), data, { merge: true }),
@@ -3524,7 +3527,7 @@ const DOW_JA = DOW_JP;
 function dowJp(date){ if(!date) return ""; const d=new Date(date+"T00:00:00"); return DOW_JA[d.getDay()]; }
 function schedWhen(s){ return `${fmtJp(s.date)}${s.date?`(${dowJp(s.date)})`:""} ${s.time||""}`; }
 // 予定に紐付いた画像のサムネURLをギャラリーから解決（大きな画像データは予定に保存しない）
-function galUrlById(id){ if(!id) return ""; const g=(window.__gallery||[]).find(x=>x.id===id); return g?g.imageUrl:""; }
+function galUrlById(id){ if(!id) return ""; const g=(window.__gallery||[]).find(x=>x.id===id); return g?(g.imageUrl||g.thumbUrl||""):""; }
 
 function renderHomeSchedule(){
   const box = document.getElementById("homeSchedule");
@@ -4981,7 +4984,7 @@ window.renderGalPick = (q="")=>{
     const name = i.folderName||i.titleText||"画像";
     const linked = i.linkedScheduleTitle ? `<div style="position:absolute;top:2px;left:2px;background:#2F6D80;color:#fff;font-size:9px;padding:1px 4px;border-radius:6px;">📅${esc(i.linkedScheduleTitle)}</div>` : "";
     return `<div class="gitem" style="position:relative;" onclick="pickGalForSched('${i.id}')">
-      <img src="${esc(i.imageUrl)}" loading="lazy" alt="">${linked}
+      <img src="${esc(i.thumbUrl||i.imageUrl)}" loading="lazy" alt="">${linked}
       <div class="cap">${esc(name)}</div></div>`;
   }).join("") || `<p class="hint">該当する画像がありません</p>`;
 };
@@ -5813,7 +5816,7 @@ window.renderGallery = (q="")=>{
     const linkedTitle = i.linkedScheduleTitle || (schedule.find(s=> s.imageId===i.id || s.imageTitle===jpg)?.catchTitle) || (schedule.find(s=> s.imageId===i.id || s.imageTitle===jpg)?.title) || "";
     const badge = linkedTitle ? `<div style="position:absolute;top:2px;left:2px;background:#2F6D80;color:#fff;font-size:9px;padding:1px 4px;border-radius:6px;max-width:90%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">📅${esc(linkedTitle)}</div>` : "";
     return `<div class="gitem ${sel}" style="position:relative;" onclick="pickImage('${esc(jpg).replace(/'/g,"\\'")}')">
-      <img src="${esc(i.imageUrl)}" loading="lazy" alt="">${badge}
+      <img src="${esc(i.thumbUrl||i.imageUrl)}" loading="lazy" alt="">${badge}
       <div class="cap">${esc(name)}</div></div>`;
   }).join("");
 };
@@ -5822,7 +5825,7 @@ window.pickImage = (jpg)=>{
   cur.imageTitle=safe;
   const img = (window.__gallery||[]).find(i=> (i.folderName||i.titleText||"画像")+".jpg"===jpg);
   cur.imageId = img?.id || "";
-  cur.imageUrl = img?.imageUrl || "";
+  cur.imageUrl = img?.imageUrl || img?.thumbUrl || "";
   document.getElementById("c_imageTitle").value=safe;
   refreshImageWarn();
   // この投稿が予定から来ている場合、予定にも画像を紐付けて双方向に記録（旧画像の解除込み）
@@ -5960,10 +5963,13 @@ window.applyImgSafe = ()=>{
 };
 window.copyImgTitle = ()=>{ if(!cur.imageTitle){toast("画像名がありません");return;} copyStr(cur.imageTitle); };
 window.dlPickedImageSafe = async ()=>{
-  if(!cur.imageUrl){ toast("この画像はDL用URLが取れません（ギャラリー画像を選んでください）"); return; }
+  if(!cur.imageUrl && !cur.imageId){ toast("この画像はDL用URLが取れません（ギャラリー画像を選んでください）"); return; }
   const safe = safeImgName(cur.imageTitle||"image.jpg");
+  // 一覧に持っているのは軽いサムネなので、DLは完成画像を取りに行く
+  const full = (cur.imageId && window.fs && window.fs.fullImage) ? (await window.fs.fullImage(cur.imageId)) : "";
+  const srcUrl = full || cur.imageUrl;
   try{
-    const res = await fetch(cur.imageUrl, {mode:"cors"});
+    const res = await fetch(srcUrl, {mode:"cors"});
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -5973,7 +5979,7 @@ window.dlPickedImageSafe = async ()=>{
   }catch(e){
     console.warn(e);
     toast("直接DL不可。別タブで開くので保存してください");
-    window.open(cur.imageUrl, "_blank");
+    window.open(srcUrl, "_blank");
   }
 };
 window.addEventListener("gallery-ready", ()=>{ if(!document.querySelector('[data-view="create"]').hidden && cur.step===3) renderGallery(document.getElementById("gsearch")?.value||""); });
@@ -6923,9 +6929,12 @@ window.importBackup = async (file)=>{
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-25.1";
+const STUDIO_VERSION = "2026-09-28.1";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-09-28.1", items:[
+      `<b>🖼️ ギャラリーの表示が速くなりました</b>：一覧は軽いサムネだけを読み込み、完成画像はダウンロードするときだけ取得します（サムネツール側の軽量化に対応）`,
+      `サムネツール：作成画面を広く・区切りを分かりやすく刷新。ギャラリー右上から「🚀 GMOに画像をアップロード」へ直接行けます` ] },
   { v:"2026-09-25.1", items:[
       `<b>⏰ 予約時刻が近いと出力前に止めます</b>：GMOは当日予約を「今から3時間先」にしないと取り込めません（19店舗すべてが同じエラーで弾かれた件）。3時間以内・過ぎた時刻のときは警告し、ワンタップで即時投稿に切り替えられます`,
       `<b>↔ 店舗ごとの本文を横に並べて比較</b>：確認画面で左右スワイプ。同じ言い回しの繰り返しにその場で気づけます（縦一覧にも戻せます）`,
