@@ -259,6 +259,7 @@
   .bd-step.late { background:#F8ECD9; color:#B07A2E; font-weight:700; }
   .bd-step.bad { background:#e2e8f0; color:#64748b; font-weight:700; text-decoration:line-through; }
   .bd-sum { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .bd-sum.g5 { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; } .bd-sum.g5 > div { min-width:0; }
   .bd-sum div { flex:1; min-width:70px; text-align:center; border:1px solid var(--line); border-radius:10px; padding:7px 4px; background:#fff; }
   .bd-sum .n { font-size:19px; font-weight:700; line-height:1.1; }
   .bd-sum .l { font-size:9px; color:var(--muted); }
@@ -313,6 +314,12 @@
     .donut-hero { background:linear-gradient(135deg,#1C333B,#1A2F37); }
     .day-item, .schedcard { border-color:#243940; }
   }
+  [data-view] > h1, [data-view="create"] .step { padding-right:48px; }
+  .ham-btn { position:fixed; top:calc(10px + env(safe-area-inset-top)); right:calc(12px + env(safe-area-inset-right)); z-index:60; width:40px; height:40px; border-radius:12px; border:1px solid var(--line); background:rgba(255,255,255,.95); font-size:19px; line-height:1; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.08); color:var(--ink); }
+  .menu-panel { position:absolute; top:0; right:0; bottom:0; width:min(320px, 86vw); background:#fff; padding:calc(16px + env(safe-area-inset-top)) 16px 16px; overflow-y:auto; box-shadow:-4px 0 18px rgba(0,0,0,.15); }
+  .menu-item { display:block; width:100%; text-align:left; border:1px solid var(--line); background:#fff; border-radius:12px; padding:12px 14px; margin-top:8px; font-size:14px; font-weight:600; cursor:pointer; color:var(--ink); }
+  .menu-item span { display:block; font-size:11px; font-weight:400; color:var(--muted); margin-top:2px; }
+  @media (prefers-color-scheme: dark){ .ham-btn, .menu-panel, .menu-item, #xCard { background:#1A2F37 !important; color:var(--ink); border-color:#2E4148; } }
   @media (prefers-reduced-motion: reduce){ .popcard{ animation:none; } .btn,.pill,.cal-cell,.gitem{ transition:none; } }
 </style>
 </head>
@@ -331,7 +338,8 @@
       <button data-sview="week" onclick="setSchedView('week')">📆 週</button>
       <button data-sview="board" onclick="setSchedView('board')">📊 進行状況</button>
     </div>
-    <div id="schedBody" class="mt"></div>
+    <div id="monthStats" class="mt"></div>
+    <div id="schedBody"></div>
     <div class="card" id="schedList" style="display:none;"></div>
 
     <details class="mt"><summary>＋ 追加・一括操作</summary>
@@ -557,12 +565,34 @@
       <div><label>掲載終了日</label><input type="date" id="sm_evEnd"></div>
       <div><label>終了時間</label><span class="tfrow"><input type="hidden" id="sm_evEndTime"><input class="tf" id="sm_evEndTime_v" type="text" inputmode="numeric" maxlength="5" placeholder="--:--" onfocus="this.select()" oninput="tfType('sm_evEndTime',null)" onblur="tfNorm('sm_evEndTime')"></span></div>
     </div>
+    <button type="button" class="pill mt" id="sm_evMonthBtn" style="display:none;" onclick="smEvMonth()">📅 掲載期間を月の1日〜末日にする</button>
     <label class="mt">タイミング</label>
     <select id="sm_timing"><option value="scheduled">予約投稿</option><option value="immediate">即時投稿</option></select>
     <label class="mt">キーワード（症状・訴求KW／指示文に反映）</label>
     <input id="sm_kw" placeholder="例：肩こり・首こり・手足の冷え">
-    <label class="mt">画像メモ（サムネの場面イメージ）</label>
+    <label class="mt">画像の出どころ</label>
+    <div class="seg" id="sm_imgSrc">
+      <button type="button" data-src="ai" class="on" onclick="smSetImgSrc('ai')">🎨 AI生成</button>
+      <button type="button" data-src="photo" onclick="smSetImgSrc('photo')">📷 実写真</button>
+    </div>
+    <label class="mt">画像メモ（短い要約）</label>
     <input id="sm_imgmemo" placeholder="例：冷房の中でカーディガンを羽織る女性→リラックス">
+    <div id="sm_promptWrap">
+      <div class="mt" style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
+        <label style="margin:0;">🖼️ 画像指示文（ChatGPTに貼る全文）</label>
+        <span style="display:flex; gap:6px;">
+          <button type="button" class="pill" onclick="smToggleImgRule()">📐 型の画像ルール</button>
+          <button type="button" class="pill" onclick="copyStr(withPromptSuffixC(document.getElementById('sm_imgPrompt').value),event)">📋 コピー</button>
+        </span>
+      </div>
+      <div id="sm_imgRule" class="note" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px;"></div>
+      <textarea id="sm_imgPrompt" style="min-height:110px; margin-top:6px;" placeholder="背景だけをChatGPTに作らせる指示文。帯とテキストは後から手動で入れます"></textarea>
+      <p class="hint">保存・コピー時、末尾に「帯とテキストは後から手動で入れるため…」の固定文が無ければ自動で付きます</p>
+    </div>
+    <div id="sm_photoNote" class="note mt" style="display:none; font-size:12px;">📷 実写真の予定です。AI生成は使わず、あさば様の写真を担当が用意します（画像指示文は不要）</div>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
+      <input type="checkbox" id="sm_imgReady" style="width:auto;"> 画像を「準備OK」にする（GMOに直接アップ済みなど）
+    </label>
     <label class="mt">🎯 文脈メモ（この回の投稿の文脈・特別指示）</label>
     <textarea id="sm_context" style="min-height:60px;" placeholder="例：お盆明けのだるさに寄り添う文脈で。売り込み感は弱めに。"></textarea>
     <label class="mt">サムネイル画像（事前に紐付け）</label>
@@ -572,6 +602,11 @@
       <button class="btn btn-ghost" style="flex:1; min-width:150px;" onclick="return openCommonPhotos()">📁 店舗写真フォルダ（Drive）</button>
     </div>
     <p class="hint">📁の写真を使う場合：写真を保存 → サムネイルツールでギャラリーに登録（文字入れ無しでもOK）→ 🖼️から選択</p>
+    <label class="mt">本文サンプル（/meo-month で19店舗に展開する前の確認）</label>
+    <div class="row">
+      <div><select id="sm_sampleStore"></select><p class="hint" style="margin-top:2px;">お手本にする代表店舗</p></div>
+      <div><label style="display:flex; align-items:center; gap:8px; font-weight:400; margin-top:8px;"><input type="checkbox" id="sm_sampleApproved" style="width:auto;"> サンプル確認OK</label></div>
+    </div>
     <label class="mt">対象</label>
     <div class="seg" id="sm_scope">
       <button data-scope="category_common" class="on">カテゴリ共通</button>
@@ -703,9 +738,14 @@
       <h2 id="storeModalTitle" style="margin:0;">🏪 店舗</h2>
       <button class="pill" onclick="closeStoreCard()">閉じる</button>
     </div>
+    <div class="seg mt" id="storeTabSeg">
+      <button data-t="info" class="on" onclick="storeTab('info')">🏪 基本情報</button>
+      <button data-t="usage" onclick="storeTab('usage')">📊 使用履歴</button>
+    </div>
     <div id="storeCardMeter" class="mt"></div>
     <div id="storeCardBody" class="mt"></div>
-    <div class="mt" style="display:flex; gap:8px; position:sticky; bottom:0; background:var(--cardbg,#fff); padding-top:10px;">
+    <div id="storeUsageBody" class="mt" style="display:none;"></div>
+    <div class="mt" id="storeSaveBar" style="display:flex; gap:8px; position:sticky; bottom:0; background:var(--cardbg,#fff); padding-top:10px;">
       <button class="btn btn-primary" style="flex:1;" onclick="saveStoreCard()">💾 保存</button>
       <button class="btn btn-ghost" style="width:auto; padding:14px 16px;" onclick="closeStoreCard()">キャンセル</button>
     </div>
@@ -1045,6 +1085,30 @@
   </div>
 </div>
 
+<!-- ☰ ハンバーガーメニュー -->
+<button id="hamBtn" class="ham-btn" onclick="openMenu()" aria-label="メニュー">☰</button>
+<div id="menuDrawer" style="display:none; position:fixed; inset:0; z-index:85; background:rgba(0,0,0,.35);" onclick="if(event.target.id==='menuDrawer') closeMenu()">
+  <div class="menu-panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><b>メニュー</b><button class="pill" onclick="closeMenu()">閉じる</button></div>
+    <button class="menu-item" onclick="openKaizen()">💬 改善・問合せ<span>Notionの改善DBに送信</span></button>
+    <button class="menu-item" onclick="showReleaseNotes()">📣 リリース情報<span>今回の改修・これまでの更新</span></button>
+    <button class="menu-item" onclick="openGlobalSettings()">⚙️ グローバル設定<span>画像名の命名規則・型別画像ルール・絵文字カウント</span></button>
+    <button class="menu-item" onclick="closeMenu(); showHelp()">📖 使い方ガイド</button>
+    <button class="menu-item" onclick="closeMenu(); go('settings')">🛠 設定タブ（テンプレート・定例指示など）</button>
+    <p class="hint" style="margin-top:10px;" id="menuVer"></p>
+  </div>
+</div>
+<!-- 汎用モーダル（画像指示文一覧・画像名一括・まとめ出力・設定など） -->
+<div id="xModal" style="display:none; position:fixed; inset:0; z-index:78; background:rgba(0,0,0,.45); align-items:center; justify-content:center;" onclick="if(event.target.id==='xModal') closeX()">
+  <div id="xCard" class="popcard" style="background:#fff; width:calc(100% - 20px); max-width:620px; border-radius:16px; max-height:88dvh; overflow-y:auto; padding:16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+      <h2 id="xTitle" style="margin:0;"></h2>
+      <button class="pill" onclick="closeX()">閉じる</button>
+    </div>
+    <div id="xBody"></div>
+  </div>
+</div>
+
 <!-- 下部ナビ -->
 <nav class="nav">
   <div class="nav-in">
@@ -1141,6 +1205,8 @@ try {
     delSlotset: (id) => deleteDoc(doc(db, ...basePath('studio_slotsets'), id)),
     // 一括投稿テンプレート（列定義・店舗一覧。チーム共有）
     setBulkTpl: (rec) => setDoc(doc(db, ...basePath('studio_settings'), 'bulk_template'), rec),
+    // グローバル設定（命名規則・型別画像ルール・絵文字カウント。MCPと共有）
+    setGlobal: (rec) => setDoc(doc(db, ...basePath('studio_settings'), 'global'), rec, { merge: true }),
     // GBP掲載チェック（1日1ドキュメント。id = YYYY-MM-DD）
     setGbpCheck: (rec) => setDoc(doc(db, ...basePath('studio_gbpcheck'), rec.id), rec),
     delGbpCheck: (id) => deleteDoc(doc(db, ...basePath('studio_gbpcheck'), id)),
@@ -1194,6 +1260,11 @@ try {
     window.__bulkTpl = d.data();
     window.dispatchEvent(new Event('bulktpl-ready'));
   }, (e)=> console.warn('bulk template read error', e));
+
+  onSnapshot(doc(db, ...basePath('studio_settings'), 'global'), (d) => {
+    window.__global = d.exists() ? d.data() : {};
+    window.dispatchEvent(new Event('global-ready'));
+  }, (e)=> console.warn('global settings read error', e));
 
   // ===== GBP掲載チェック（チーム共有・Firestore） =====
   onSnapshot(collection(db, ...basePath('studio_gbpcheck')), (s) => {
@@ -1747,6 +1818,7 @@ window.openStoreCard = (id)=>{
   editingStore._base = src ? (src.updatedAt||0) : 0;
   document.getElementById("storeModalTitle").textContent = src ? "🏪 "+(src.name||"店舗") : "🏪 店舗を追加";
   renderStoreCard();
+  storeTab("info");
   document.getElementById("storeModal").style.display="flex";
 };
 window.closeStoreCard = ()=>{ document.getElementById("storeModal").style.display="none"; editingStore=null; };
@@ -3669,7 +3741,7 @@ function schedCard(s){
   else chips.push(s.done ? `<span class="stat" style="background:#DCE9EE;color:#2F6D80">📤出力済み・未投稿</span>`
                          : `<span class="stat" style="background:#f1f5f9;color:#64748b">⬜未出力</span>`);
   chips.push(ist==='linked'
-    ? `<span class="stat" style="background:#E3F0E4;color:#3E8E7E">🖼️画像作成済み</span>`
+    ? `<span class="stat" style="background:#E3F0E4;color:#3E8E7E">🖼️画像準備OK</span>`
     : `<span class="stat" style="background:${ist==='none'?'#f1f5f9':'#fef3c7'};color:${ist==='none'?'#64748b':'#92400e'}">${im.icon}${ist==='none'?'画像未作成':im.label}</span>`);
   if(!(s.catchTitle||s.title)) chips.push(`<span class="stat" style="background:#f1f5f9;color:#64748b">📝テーマ未作成</span>`);
   if(isShifted(s)) chips.push(`<span class="stat" style="background:#F8ECD9;color:#B07A2E">↷${fmtJp(s.postedDate).slice(5)}</span>`);
@@ -4088,16 +4160,25 @@ function actualDate(s){ return s.postedDate || s.date || ""; }
 // 予定と実績がズレているか
 function isShifted(s){ return !!(s.postedDate && s.date && s.postedDate !== s.date); }
 // 画像の紐付け状態：none / nameonly（名前だけ・ギャラリー未紐付け） / linked / broken（画像が消えた）
+// linked＝準備OK：ギャラリーに紐付け済み／ギャラリーに同名あり／手動で「準備OK」（GMOに直接アップした場合）
 function imgState(s){
   if(!s.imageTitle) return "none";
+  if(s.imageId && galUrlById(s.imageId)) return "linked";
+  if(s.imageReady || galHasName(s.imageTitle)) return "linked";
   if(!s.imageId) return "nameonly";
-  return galUrlById(s.imageId) ? "linked" : "broken";
+  return "broken";
 }
+// 改修指示書の3段階（未設定／名前のみ／準備OK）
+function imgStatus3(s){ const st=imgState(s); return st==="none"?"none":(st==="linked"?"ready":"nameonly"); }
+const IMG3_META = { none:{icon:"⬜",label:"未設定",bg:"#f1f5f9",color:"#64748b"}, nameonly:{icon:"⚠️",label:"名前のみ",bg:"#fef3c7",color:"#92400e"}, ready:{icon:"✅",label:"準備OK",bg:"#E3F0E4",color:"#3E8E7E"} };
+function galNameOf(g){ return safeImgName((g.folderName||g.titleText||"")+".jpg"); }
+function galByName(name){ const n=safeImgName(name||""); return (window.__gallery||[]).find(g=> galNameOf(g)===n) || null; }
+function galHasName(name){ return !!(name && galByName(name)); }
 const IMG_META = {
   none:     {icon:"❌", label:"画像なし",       color:"var(--muted)"},
   nameonly: {icon:"⚠️", label:"名前だけ",       color:"var(--warn)"},
   broken:   {icon:"⚠️", label:"画像リンク切れ", color:"var(--ng)"},
-  linked:   {icon:"🖼️", label:"紐付け済",       color:"var(--ok)"},
+  linked:   {icon:"🖼️", label:"準備OK",         color:"var(--ok)"},
 };
 // 状態を丸ごと設定（実績日・メモつき）
 window.setPostStatus = (id, status, dateStr, note)=>{
@@ -4667,9 +4748,10 @@ function askClose(val){
   if(r) r(val);
 }
 function askPop(opts){
-  // opts: {title, body, okLabel, danger} → Promise<boolean>
+  // opts: {title, body, okLabel, cancelLabel, danger} → Promise<boolean>（背景タップは null）
   return new Promise(resolve=>{
     ASK_RESOLVE = resolve;
+    document.getElementById("ask_cancel").textContent = opts.cancelLabel || "キャンセル";
     document.getElementById("ask_title").textContent = opts.title || "確認";
     const b = document.getElementById("ask_body");
     b.textContent = opts.body || ""; b.style.display = opts.body ? "block" : "none";
@@ -4694,6 +4776,7 @@ function inputPop(opts){
     inp.style.display = "block"; inp.value = opts.value || ""; inp.placeholder = opts.placeholder || "";
     const okBtn = document.getElementById("ask_ok");
     okBtn.textContent = opts.okLabel || "保存"; okBtn.className = "btn btn-primary"; okBtn.style.cssText = "flex:1;";
+    document.getElementById("ask_cancel").textContent = "キャンセル";
     okBtn.onclick = ()=> askClose(inp.value);
     document.getElementById("ask_cancel").onclick = ()=> askClose(null);
     document.getElementById("askModal").style.display = "flex";
@@ -4885,13 +4968,19 @@ window.openSchedEdit = (id, presetDate)=>{
   setTf("sm_time", s?.time || defaultTime(s?.abType || "A"));
   document.getElementById("sm_kw").value = s?.kw || "";
   document.getElementById("sm_imgmemo").value = s?.imageMemo || "";
+  document.getElementById("sm_imgPrompt").value = s?.imagePrompt || "";
+  document.getElementById("sm_imgReady").checked = !!s?.imageReady;
+  document.getElementById("sm_imgRule").style.display = "none";
+  smSetImgSrc(s ? imageSourceOf(s) : "ai");
+  document.getElementById("sm_sampleStore").innerHTML = `<option value="">（代表店舗を選ぶ）</option>` + STORES.map(x=>`<option value="${x.gmo}" ${String(s?.sampleStore||"")===x.gmo?"selected":""}>${esc(x.name)}</option>`).join("");
+  document.getElementById("sm_sampleApproved").checked = !!s?.sampleApproved;
   document.getElementById("sm_context").value = s?.context || "";
   document.getElementById("sm_postType").value = s?.postType || "最新情報";
   document.getElementById("sm_evStart").value = s?.evStart || "";
   document.getElementById("sm_evEnd").value = s?.evEnd || "";
   setTf("sm_evStartTime", s?.evStartTime || "");
   setTf("sm_evEndTime", s?.evEndTime || "");
-  const smEv = (v)=> ["sm_evRow","sm_evRow2"].forEach(id=>{ document.getElementById(id).style.display = (["イベント","クーポン"].includes(v)) ? "" : "none"; });
+  const smEv = (v)=> ["sm_evRow","sm_evRow2","sm_evMonthBtn"].forEach(id=>{ document.getElementById(id).style.display = (["イベント","クーポン"].includes(v)) ? "" : "none"; });
   smEv(s?.postType);
   document.getElementById("sm_postType").onchange = (e)=> smEv(e.target.value);
   window.smDateChanged = (v)=>{
@@ -4920,6 +5009,29 @@ window.openSchedEdit = (id, presetDate)=>{
   renderSmImgLinked();
   document.getElementById("sm_delete").style.display = s ? "block" : "none";
   document.getElementById("schedModal").style.display = "flex";
+};
+// 画像の出どころ（AI生成／実写真）。実写真は画像指示文の欄を出さない
+let SM_IMG_SRC = "ai";
+window.smSetImgSrc = (v)=>{
+  SM_IMG_SRC = v==="photo" ? "photo" : "ai";
+  document.querySelectorAll("#sm_imgSrc button").forEach(b=> b.classList.toggle("on", b.dataset.src===SM_IMG_SRC));
+  document.getElementById("sm_promptWrap").style.display = SM_IMG_SRC==="photo" ? "none" : "";
+  document.getElementById("sm_photoNote").style.display = SM_IMG_SRC==="photo" ? "" : "none";
+};
+window.smToggleImgRule = ()=>{
+  const box = document.getElementById("sm_imgRule");
+  if(box.style.display!=="none"){ box.style.display="none"; return; }
+  box.textContent = imageRuleText(document.getElementById("sm_formatId").value);
+  box.style.display = "";
+};
+// イベント投稿の掲載期間を、予定日の月の1日〜末日で入れる
+window.smEvMonth = ()=>{
+  const base = document.getElementById("sm_date").value || todayISO();
+  const [y,m] = base.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  document.getElementById("sm_evStart").value = `${y}-${String(m).padStart(2,"0")}-01`;
+  document.getElementById("sm_evEnd").value = `${y}-${String(m).padStart(2,"0")}-${String(last).padStart(2,"0")}`;
+  toast(`📅 掲載期間を ${m}/1〜${m}/${last} にしました`);
 };
 function renderSmImgLinked(){
   const box = document.getElementById("sm_imgLinked"); if(!box) return;
@@ -5075,6 +5187,11 @@ window.saveSchedEdit = ()=>{
     abType: ab,
     kw: document.getElementById("sm_kw").value.trim(),
     imageMemo: document.getElementById("sm_imgmemo").value.trim(),
+    imageSource: SM_IMG_SRC,
+    imagePrompt: withPromptSuffixC(document.getElementById("sm_imgPrompt").value),
+    imageReady: document.getElementById("sm_imgReady").checked,
+    sampleStore: document.getElementById("sm_sampleStore").value,
+    sampleApproved: document.getElementById("sm_sampleApproved").checked,
     context: document.getElementById("sm_context").value.trim(),
     imageTitle: smImage ? safeImgName(smImage.title) : "",
     imageId: smImage ? (smImage.id||"") : "",
@@ -5258,7 +5375,7 @@ window.startFromSched = async (id, step)=>{
   if(typeof closeDayModal==="function") closeDayModal();
   freshCur({ schedId:id, title:s.catchTitle||s.title, themeTitle:s.title, catchTitle:s.catchTitle||"",
              date:s.date||"", time:s.time||defaultTime(s.abType||"A"), abType:s.abType||"A",
-             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", postType:s.postType||"最新情報", btnType:s.btnType||"", formatId:s.formatId||"", evStart:s.evStart||"", evEnd:s.evEnd||"", evStartTime:s.evStartTime||"", evEndTime:s.evEndTime||"", timing:s.timing||"scheduled",
+             kw:s.kw||"", context:s.context||"", imageMemo:s.imageMemo||"", imagePrompt:s.imagePrompt||"", postType:s.postType||"最新情報", btnType:s.btnType||"", formatId:s.formatId||"", evStart:s.evStart||"", evEnd:s.evEnd||"", evStartTime:s.evStartTime||"", evEndTime:s.evEndTime||"", timing:s.timing||"scheduled",
              scope:s.scope||"category_common", storeIds:(s.storeIds||[]).slice(),
              contents: s.contents ? JSON.parse(JSON.stringify(s.contents)) : {},
              overrides: s.overrides ? JSON.parse(JSON.stringify(s.overrides)) : {},
@@ -5705,8 +5822,14 @@ window.onEditContent = (key,val)=>{ cur.contents[key]=val; updateChips(key); sav
 
 // --- 検証 ---
 const EMOJI_RE=/\p{Extended_Pictographic}/gu, DASH_RE=/――|——|--|ーー|─/g, PHONE_RE=/0\d{1,4}-\d{1,4}-\d{3,4}/;
+// 構成記号（型2の✅📍・型5の▶ など）は設定で絵文字数から外せる（既定＝外す）
+function emojiCountC(t){
+  let x=String(t||"");
+  const g=G(); if(g.emojiExcludeStructural!==false) (g.structuralChars||[]).forEach(ch=>{ if(ch) x=x.split(ch+"\uFE0F").join("").split(ch).join(""); });
+  return (x.match(EMOJI_RE)||[]).length;
+}
 function validate(t){ t=t||"";
-  const chars=Array.from(t.replace(/\n/g,"")).length, emoji=(t.match(EMOJI_RE)||[]).length,
+  const chars=Array.from(t.replace(/\n/g,"")).length, emoji=emojiCountC(t),
     ng=NG.filter(n=>t.includes(n[0])), dash=[...new Set(t.match(DASH_RE)||[])], phone=PHONE_RE.test(t),
     claim=(t.match(CLAIM_RE)||[])[0]||"", privacy=(t.match(PRIVACY_RE)||[])[0]||"";
   return {chars,emoji,ng,dash,phone,claim,privacy,charOk:chars>=250&&chars<=400,emojiOk:emoji>=2&&emoji<=3,ok:!ng.length&&!dash.length&&!phone};
@@ -6825,7 +6948,7 @@ function renderHistory(){
   ensureCalMonth();
   const pre = `${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}`;
   let filtered = q ? posts.filter(p=>{
-    const hay = [p.title, p.themeTitle, p.catchTitle, ...Object.values(p.contents||{})].join(" ").toLowerCase();
+    const hay = [p.title, p.themeTitle, p.catchTitle, ...Object.values(p.contents||{}), ...(p.items||[]).map(it=>(it.catchTitle||"")+(it.title||""))].join(" ").toLowerCase();
     return hay.includes(q);
   }) : posts;
   // 検索していないときは月別表示（すべて表示トグルあり）
@@ -6838,6 +6961,7 @@ function renderHistory(){
   if(!posts.length){ box.innerHTML = storeBtn + loadingOrEmpty("posts","まだ投稿履歴がありません。作成タブでCSV/XLSXを出力すると、その投稿文がここに貯まります。"); return; }
   if(!filtered.length){ box.innerHTML = head + `<p class="hint">${q?`「${esc(q)}」に一致する投稿はありません。`:"この月の出力はありません。"}</p>`; return; }
   box.innerHTML = head + filtered.map(p=>{
+    if(p.kind==="bulk") return bulkHistoryCard(p);
     const entries = Object.entries(p.contents||{});
     const dateStr = p.date ? `${p.date.replace(/-/g,"/")}${p.time?" "+p.time:""}` : "日付なし";
     const blocks = `<details class="mt"><summary>📄 本文を見る（${entries.length}件）</summary>` + entries.map(([k,v])=>`
@@ -6927,11 +7051,475 @@ window.importBackup = async (file)=>{
   }catch(e){ toast("読み込みに失敗しました"); }
 };
 
+// ============ 2026-10 改修：グローバル設定／画像指示文／画像名の一括差し込み／まとめ出力／使用履歴 ============
+// ※ lib/meo.js（MCP）と同じ定義。設定は studio_settings/global にチームで共有
+var IMAGE_PROMPT_SUFFIX = "帯とテキストは後から手動で入れるため、背景のみを作成してください。画像内に文字・帯・ロゴ・記号は一切入れないでください。";
+var STRUCT_CHARS_DEFAULT = ["▶","✅","📍","◎","・"];
+var IMAGE_RULE_FIELDS = [["people","人物の有無"],["composition","構図"],["textArea","帯・テキスト用の余白位置"],["ratio","縦横比"],["tone","色味のトーン"],["ng","禁止事項"],["note","補足"]];
+var IMAGE_RULE_COMMON = { ratio:"横長4:3", tone:"水彩画風のやわらかいイラスト／季節の植物と自然光／明るくやさしい色合い", ng:"画像内に文字・帯・ロゴ・記号を一切入れない（帯とテキストは担当が手動で入れる）", note:"人物はテーマに合わせて女性・男性・シニア・親子・家族（複数人）から選んでよい。テーマに必要なら動物も可" };
+var IMAGE_RULES_SEED = {
+  f_season:  { ...IMAGE_RULE_COMMON, people:"あり：顔がはっきり見える人物", composition:"人物を画面の右寄せに配置", textArea:"左上（テキスト用の余白を広くとる）" },
+  f_symptom: { ...IMAGE_RULE_COMMON, people:"風景、または表情の見えない人物（後ろ姿・横顔の一部・手元・足元）", composition:"人物・小物は画面の下半分にまとめる", textArea:"画面中央の横一帯（帯と文字を重ねるのでシンプルな面にする）" },
+  f_story:   { ...IMAGE_RULE_COMMON, people:"風景、または表情の見えない人物（後ろ姿・横顔の一部・手元・足元）", composition:"人物は画面の下半分に小さめに配置", textArea:"画面中央の横一帯（帯と文字を重ねるのでシンプルな面にする）" },
+  f_rhythm:  { ...IMAGE_RULE_COMMON, people:"あり：顔がはっきり見える人物が主役", composition:"人物を主役に大きめに配置", textArea:"型1とは別（左上前提にしない）" },
+  f_menu:    { ...IMAGE_RULE_COMMON, people:"あり：顔がはっきり見える人物が主役", composition:"人物を主役に大きめに配置", textArea:"型1とは別（左上前提にしない）" },
+};
+var GLOBAL_DEFAULT = { imageNamePattern:"ONE T RAST様_定期コラム_{MM}-{DD}.jpg", photoNamePattern:"", emojiExcludeStructural:true, structuralChars:STRUCT_CHARS_DEFAULT, imagePromptSuffix:IMAGE_PROMPT_SUFFIX, imageRules:IMAGE_RULES_SEED };
+function G(){
+  const r = window.__global || {};
+  const g = { ...GLOBAL_DEFAULT, ...r };
+  g.imageRules = { ...IMAGE_RULES_SEED };
+  Object.entries(r.imageRules||{}).forEach(([k,v])=>{ g.imageRules[k] = { ...(IMAGE_RULES_SEED[k]||{}), ...(v||{}) }; });
+  if(!Array.isArray(g.structuralChars)) g.structuralChars = STRUCT_CHARS_DEFAULT;
+  return g;
+}
+window.addEventListener("global-ready", ()=>{ try{ if(typeof renderSchedule==="function") renderSchedule(); }catch(e){} });
+function imageSourceOf(s){ return (s && s.imageSource) || (/【実写真】/.test((s&&s.imageMemo)||"") ? "photo" : "ai"); }
+function withPromptSuffixC(text){
+  const sfx = G().imagePromptSuffix || IMAGE_PROMPT_SUFFIX;
+  const t = String(text||"").trim();
+  if(!t || t.includes(sfx)) return t;
+  return t + (/[。．.]$/.test(t) ? "" : "。") + sfx;
+}
+function formatName(id){ const f=(FORMATS||[]).find(x=>x.id===id); return f ? f.name : ""; }
+function imageRuleText(formatId){
+  const r = G().imageRules[formatId];
+  if(!formatId) return "投稿の型を選ぶと、その型の画像デザインルールが出ます";
+  if(!r) return "この型の画像デザインルールは未設定です（☰メニュー →「グローバル設定」で入力）";
+  return `【${formatName(formatId)||formatId}】\n` + IMAGE_RULE_FIELDS.map(([k,l])=> r[k] ? `・${l}：${r[k]}` : null).filter(Boolean).join("\n") + `\n・末尾の固定文：${G().imagePromptSuffix}`;
+}
+// 命名規則：{YYYY}{MM}{DD}{M}{D}{AB} を予定日などで置換し、GMOで通る安全名に
+function applyNamePatternC(pattern, s){
+  const [y,m,d] = String(s.date||todayISO()).split("-");
+  return safeImgName(String(pattern||GLOBAL_DEFAULT.imageNamePattern)
+    .replace(/\{YYYY\}/g,y).replace(/\{MM\}/g,m).replace(/\{DD\}/g,d)
+    .replace(/\{M\}/g,String(Number(m))).replace(/\{D\}/g,String(Number(d))).replace(/\{AB\}/g,s.abType||""));
+}
+function namePatternForC(s){ const g=G(); return (imageSourceOf(s)==="photo" && g.photoNamePattern) ? g.photoNamePattern : (g.imageNamePattern||GLOBAL_DEFAULT.imageNamePattern); }
+function monthKey(){ ensureCalMonth(); return `${CAL_Y}-${String(CAL_M+1).padStart(2,"0")}`; }
+function monthScheds(){ const pre=monthKey(); return sortedSched().filter(s=> (s.date||"").startsWith(pre) && !isRetired(s)); }
+function img3Chip(s){ const m=IMG3_META[imgStatus3(s)]; return `<span class="stat" style="background:${m.bg};color:${m.color}">${m.icon}${m.label}</span>`; }
+
+// ===== 汎用モーダル =====
+window.openX = (title, html, wide)=>{
+  document.getElementById("xTitle").textContent = title;
+  document.getElementById("xBody").innerHTML = html;
+  document.getElementById("xCard").style.maxWidth = wide ? "860px" : "620px";
+  document.getElementById("xModal").style.display = "flex";
+};
+window.closeX = ()=>{ document.getElementById("xModal").style.display = "none"; X_VIEW = ""; };
+let X_VIEW = "";   // 月スライドで再描画するモーダル（prompt / names / bulk）
+function rerenderX(){ if(X_VIEW==="prompt") openPromptList(); else if(X_VIEW==="names") openBulkNames(); else if(X_VIEW==="bulk") openBulkExport(); }
+function xMonthNav(){
+  return `<div class="cal-head" style="margin-bottom:8px;"><div class="cal-nav"><button class="pill" onclick="xMonth(-1)">◀</button><button class="pill" onclick="xMonth(0)">今月</button><button class="pill" onclick="xMonth(1)">▶</button></div><b>${CAL_Y}年${CAL_M+1}月</b><span class="muted" style="font-size:10px;">←→スワイプ</span></div>`;
+}
+window.xMonth = (n)=>{ if(n===0){ const d=new Date(); CAL_Y=d.getFullYear(); CAL_M=d.getMonth(); } else { CAL_M+=n; if(CAL_M<0){CAL_M=11;CAL_Y--;} if(CAL_M>11){CAL_M=0;CAL_Y++;} } rerenderX(); renderSchedule(); };
+function bindXSwipe(){
+  const area = document.getElementById("xBody"); if(!area || area.__xs) return; area.__xs = true;
+  let sx=0, sy=0, on=false;
+  area.addEventListener("touchstart", e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; on=true; }, {passive:true});
+  area.addEventListener("touchend", e=>{ if(!on||!X_VIEW) return; on=false; const t=e.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy;
+    if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*1.5) xMonth(dx<0?1:-1); }, {passive:true});
+}
+
+// ===== 月の集計（予定画面の上部） =====
+function renderMonthStats(){
+  const box = document.getElementById("monthStats"); if(!box) return;
+  const list = monthScheds();
+  const n = list.length;
+  const body = list.filter(s=> Object.keys(s.contents||{}).length).length;
+  const ready = list.filter(s=> imgStatus3(s)==="ready").length;
+  const exp = list.filter(s=> s.done).length;
+  const posted = list.filter(s=> postStatusOf(s)==="posted").length;
+  box.innerHTML = `<div class="card" style="padding:10px 12px; margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><b class="small">📊 ${CAL_Y}年${CAL_M+1}月の集計</b><span class="muted" style="font-size:10px;">←→スワイプで月を切替</span></div>
+    <div class="bd-sum g5" style="margin-bottom:8px;">
+      <div><span class="n" style="display:block;">${n}</span><span class="l" style="display:block;">予定数</span></div>
+      <div><span class="n" style="display:block;">${body}</span><span class="l" style="display:block;">本文登録済み</span></div>
+      <div><span class="n" style="display:block;">${ready}</span><span class="l" style="display:block;">画像準備OK</span></div>
+      <div><span class="n" style="display:block;">${exp}</span><span class="l" style="display:block;">出力済み</span></div>
+      <div><span class="n" style="display:block;">${posted}</span><span class="l" style="display:block;">投稿済み</span></div>
+    </div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button class="pill" onclick="openPromptList()">🖼️ 画像指示文一覧</button>
+      <button class="pill" onclick="openBulkNames()">🏷️ 画像名を一括差し込み</button>
+      <button class="pill" style="background:var(--brand); color:#fff;" onclick="openBulkExport()">📦 まとめて出力</button>
+    </div>
+  </div>`;
+  if(!box.__swipeBound){ bindMonthSwipe(box); }
+  const sl = document.getElementById("schedList"); if(sl) bindMonthSwipe(sl);
+}
+{ const _rs = window.renderSchedule; window.renderSchedule = ()=>{ _rs(); try{ renderMonthStats(); }catch(e){ console.warn("monthStats", e); } }; }
+
+// ===== ① 画像指示文一覧（1行1コピー） =====
+window.openPromptList = ()=>{
+  X_VIEW = "prompt";
+  const list = monthScheds();
+  const rows = list.map(s=>{
+    const d = s.date ? `${Number(s.date.slice(5,7))}/${Number(s.date.slice(8))}(${dowJp(s.date)})` : "日付未定";
+    const photo = imageSourceOf(s)==="photo";
+    const pr = withPromptSuffixC(s.imagePrompt||"");
+    return `<div class="card" style="padding:10px 12px; margin:0 0 8px;">
+      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><b class="small">${d}</b>${abBadge(s)}${kataBadge(s)}${img3Chip(s)}</div>
+      <div class="small" style="font-weight:700; margin-top:4px;">${esc(s.catchTitle||s.title||"（無題）")}</div>
+      <div class="muted" style="font-size:11px; margin-top:2px;">🖼️ ${esc(s.imageTitle||"（画像名未設定）")}</div>
+      ${photo ? `<div class="note" style="font-size:12px; margin-top:6px;">📷 実写真（AI生成なし・画像指示文は不要）</div>`
+        : (pr ? `<details style="margin-top:6px;"><summary class="small" style="cursor:pointer;">${esc(pr.slice(0,60))}…</summary><div class="small" style="white-space:pre-wrap; margin-top:6px; line-height:1.7;">${esc(pr)}</div></details>
+            <div style="display:flex; gap:6px; margin-top:6px;"><button class="pill" style="background:var(--brand); color:#fff;" onclick='copyStr(${JSON.stringify(pr)},event)'>📋 指示文をコピー</button><button class="pill" onclick="closeX(); openSchedEdit('${s.id}')">✏️ 編集</button></div>`
+            : `<div style="display:flex; gap:6px; align-items:center; margin-top:6px;"><span class="muted small">指示文が未入力です</span><button class="pill" onclick="closeX(); openSchedEdit('${s.id}')">✏️ 入力する</button></div>`)}
+    </div>`;
+  }).join("");
+  const all = list.filter(s=> imageSourceOf(s)!=="photo" && s.imagePrompt).map(s=> `【${fmtJp(s.date)} ${s.abType||""} ${formatName(s.formatId)}】${s.catchTitle||s.title||""}\n${withPromptSuffixC(s.imagePrompt)}`).join("\n\n");
+  openX("🖼️ 画像指示文一覧", xMonthNav() +
+    `<p class="hint" style="margin-top:0;">ChatGPTに1本ずつ貼る運用です。各行の「📋」でコピーしてください（末尾の固定文は自動で付きます）</p>` +
+    (list.length ? rows : `<p class="hint">この月の予定はありません</p>`) +
+    (all ? `<button class="btn btn-ghost mt" onclick='copyStr(${JSON.stringify(all)},event)'>📋 全件まとめてコピー（任意）</button>` : ""));
+  bindXSwipe();
+};
+
+// ===== ③ 画像名の一括差し込み＋画像ステータス =====
+let BN_PHOTO = true;
+window.openBulkNames = ()=>{
+  X_VIEW = "names";
+  const list = monthScheds();
+  const g = G();
+  const target = list.filter(s=> BN_PHOTO || imageSourceOf(s)!=="photo");
+  const missing = target.filter(s=> !s.imageTitle);
+  const differ = target.filter(s=> s.imageTitle && s.imageTitle!==applyNamePatternC(namePatternForC(s), s));
+  const rows = list.map(s=>{
+    const prop = applyNamePatternC(namePatternForC(s), s);
+    const photo = imageSourceOf(s)==="photo";
+    const willSet = (BN_PHOTO || !photo) && !s.imageTitle;
+    return `<div class="listitem" style="align-items:flex-start;">
+      <div class="small" style="min-width:0; flex:1;">
+        <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;"><b>${fmtJp(s.date).slice(5)}(${dowJp(s.date)})</b>${abBadge(s)}${photo?'<span class="pill">📷実写真</span>':''}${img3Chip(s)}</div>
+        <div style="margin-top:2px;">${esc(s.catchTitle||s.title||"")}</div>
+        <div class="muted" style="font-size:11px; word-break:break-all;">現在：${esc(s.imageTitle||"（なし）")}${willSet?`<br>→ 登録予定：<b style="color:var(--brand);">${esc(prop)}</b>`:(s.imageTitle && s.imageTitle!==prop ? `<br>規則どおりだと：${esc(prop)}`:"")}</div>
+      </div>
+      <label style="display:flex; align-items:center; gap:4px; font-size:11px; font-weight:400; white-space:nowrap;"><input type="checkbox" style="width:auto;" ${s.imageReady?"checked":""} ${s.imageTitle?"":"disabled"} onchange="setImgReady('${s.id}', this.checked)"> 準備OK</label>
+    </div>`;
+  }).join("");
+  openX("🏷️ 画像名の一括差し込み", xMonthNav() +
+    `<div class="note" style="font-size:12px;">命名規則：<b>${esc(g.imageNamePattern)}</b>${g.photoNamePattern?`<br>実写真：<b>${esc(g.photoNamePattern)}</b>`:""}<br><span class="muted">☰メニュー →「グローバル設定」で変更できます</span></div>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-weight:400;"><input type="checkbox" style="width:auto;" ${BN_PHOTO?"checked":""} onchange="BN_PHOTO=this.checked; openBulkNames()"> 実写真の予定も含める</label>
+    <p class="hint">画像ステータス：⬜未設定（画像名なし）／⚠️名前のみ（ギャラリーに未登録）／✅準備OK（ギャラリーに同名あり、または手動チェック）。GMOに直接アップした画像は右の「準備OK」にチェック</p>
+    <button class="btn btn-primary" ${missing.length||differ.length?"":"disabled"} onclick="applyBulkNames()">🏷️ 画像名を一括差し込み（未設定 ${missing.length}件${differ.length?`／規則と違う ${differ.length}件`:""}）</button>
+    <div class="mt">${list.length?rows:'<p class="hint">この月の予定はありません</p>'}</div>`);
+  bindXSwipe();
+};
+window.setImgReady = (id, on)=>{
+  const i = schedule.findIndex(x=>x.id===id); if(i<0) return;
+  persistSched({ ...schedule[i], imageReady: !!on });
+  toast(on ? "✅ 準備OKにしました" : "準備OKを外しました");
+  openBulkNames(); renderSchedule();
+};
+window.applyBulkNames = async ()=>{
+  const target = monthScheds().filter(s=> BN_PHOTO || imageSourceOf(s)!=="photo");
+  const differ = target.filter(s=> s.imageTitle && s.imageTitle!==applyNamePatternC(namePatternForC(s), s));
+  let overwrite = false;
+  if(differ.length){
+    overwrite = await askPop({ title:`画像名がすでにある予定が${differ.length}件あります`, body:`上書きしますか？\n\n「上書きしない」を選ぶと、画像名が未設定の予定だけに登録します\n\n${differ.map(s=>`・${fmtJp(s.date)}：${s.imageTitle}`).join("\n")}`, okLabel:"上書きする", cancelLabel:"上書きしない" });
+    if(overwrite===null) return;   // 背景タップ＝何もしない
+  }
+  let n = 0;
+  target.forEach(s=>{
+    if(s.imageTitle && !overwrite) return;
+    const name = applyNamePatternC(namePatternForC(s), s);
+    if(name===s.imageTitle) return;
+    const hit = galByName(name);
+    if(s.imageId && window.fs && window.fs.unlinkImage && (!hit || hit.id!==s.imageId)) window.fs.unlinkImage(s.imageId).catch(()=>{});
+    const rec = { ...s, imageTitle:name, imageId: hit ? hit.id : "" };
+    persistSched(rec); n++;
+    if(hit && window.fs) window.fs.linkImage(hit.id, { linkedScheduleId:s.id, linkedScheduleTitle:s.catchTitle||s.title||"" }).catch(()=>{});
+  });
+  toast(n ? `🏷️ ${n}件に画像名を登録しました` : "登録する予定はありませんでした");
+  openBulkNames(); renderSchedule();
+};
+
+// ===== ④ まとめ出力（複数予定 → 1ファイル） =====
+let BX = { sel:null, onlyReady:false, onlyNotExp:false, month:"" };
+function bxVisible(){
+  return monthScheds().filter(s=> (!BX.onlyReady || imgStatus3(s)==="ready") && (!BX.onlyNotExp || !s.done));
+}
+// 既存の単体出力と同じ基準（本文の空き・NG語・横棒・電話番号）。画像名なし・3時間以内は警告
+function precheckC(s){
+  const rows = buildRowsFrom(s), M = TPL_COLS.map;
+  const r = { rows:rows.length, empty:0, ng:0, dash:0, phone:0, errors:[], warnings:[] };
+  if(!(s.title||"").trim()) r.errors.push("タイトル未入力");
+  if(s.timing!=="immediate" && !s.date) r.errors.push("投稿日未確定");
+  if(!rows.length) r.errors.push("対象店舗なし");
+  rows.forEach(c=>{
+    const body = c[M.body], nm = c[M.storeName];
+    if(!String(body||"").trim()){ r.empty++; r.errors.push(`${nm}：本文が空`); return; }
+    const v = validate(body);
+    if(v.ng.length){ r.ng++; r.errors.push(`${nm}：NGワード（${v.ng.map(n=>n[0]).join("、")}）`); }
+    if(v.dash.length){ r.dash++; r.errors.push(`${nm}：横棒あり`); }
+    if(v.phone){ r.phone++; r.errors.push(`${nm}：電話番号あり`); }
+  });
+  if(!s.imageTitle) r.warnings.push("画像名が未設定");
+  if(s.timing!=="immediate" && s.date && s.time){ const m=minutesUntil(s.date, s.time); if(m!==null && m<180) r.warnings.push(m<0?"予約時刻が過ぎています（GMOで取り込めません）":"予約時刻が3時間以内です（GMOで取り込めません）"); }
+  return r;
+}
+window.openBulkExport = ()=>{
+  X_VIEW = "bulk";
+  if(BX.month!==monthKey()){ BX.month = monthKey(); BX.sel = null; }
+  const vis = bxVisible();
+  if(!BX.sel) BX.sel = new Set(vis.map(s=>s.id));
+  const visIds = new Set(vis.map(s=>s.id));
+  [...BX.sel].forEach(id=>{ if(!visIds.has(id)) BX.sel.delete(id); });
+  const chk = {}; vis.forEach(s=> chk[s.id] = precheckC(s));
+  const sel = vis.filter(s=> BX.sel.has(s.id));
+  const rowsTotal = sel.reduce((a,s)=> a+chk[s.id].rows, 0);
+  const errN = sel.reduce((a,s)=> a+chk[s.id].errors.length, 0);
+  const noImg = sel.filter(s=> !s.imageTitle);
+  const warnAll = sel.flatMap(s=> chk[s.id].warnings.map(w=> `${fmtJp(s.date).slice(5)} ${w}`));
+  const cell = (n,l,bad)=> `<span class="chip ${n?(bad?'ng':'warn'):'ok'}">${l}${n}</span>`;
+  const rows = vis.map(s=>{
+    const c = chk[s.id];
+    return `<label class="listitem" style="align-items:flex-start; cursor:pointer;">
+      <input type="checkbox" style="width:auto; margin-top:3px;" ${BX.sel.has(s.id)?"checked":""} onchange="bxToggle('${s.id}', this.checked)">
+      <div class="small" style="min-width:0; flex:1;">
+        <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;"><b>${fmtJp(s.date).slice(5)}(${dowJp(s.date)}) ${esc(s.time||"")}</b>${abBadge(s)}${img3Chip(s)}${s.done?'<span class="stat" style="background:#DCE9EE;color:#2F6D80">📤出力済み</span>':''}</div>
+        <div style="margin-top:2px;">${esc(s.catchTitle||s.title||"")}</div>
+        <div class="chips" style="margin-top:4px;"><span class="chip">${c.rows}行</span>${cell(c.empty,"空き",1)}${cell(c.ng,"NG",1)}${cell(c.dash,"横棒",1)}${cell(c.phone,"電話",1)}</div>
+        ${c.errors.length?`<details><summary class="small" style="color:var(--ng); cursor:pointer;">⚠️ 指摘 ${c.errors.length}件</summary><div class="small" style="color:var(--ng);">${c.errors.map(esc).join("<br>")}</div></details>`:""}
+        ${c.warnings.length?`<div class="small" style="color:var(--warn);">${c.warnings.map(w=>"⚠️ "+esc(w)).join("<br>")}</div>`:""}
+      </div>
+    </label>`;
+  }).join("");
+  const blocked = errN>0;
+  openX("📦 まとめて出力", xMonthNav() +
+    `<div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button class="fchip ${BX.onlyReady?'on':''}" onclick="BX.onlyReady=!BX.onlyReady; BX.sel=null; openBulkExport()">✅ 画像準備OKのみ</button>
+      <button class="fchip ${BX.onlyNotExp?'on':''}" onclick="BX.onlyNotExp=!BX.onlyNotExp; BX.sel=null; openBulkExport()">⬜ 未出力のみ</button>
+      <button class="fchip" onclick="bxAll(true)">すべて選択</button><button class="fchip" onclick="bxAll(false)">選択解除</button>
+    </div>
+    <div class="mt">${vis.length?rows:'<p class="hint">条件に合う予定はありません</p>'}</div>
+    <div class="card" style="position:sticky; bottom:0; margin-top:10px; padding:10px 12px;">
+      <div class="small"><b>${sel.length}件</b>を選択 ・ <b>${rowsTotal}行</b>（GMO ${BULK_TPL.headers.length}列テンプレート）${errN?` ・ <span style="color:var(--ng);">指摘 ${errN}件</span>`:" ・ <span style='color:var(--ok);'>チェックOK</span>"}</div>
+      ${noImg.length?`<div class="small" style="color:var(--warn);">⚠️ 画像名が未設定の予定が${noImg.length}件含まれています</div>`:""}
+      ${warnAll.filter(w=>!/画像名/.test(w)).length?`<div class="small" style="color:var(--warn);">${warnAll.filter(w=>!/画像名/.test(w)).map(esc).join("<br>")}</div>`:""}
+      <div class="btn-row mt">
+        <button class="btn btn-primary" ${(!sel.length||blocked)?"disabled":""} onclick="doBulkExport('xlsx', false)">📥 XLSXで出力</button>
+        <button class="btn btn-ghost" ${(!sel.length||blocked)?"disabled":""} onclick="doBulkExport('csv', false)">CSV</button>
+      </div>
+      ${blocked && sel.length?`<button class="btn btn-ghost mt" style="color:var(--ng); border-color:#fecaca;" onclick="doBulkExport('xlsx', true)">⚠️ それでも出力（XLSX）</button>`:""}
+      <p class="hint" style="margin-bottom:0;">出力すると、含めた予定はすべて「出力済み」になり、履歴に「まとめ出力」として1件記録されます</p>
+    </div>`, true);
+  bindXSwipe();
+};
+window.bxToggle = (id, on)=>{ if(on) BX.sel.add(id); else BX.sel.delete(id); openBulkExport(); };
+window.bxAll = (on)=>{ BX.sel = on ? new Set(bxVisible().map(s=>s.id)) : new Set(); openBulkExport(); };
+function bulkFileBaseC(sel){
+  const allIds = monthScheds().map(s=>s.id);
+  if(sel.length===allIds.length && sel.every(s=>allIds.includes(s.id))) return `あさば様_一括投稿_${monthKey()}_まとめ`;
+  const ds = sel.map(s=>s.date).filter(Boolean).sort();
+  if(!ds.length) return "あさば様_一括投稿_まとめ";
+  return ds[0]===ds[ds.length-1] ? `あさば様_一括投稿_${ds[0].slice(5)}_まとめ` : `あさば様_一括投稿_${ds[0].slice(5)}_${ds[ds.length-1].slice(5)}`;
+}
+function saveRowsFile(rows, base, fmt){
+  if(fmt==="csv"){
+    const lines=[BULK_TPL.headers.map(q).join(",")].concat(rows.map(r=>r.map(q).join(",")));
+    const blob=new Blob(["﻿"+lines.join("\r\n")+"\r\n"],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${base}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    return;
+  }
+  const M = TPL_COLS.map;
+  const aoa=[BULK_TPL.headers.slice()].concat(rows.map(r=> r.map((v,i)=>{ if(v==null||v==="") return null; if(i===M.storeId && /^\d+$/.test(String(v))) return Number(v); return v; })));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=BULK_TPL.headers.map((_,i)=> i===M.body?{wch:60}:((i===M.storeName||i===M.title)?{wch:26}:{wch:14}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, `${base}.xlsx`, {bookSST:true});   // bookSST:true でないとGMOが店舗名を認識しない
+}
+window.doBulkExport = async (fmt, force)=>{
+  if(fmt==="xlsx" && typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中。数秒後に再度お試しください"); return; }
+  if(TPL_COLS.missing.length){ toast("一括投稿テンプレートの列が見つかりません（設定タブで読み込み直してください）"); return; }
+  const sel = bxVisible().filter(s=> BX.sel.has(s.id)).sort((a,b)=> (a.date||"").localeCompare(b.date||"") || (a.time||"").localeCompare(b.time||""));
+  if(!sel.length) return;
+  if(force && !(await askPop({ title:"指摘があるまま出力しますか？", body:"NG語・電話番号・空欄などが残っています。GMOで取り込めない、または不適切な投稿になるおそれがあります", okLabel:"それでも出力", danger:true }))) return;
+  const noImg = sel.filter(s=>!s.imageTitle);
+  if(noImg.length && !(await askPop({ title:`画像名が未設定の予定が${noImg.length}件あります`, body:noImg.map(s=>`・${fmtJp(s.date)}「${s.catchTitle||s.title}」`).join("\n")+"\n\n画像なしで出力しますか？", okLabel:"このまま出力" }))) return;
+  const rows = [].concat(...sel.map(s=> buildRowsFrom(s)));
+  const base = bulkFileBaseC(sel);
+  saveRowsFile(rows, base, fmt);
+  sel.forEach(s=>{ const i=schedule.findIndex(x=>x.id===s.id); if(i>=0) persistSched({ ...schedule[i], done:true }); });
+  if(window.fs) window.fs.addPost({ kind:"bulk", schedIds: sel.map(s=>s.id), title:`まとめ出力（${sel.length}件）`, catchTitle:"", date: sel[0].date||"", time:"", fileName:`${base}.${fmt}`, rows: rows.length,
+    items: sel.map(s=>({ schedId:s.id, date:s.date||"", time:s.time||"", title:s.title||"", catchTitle:s.catchTitle||"", imageTitle:safeImgName(s.imageTitle||"") })), contents:{}, createdAt: Date.now() }).catch(e=>console.warn("bulk archive", e));
+  toast(`📦 ${sel.length}件・${rows.length}行を1ファイルで出力しました`);
+  BX.sel = null; openBulkExport(); renderSchedule();
+};
+// 履歴の「まとめ出力」を、いまの予定データで出し直す
+window.redlBulk = (postId, fmt)=>{
+  const p = (window.__posts||[]).find(x=>x.id===postId); if(!p) return;
+  const sel = (p.schedIds||[]).map(id=> schedule.find(x=>x.id===id)).filter(Boolean);
+  if(!sel.length){ toast("含めた予定が見つかりません"); return; }
+  if(fmt!=="csv" && typeof XLSX==="undefined"){ toast("XLSXライブラリ読み込み中です"); return; }
+  saveRowsFile([].concat(...sel.map(s=> buildRowsFrom(s))), (p.fileName||"あさば様_一括投稿_まとめ").replace(/\.(xlsx|csv)$/,""), fmt||"xlsx");
+  toast("📥 再ダウンロードしました（いまの予定データで作成）");
+};
+function bulkHistoryCard(p){
+  const items = p.items || (p.schedIds||[]).map(id=>{ const s=schedule.find(x=>x.id===id)||{}; return { schedId:id, date:s.date||"", catchTitle:s.catchTitle||"", title:s.title||"" }; });
+  return `<div class="card" style="padding:12px 15px; border-color:#CBDFE4;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+      <div style="min-width:0;"><b>📦 ${esc(p.title||"まとめ出力")}</b>
+        <div class="small muted">${p.createdAt?new Date(p.createdAt).toLocaleString("ja-JP"):""} ・ ${p.rows||"?"}行${p.fileName?` ・ ${esc(p.fileName)}`:""}</div></div>
+      <button class="pill" style="color:var(--ng); flex-shrink:0;" onclick="delHistory('${p.id}')">削除</button>
+    </div>
+    <div class="small" style="margin-top:6px; line-height:1.8;">${items.map(it=>`・${esc(fmtJp(it.date))} ${esc(it.catchTitle||it.title||"")}`).join("<br>")}</div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;"><button class="pill" onclick="redlBulk('${p.id}','xlsx')">📥 再ダウンロード（XLSX）</button><button class="pill" onclick="redlBulk('${p.id}','csv')">CSV</button></div>
+  </div>`;
+}
+
+// ===== ☰ ハンバーガーメニュー（改善・問合せ／リリース情報／グローバル設定） =====
+window.openMenu = ()=>{ document.getElementById("menuVer").textContent = "MEO投稿 統合ツール v " + STUDIO_VERSION; document.getElementById("menuDrawer").style.display = "block"; };
+window.closeMenu = ()=>{ document.getElementById("menuDrawer").style.display = "none"; };
+window.showReleaseNotes = ()=>{
+  closeMenu();
+  document.getElementById("helpBody").innerHTML = `<h1 style="margin-top:0;">📣 リリース情報</h1><p class="hint" style="margin-top:0;">現在のバージョン：v ${STUDIO_VERSION}</p>${releaseHTML(RELEASE_NOTES)}`;
+  document.getElementById("helpModal").style.display = "flex";
+};
+// 改善・問合せ → Notion「🔧改善DB」（/api/notion 経由。meo-app と同じ仕組み）
+var KAIZEN_DS = "b05e1dc3-0c58-48cb-a977-5e63778e4f3b";
+window.openKaizen = ()=>{
+  closeMenu();
+  openX("💬 改善・問合せ", `<p class="hint" style="margin-top:0;">送信すると Notion の「🔧改善DB」に登録され、担当が確認します</p>
+    <label>種別</label><select id="kzKind">${["改善要望","不具合報告","質問・お問い合わせ","その他"].map(o=>`<option>${o}</option>`).join("")}</select>
+    <label class="mt">タイトル（必須）</label><input id="kzTitle" placeholder="例）まとめ出力で前月に戻れない">
+    <label class="mt">内容</label><textarea id="kzBody" style="min-height:100px;" placeholder="具体的な状況・再現手順・ご要望など"></textarea>
+    <label class="mt">優先度</label><select id="kzPri"><option>中</option><option>高</option><option>低</option></select>
+    <label class="mt">お名前・連絡先（任意）</label><input id="kzContact" placeholder="お名前／メール等">
+    <button class="btn btn-primary mt" id="kzSend" onclick="submitKaizen()">📨 Notionへ送信</button>
+    <div id="kzMsg" class="hint mt"></div>`);
+};
+window.submitKaizen = async ()=>{
+  const title = (document.getElementById("kzTitle").value||"").trim();
+  const msg = document.getElementById("kzMsg");
+  if(!title){ msg.textContent = "タイトルを入力してください"; return; }
+  const body = (document.getElementById("kzBody").value||"").trim();
+  const contact = (document.getElementById("kzContact").value||"").trim();
+  const view = (document.querySelector("section[data-view]:not([hidden])")||{}).dataset?.view || "";
+  const detail = (body ? body + "\n\n" : "") + `――\n送信元：MEO投稿 統合ツール v${STUDIO_VERSION}／画面：${view}／${navigator.userAgent.slice(0,120)}`;
+  const props = { "改善タイトル":{title:[{text:{content:title}}]}, "種別":{select:{name:document.getElementById("kzKind").value}},
+    "優先度":{select:{name:document.getElementById("kzPri").value}}, "状態":{select:{name:"未対応"}}, "起票日":{date:{start:todayISO()}},
+    "送信元アプリ":{select:{name:"MEO投稿ツール"}}, "改善内容":{rich_text:[{text:{content:detail.slice(0,1900)}}]} };
+  if(contact) props["連絡先"] = {rich_text:[{text:{content:contact}}]};
+  const btn = document.getElementById("kzSend"); btn.disabled = true; msg.textContent = "送信中…";
+  try{
+    const headers = {"Content-Type":"application/json"};
+    const secret = (localStorage.getItem("meo_notion_secret")||"").trim(); if(secret) headers["x-app-secret"] = secret;
+    const proxy = (localStorage.getItem("meo_notion_proxy")||"").trim() || "/api/notion";
+    const r = await fetch(proxy, { method:"POST", headers, body: JSON.stringify({ op:"create", ds:KAIZEN_DS, properties:props }) });
+    const t = await r.text(); let d={}; try{ d = t?JSON.parse(t):{}; }catch(e){ d={raw:t}; }
+    if(!r.ok) throw new Error((d&&d.error)||(d&&d.message)||("HTTP "+r.status));
+    document.getElementById("xBody").innerHTML = `<div class="center" style="padding:24px 8px;"><div style="font-size:44px;">✅</div><h2>送信しました</h2><p class="hint">Notion の「🔧改善DB」に登録されました。ありがとうございます！</p><button class="btn btn-primary mt" onclick="closeX()">閉じる</button></div>`;
+  }catch(e){ msg.textContent = "送信に失敗しました：" + e.message; btn.disabled = false; }
+};
+// グローバル設定（命名規則・型別画像ルール・絵文字カウント）
+window.openGlobalSettings = ()=>{
+  closeMenu();
+  const g = G();
+  const sample = { date: monthKey()+"-06", abType:"B" };
+  const fmts = (FORMATS||[]).filter(f=> f.enabled!==false);
+  const ruleBox = fmts.map(f=>{
+    const r = g.imageRules[f.id] || {};
+    return `<details class="mt"><summary style="cursor:pointer; font-weight:700;">${esc(f.name)}</summary>
+      ${IMAGE_RULE_FIELDS.map(([k,l])=>`<label class="mt" style="font-size:12px;">${l}</label><input data-rule="${f.id}" data-k="${k}" value="${esc(r[k]||"")}">`).join("")}
+    </details>`;
+  }).join("");
+  openX("⚙️ グローバル設定", `<p class="hint" style="margin-top:0;">チーム全員とClaude（MCP）で共有される設定です</p>
+    <div class="card"><h2 style="margin-top:0;">🏷️ 画像名の命名規則</h2>
+      <label>AI生成の画像</label><input id="gs_pat" value="${esc(g.imageNamePattern)}" oninput="gsPreview()">
+      <label class="mt">実写真（空欄＝上と同じ）</label><input id="gs_pat2" value="${esc(g.photoNamePattern||"")}" placeholder="例：ONE T RAST様_イベント_{MM}-{DD}.jpg" oninput="gsPreview()">
+      <p class="hint">使える記号：{YYYY} 年／{MM} 月2桁／{DD} 日2桁／{M} 月／{D} 日／{AB} A・B区分（日付は予定日）</p>
+      <div id="gs_prev" class="note" style="font-size:12px;"></div>
+    </div>
+    <div class="card"><h2 style="margin-top:0;">😀 本文チェッカーの絵文字カウント</h2>
+      <label style="display:flex; align-items:center; gap:8px; font-weight:400;"><input type="checkbox" id="gs_emo" style="width:auto;" ${g.emojiExcludeStructural!==false?"checked":""}> 構成記号を絵文字数に数えない（既定）</label>
+      <label class="mt">構成記号（空白区切り）</label><input id="gs_chars" value="${esc((g.structuralChars||[]).join(" "))}">
+      <p class="hint">型2の ✅ 📍、型5の ▶ など。GMO側の表示仕様が分かったら見直します</p>
+    </div>
+    <div class="card"><h2 style="margin-top:0;">🖼️ 型別の画像デザインルール</h2>
+      <p class="hint" style="margin-top:0;">予定の画像指示文を作るとき（人もClaudeも get_image_guide で）参照します</p>
+      <label>画像指示文の末尾に必ず入れる一文</label><textarea id="gs_sfx" style="min-height:60px;">${esc(g.imagePromptSuffix||IMAGE_PROMPT_SUFFIX)}</textarea>
+      ${ruleBox}
+    </div>
+    <button class="btn btn-primary" onclick="saveGlobalSettings()">💾 保存</button>`);
+  window.gsPreview = ()=>{
+    const p1 = document.getElementById("gs_pat").value, p2 = document.getElementById("gs_pat2").value;
+    document.getElementById("gs_prev").innerHTML = `例（${fmtJp(sample.date)}）：<b>${esc(applyNamePatternC(p1, sample))}</b>` + (p2 ? `<br>実写真：<b>${esc(applyNamePatternC(p2, sample))}</b>` : "");
+  };
+  gsPreview();
+};
+window.saveGlobalSettings = ()=>{
+  const imageRules = {};
+  document.querySelectorAll("#xBody [data-rule]").forEach(el=>{ (imageRules[el.dataset.rule] = imageRules[el.dataset.rule] || {})[el.dataset.k] = el.value.trim(); });
+  const rec = {
+    imageNamePattern: document.getElementById("gs_pat").value.trim() || GLOBAL_DEFAULT.imageNamePattern,
+    photoNamePattern: document.getElementById("gs_pat2").value.trim(),
+    emojiExcludeStructural: document.getElementById("gs_emo").checked,
+    structuralChars: document.getElementById("gs_chars").value.split(/\s+/).filter(Boolean),
+    imagePromptSuffix: document.getElementById("gs_sfx").value.trim() || IMAGE_PROMPT_SUFFIX,
+    imageRules, updatedAt: Date.now(),
+  };
+  window.__global = { ...(window.__global||{}), ...rec };
+  if(window.fs && window.fs.setGlobal) window.fs.setGlobal(rec).then(()=>toast("💾 保存しました（チーム共有）")).catch(e=>toast("保存に失敗しました："+e.message));
+  closeX(); renderSchedule();
+};
+
+// ===== ⑩ 店舗詳細：使用履歴タブ（USP・託児・読み手・締め／月ごと） =====
+let USG_Y = null, USG_M = null;
+function metaForStoreC(s, st){ const cm = s.contentMeta||{}; return cm[st.gmo] || cm[st.cat] || null; }
+window.storeTab = (t)=>{
+  document.querySelectorAll("#storeTabSeg button").forEach(b=> b.classList.toggle("on", b.dataset.t===t));
+  document.getElementById("storeCardMeter").style.display = t==="info" ? "" : "none";
+  document.getElementById("storeCardBody").style.display = t==="info" ? "" : "none";
+  document.getElementById("storeSaveBar").style.display = t==="info" ? "flex" : "none";
+  document.getElementById("storeUsageBody").style.display = t==="usage" ? "" : "none";
+  if(t==="usage"){ if(USG_Y==null){ ensureCalMonth(); USG_Y=CAL_Y; USG_M=CAL_M; } renderStoreUsage(); }
+};
+window.usgMove = (n)=>{ USG_M+=n; if(USG_M<0){USG_M=11;USG_Y--;} if(USG_M>11){USG_M=0;USG_Y++;} renderStoreUsage(); };
+function renderStoreUsage(){
+  const box = document.getElementById("storeUsageBody"); if(!box || !editingStore) return;
+  const gmo = String(editingStore.gmoId||"");
+  const st = STORES.find(x=>x.gmo===gmo) || { gmo, cat: gyotaiToCat(editingStore.gyotai) };
+  const pre = `${USG_Y}-${String(USG_M+1).padStart(2,"0")}`;
+  const list = sortedSched().filter(s=> (s.date||"").startsWith(pre) && !isRetired(s) && (!(s.storeIds||[]).length || (s.storeIds||[]).includes(gmo)));
+  const ents = list.map(s=>({ s, m: metaForStoreC(s, st) }));
+  const rec = ents.filter(e=>e.m);
+  const cnt = (f)=>{ const o={}; rec.forEach(e=>{ const v=f(e.m); if(v) o[v]=(o[v]||0)+1; }); return Object.entries(o).sort((a,b)=>b[1]-a[1]); };
+  const usp = cnt(m=>m.usp), reader = cnt(m=>m.reader);
+  const cc = rec.filter(e=>e.m.childcare===true).length;
+  const ccTxt = (v)=> v===true?"あり":(v===false?"なし":"—");
+  box.innerHTML = `<div class="cal-head" style="margin-bottom:8px;"><div class="cal-nav"><button class="pill" onclick="usgMove(-1)">◀</button><button class="pill" onclick="usgMove(1)">▶</button></div><b>${USG_Y}年${USG_M+1}月</b><span class="muted" style="font-size:10px;">←→スワイプ</span></div>
+    <div class="bd-sum"><div><span class="n" style="display:block;">${list.length}</span><span class="l" style="display:block;">予定</span></div><div><span class="n" style="display:block;">${rec.length}</span><span class="l" style="display:block;">記録あり</span></div><div><span class="n" style="display:block;">${cc}</span><span class="l" style="display:block;">託児に言及</span></div><div><span class="n" style="display:block;">${usp.length}</span><span class="l" style="display:block;">使ったUSP数</span></div></div>
+    ${usp.length?`<div class="small" style="margin-bottom:4px;"><b>USP：</b>${usp.map(([k,n])=>`${esc(k)}×${n}`).join("／")}</div>`:""}
+    ${reader.length?`<div class="small" style="margin-bottom:8px;"><b>読み手：</b>${reader.map(([k,n])=>`${esc(k)}×${n}`).join("／")}</div>`:""}
+    ${ents.length ? ents.map(({s,m})=>`<div class="card" style="padding:9px 11px; margin:0 0 6px;">
+      <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;"><b class="small">${fmtJp(s.date).slice(5)}(${dowJp(s.date)})</b>${abBadge(s)}${kataBadge(s)}</div>
+      <div class="small" style="margin-top:2px;">${esc(s.catchTitle||s.title||"")}</div>
+      ${m ? `<div class="small muted" style="margin-top:3px; line-height:1.7;">USP：<b>${esc(m.usp||"—")}</b> ／ 託児：${ccTxt(m.childcare)} ／ 読み手：${esc(m.reader||"—")} ／ 締め：${esc(m.closing||"—")}</div>` : `<div class="small muted" style="margin-top:3px;">記録なし（本文保存時に meta を渡すと記録されます）</div>`}
+    </div>`).join("") : `<p class="hint">この月の予定はありません</p>`}`;
+  if(!box.__sw){ box.__sw = true; let sx=0, sy=0;
+    box.addEventListener("touchstart", e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; }, {passive:true});
+    box.addEventListener("touchend", e=>{ const t=e.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy; if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*1.5) usgMove(dx<0?1:-1); }, {passive:true}); }
+}
+
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-09-28.1";
+const STUDIO_VERSION = "2026-10-03.1";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-10-03.1", items:[
+      `<b>☰ メニューを右上に設置</b>：💬改善・問合せ（Notionの改善DBへ送信）／📣リリース情報／⚙️グローバル設定 をまとめました`,
+      `<b>📊 月の集計</b>：予定画面の上に「予定数・本文登録済み・画像準備OK・出力済み・投稿済み」を表示。左右スワイプで月を切り替えられます（リスト表示でもOK）`,
+      `<b>🖼️ 画像指示文（ChatGPTに貼る全文）</b>：予定ごとに保存・コピーできます。月の「画像指示文一覧」から1行ずつコピー。末尾の「帯とテキストは後から手動で…」の一文は自動で付きます`,
+      `<b>📷 画像の出どころ</b>：予定を「AI生成／実写真」で切り替え。実写真は画像指示文の欄を出しません。イベント投稿は「📅 掲載期間を月の1日〜末日にする」ボタンで期間を自動入力`,
+      `<b>🏷️ 画像名の一括差し込み</b>：命名規則（既定 ONE T RAST様_定期コラム_MM-DD.jpg）で月の全予定に登録。既にある画像名は確認してから上書き。画像ステータス（未設定／名前のみ／準備OK）と、GMOに直接アップした時の「準備OK」チェック付き`,
+      `<b>📦 まとめて出力</b>：選んだ予定を1つのGMO一括投稿ファイル（55列）に連結。「画像準備OKのみ」「未出力のみ」で絞り込み、予定ごとに空き・NG語・横棒・電話番号を集計。NGがあると出力ボタンが止まります（「それでも出力」も可）。履歴には「まとめ出力」として1件記録`,
+      `<b>📐 型別の画像デザインルール</b>：グローバル設定で型ごとに「人物・構図・帯の余白位置・縦横比・色味・禁止事項」を保存。予定編集の「📐 型の画像ルール」やClaude（get_image_guide）から参照できます`,
+      `<b>😀 絵文字カウント</b>：型2の ✅ 📍、型5の ▶ など構成記号を絵文字数に数えない設定を追加（既定は数えない）`,
+      `<b>📊 店舗の使用履歴</b>：店舗タブ→店舗をひらく→「使用履歴」で、月ごとに使ったUSP・託児・読み手・締めを確認。Claudeは直近3回分を見て重複を避けます`,
+      `<b>🤖 Claude（MCP）</b>：export_files（まとめ出力）／set_images_bulk（画像名一括）／get_image_guide（画像ルール）を追加。update_schedule で imagePrompt・sampleApproved も更新できます` ] },
   { v:"2026-09-28.1", items:[
       `<b>🖼️ ギャラリーの表示が速くなりました</b>：一覧は軽いサムネだけを読み込み、完成画像はダウンロードするときだけ取得します（サムネツール側の軽量化に対応）`,
       `サムネツール：作成画面を広く・区切りを分かりやすく刷新。ギャラリー右上から「🚀 GMOに画像をアップロード」へ直接行けます` ] },
