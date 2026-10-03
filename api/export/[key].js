@@ -12,16 +12,30 @@ function keyOk(given) {
 
 module.exports = async (req, res) => {
   if (!keyOk(req.query && req.query.key)) { res.status(401).send('unauthorized'); return; }
-  const id = req.query.id; if (!id) { res.status(400).send('id が必要です'); return; }
+  const id = req.query.id;
+  const ids = String(req.query.ids || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (!id && !ids.length) { res.status(400).send('id または ids が必要です'); return; }
   try {
-    const s = await M.getDoc('studio_schedule', id);
-    if (!s) { res.status(404).send('予定が見つかりません: ' + id); return; }
     const { STORES } = await M.loadStores();
     const tpl = await M.loadBulkTemplate();
-    const rows = M.buildRowsFrom(s, STORES, tpl);
     const fmt = req.query.fmt === 'csv' ? 'csv' : 'xlsx';
-    const name = `あさば様_一括投稿_${M.mmddFrom(s)}.${fmt}`;
-    const ascii = `asaba_post_${M.mmddFrom(s)}.${fmt}`;
+    let rows, name, ascii;
+    if (ids.length) {
+      // まとめ出力：複数予定の行を日付順に連結して1ファイルにする（MCPの export_files が返すURL）
+      const scheds = [];
+      for (const x of ids) { const s = await M.getDoc('studio_schedule', x); if (!s) { res.status(404).send('予定が見つかりません: ' + x); return; } scheds.push(s); }
+      rows = M.buildRowsMulti(scheds, STORES, tpl);
+      const base = M.bulkFileBase(scheds, /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : '');
+      name = `${base}.${fmt}`;
+      const ds = M.sortScheds(scheds).map(s => (s.date || '').slice(5)).filter(Boolean);
+      ascii = `asaba_post_bulk_${ds.length ? ds[0] + '_' + ds[ds.length - 1] : 'all'}.${fmt}`;
+    } else {
+      const s = await M.getDoc('studio_schedule', id);
+      if (!s) { res.status(404).send('予定が見つかりません: ' + id); return; }
+      rows = M.buildRowsFrom(s, STORES, tpl);
+      name = `あさば様_一括投稿_${M.mmddFrom(s)}.${fmt}`;
+      ascii = `asaba_post_${M.mmddFrom(s)}.${fmt}`;
+    }
     res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`);
     res.setHeader('Cache-Control', 'no-store');
     if (fmt === 'csv') {
