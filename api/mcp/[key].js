@@ -37,7 +37,7 @@ const TOOLS = [
     kw: str('狙うキーワード'), context: str('今回の文脈・特別指示'), imageMemo: str('画像メモ（短い要約）'), imagePrompt: str('画像指示文（ChatGPTに貼る全文）'), imageSource: str('ai（AI生成）または photo（実写真）'), formatId: str('投稿の型 f_season/f_symptom/f_story/f_rhythm/f_menu'),
     postType: str('最新情報/イベント/クーポン'), btnType: str('予約/詳細/今すぐ電話/なし など'), scope: str('category_common または per_store'), storeIds: { type: 'array', items: { type: 'string' }, description: '対象店舗IDの配列' },
     timing: str('scheduled または immediate'), evStart: str('掲載開始日'), evEnd: str('掲載終了日'), evStartTime: str('開始時間 HH:MM'), evEndTime: str('終了時間 HH:MM') }, ['title', 'date']) },
-  { name: 'update_schedule', description: '予定を部分更新する（本文以外）。fields に変更項目だけを渡す。imagePrompt（ChatGPTに貼る画像指示文の全文。末尾の固定文は無ければ自動で付く）／imageMemo（短い要約）／imageSource（ai または photo）／imageReady（画像を手動で準備OKにする）／sampleApproved（サンプル本文の承認）／sampleStore（お手本にする代表店舗ID）も更新できる。', inputSchema: S({ id: str('予定ID'), fields: { type: 'object', description: '更新する項目', additionalProperties: true } }, ['id', 'fields']) },
+  { name: 'update_schedule', description: '予定を部分更新する（本文以外）。fields に変更項目だけを渡す。imagePrompt（ChatGPTに貼る画像指示文の全文。末尾の固定文は型に合わせて自動で付く：型1＝タイトル文字入り、それ以外＝文字なし）／imageMemo（短い要約）／imageSource（ai または photo）／imageReady（画像を手動で準備OKにする）／sampleApproved（サンプル本文の承認）／sampleStore（お手本にする代表店舗ID）も更新できる。', inputSchema: S({ id: str('予定ID'), fields: { type: 'object', description: '更新する項目', additionalProperties: true } }, ['id', 'fields']) },
   { name: 'delete_schedule', description: '予定を削除する。', inputSchema: S({ id: str('予定ID') }, ['id']) },
   { name: 'get_writing_guide', description: '本文を書く前に必ず呼ぶ。その予定の指示文（テーマ・型の構成・厳守ルール・定例指示・NG語・対象店舗のプロフィール・保存時のキー）に加え、店舗ごとの直近3予定の使用履歴（usage：USP・託児・読み手・締め）、代表店舗のサンプル本文（sample）、業態ごとの店舗ID（gyotaiGroups）を返す。', inputSchema: S({ id: str('予定ID') }, ['id']) },
   { name: 'save_contents', description: '本文を予定に保存する。contents は {キー: 本文} の形。キーは店舗ID（店舗別）か seitai_seikotsu / pilates（カテゴリ共通）。mode=merge で一部だけ差し替え、既定は replace。meta（任意）に {キー: {usp, childcare, reader, closing}} を渡すと店舗ごとの使用履歴として記録する（渡さないキーは空欄で記録）。保存後に各本文のチェック結果を返す。', inputSchema: S({ id: str('予定ID'), contents: { type: 'object', description: '{キー: 本文}', additionalProperties: { type: 'string' } }, mode: str('replace または merge'),
@@ -110,7 +110,7 @@ async function callTool(name, a, ctx) {
       const id = M.uid();
       const ab = (a.abType || 'A').toUpperCase();
       const rec = { id, title: a.title, catchTitle: a.catchTitle || '', themeTitle: a.title, date: a.date, time: a.time || M.cadenceTime(a.date) || TIME_DEFAULT[ab] || '16:00', abType: ab,
-        kw: a.kw || '', context: a.context || '', imageMemo: a.imageMemo || '', imagePrompt: a.imagePrompt ? M.withPromptSuffix(a.imagePrompt, await M.loadGlobal()) : '', imageSource: a.imageSource === 'photo' ? 'photo' : 'ai', imageReady: false, sampleApproved: false, sampleStore: '', imageTitle: '', imageId: '', imageUrl: '',
+        kw: a.kw || '', context: a.context || '', imageMemo: a.imageMemo || '', imagePrompt: a.imagePrompt ? M.withPromptSuffix(a.imagePrompt, await M.loadGlobal(), { formatId: a.formatId || '', catchTitle: a.catchTitle || '', title: a.title || '' }) : '', imageSource: a.imageSource === 'photo' ? 'photo' : 'ai', imageReady: false, sampleApproved: false, sampleStore: '', imageTitle: '', imageId: '', imageUrl: '',
         postType: a.postType || '最新情報', btnType: a.btnType || '', formatId: a.formatId || '', evStart: a.evStart || '', evEnd: a.evEnd || '', evStartTime: a.evStartTime || '', evEndTime: a.evEndTime || '',
         timing: a.timing || 'scheduled', scope: a.scope || 'category_common', storeIds: (a.storeIds && a.storeIds.length) ? a.storeIds.map(String) : STORES.map(s => s.gmo),
         contents: {}, overrides: {}, done: false, posted: false, postStatus: '', postedDate: '', postedAt: '', postNote: '', createdBy: 'claude-mcp' };
@@ -122,7 +122,7 @@ async function callTool(name, a, ctx) {
       const fields = pick(a.fields || {}, M.SCHED_FIELDS.filter(k => k !== 'contents' && k !== 'overrides'));
       if (fields.imageTitle) fields.imageTitle = M.safeImgName(fields.imageTitle);
       if (fields.storeIds) fields.storeIds = fields.storeIds.map(String);
-      if (fields.imagePrompt !== undefined) fields.imagePrompt = M.withPromptSuffix(fields.imagePrompt, await M.loadGlobal());
+      if (fields.imagePrompt !== undefined) fields.imagePrompt = M.withPromptSuffix(fields.imagePrompt, await M.loadGlobal(), { ...s, ...fields });
       if (fields.imageSource !== undefined) fields.imageSource = fields.imageSource === 'photo' ? 'photo' : 'ai';
       ['imageReady', 'sampleApproved'].forEach(k => { if (fields[k] !== undefined) fields[k] = fields[k] === true || fields[k] === 'true'; });
       if (fields.sampleStore !== undefined) fields.sampleStore = String(fields.sampleStore || '');

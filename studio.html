@@ -582,12 +582,12 @@
         <label style="margin:0;">🖼️ 画像指示文（ChatGPTに貼る全文）</label>
         <span style="display:flex; gap:6px;">
           <button type="button" class="pill" onclick="smToggleImgRule()">📐 型の画像ルール</button>
-          <button type="button" class="pill" onclick="copyStr(withPromptSuffixC(document.getElementById('sm_imgPrompt').value),event)">📋 コピー</button>
+          <button type="button" class="pill" onclick="copyStr(withPromptSuffixC(document.getElementById('sm_imgPrompt').value, smSchedDraft()),event)">📋 コピー</button>
         </span>
       </div>
       <div id="sm_imgRule" class="note" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px;"></div>
-      <textarea id="sm_imgPrompt" style="min-height:110px; margin-top:6px;" placeholder="背景だけをChatGPTに作らせる指示文。帯とテキストは後から手動で入れます"></textarea>
-      <p class="hint">保存・コピー時、末尾に「帯とテキストは後から手動で入れるため…」の固定文が無ければ自動で付きます</p>
+      <textarea id="sm_imgPrompt" style="min-height:110px; margin-top:6px;" placeholder="ChatGPTに貼る画像の指示文（場面・人物・季節など）。文字の入れ方は型に合わせて自動で末尾に付きます"></textarea>
+      <p class="hint">保存・コピー時、末尾の固定文が型に合わせて自動で付きます（型1＝タイトル文字入り／それ以外＝文字なし）</p>
     </div>
     <div id="sm_photoNote" class="note mt" style="display:none; font-size:12px;">📷 実写真の予定です。AI生成は使わず、あさば様の写真を担当が用意します（画像指示文は不要）</div>
     <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:400;">
@@ -5188,7 +5188,7 @@ window.saveSchedEdit = ()=>{
     kw: document.getElementById("sm_kw").value.trim(),
     imageMemo: document.getElementById("sm_imgmemo").value.trim(),
     imageSource: SM_IMG_SRC,
-    imagePrompt: withPromptSuffixC(document.getElementById("sm_imgPrompt").value),
+    imagePrompt: withPromptSuffixC(document.getElementById("sm_imgPrompt").value, smSchedDraft()),
     imageReady: document.getElementById("sm_imgReady").checked,
     sampleStore: document.getElementById("sm_sampleStore").value,
     sampleApproved: document.getElementById("sm_sampleApproved").checked,
@@ -7053,18 +7053,19 @@ window.importBackup = async (file)=>{
 
 // ============ 2026-10 改修：グローバル設定／画像指示文／画像名の一括差し込み／まとめ出力／使用履歴 ============
 // ※ lib/meo.js（MCP）と同じ定義。設定は studio_settings/global にチームで共有
-var IMAGE_PROMPT_SUFFIX = "帯とテキストは後から手動で入れるため、背景のみを作成してください。画像内に文字・帯・ロゴ・記号は一切入れないでください。";
+// 画像の文字入れ（2026-10-03 運用変更）：型1（季節訴求）＝ChatGPTでタイトル文字入りまで作る／それ以外＝文字なしの風景・人物／実写真＝作らない
+var IMAGE_PROMPT_SUFFIX = "帯とテキストは後から手動で入れるため、背景のみを作成してください。画像内に文字・帯・ロゴ・記号は一切入れないでください。"; // 旧運用（自動で外す）
+var PROMPT_SUFFIX_TITLE = "画像の左上に、タイトル「{title}」を読みやすい日本語の文字で入れてください（一字一句このとおり・1〜2行・背景になじむ色で）。タイトル以外の文字・ロゴ・記号は入れないでください。";
+var PROMPT_SUFFIX_NONE = "画像内に文字・帯・ロゴ・記号は一切入れないでください。";
 var STRUCT_CHARS_DEFAULT = ["▶","✅","📍","◎","・"];
-var IMAGE_RULE_FIELDS = [["people","人物の有無"],["composition","構図"],["textArea","帯・テキスト用の余白位置"],["ratio","縦横比"],["tone","色味のトーン"],["ng","禁止事項"],["note","補足"]];
-var IMAGE_RULE_COMMON = { ratio:"横長4:3", tone:"水彩画風のやわらかいイラスト／季節の植物と自然光／明るくやさしい色合い", ng:"画像内に文字・帯・ロゴ・記号を一切入れない（帯とテキストは担当が手動で入れる）", note:"人物はテーマに合わせて女性・男性・シニア・親子・家族（複数人）から選んでよい。テーマに必要なら動物も可" };
+var IMAGE_RULE_FIELDS = [["people","人物の有無"],["composition","構図"],["textArea","文字の位置"],["ratio","縦横比"],["tone","色味のトーン"],["ng","禁止事項"],["note","補足"]];
+var IMAGE_RULE_COMMON = { ratio:"横長4:3", tone:"水彩画風のやわらかいイラスト／季節の植物と自然光／明るくやさしい色合い", note:"人物はテーマに合わせて女性・男性・シニア・親子・家族（複数人）から選んでよい。テーマに必要なら動物も可" };
+var RULE_NO_TEXT = { ...IMAGE_RULE_COMMON, textMode:"none", people:"テーマに合わせた風景、または人物", composition:"テーマに合う情景を画面全体で見せる（文字用の余白は不要）", textArea:"文字は入れない", ng:"画像内に文字・帯・ロゴ・記号を一切入れない" };
 var IMAGE_RULES_SEED = {
-  f_season:  { ...IMAGE_RULE_COMMON, people:"あり：顔がはっきり見える人物", composition:"人物を画面の右寄せに配置", textArea:"左上（テキスト用の余白を広くとる）" },
-  f_symptom: { ...IMAGE_RULE_COMMON, people:"風景、または表情の見えない人物（後ろ姿・横顔の一部・手元・足元）", composition:"人物・小物は画面の下半分にまとめる", textArea:"画面中央の横一帯（帯と文字を重ねるのでシンプルな面にする）" },
-  f_story:   { ...IMAGE_RULE_COMMON, people:"風景、または表情の見えない人物（後ろ姿・横顔の一部・手元・足元）", composition:"人物は画面の下半分に小さめに配置", textArea:"画面中央の横一帯（帯と文字を重ねるのでシンプルな面にする）" },
-  f_rhythm:  { ...IMAGE_RULE_COMMON, people:"あり：顔がはっきり見える人物が主役", composition:"人物を主役に大きめに配置", textArea:"型1とは別（左上前提にしない）" },
-  f_menu:    { ...IMAGE_RULE_COMMON, people:"あり：顔がはっきり見える人物が主役", composition:"人物を主役に大きめに配置", textArea:"型1とは別（左上前提にしない）" },
+  f_season:  { ...IMAGE_RULE_COMMON, textMode:"title", people:"あり：顔がはっきり見える人物", composition:"人物を画面の右寄せに配置", textArea:"左上にキャッチタイトルの文字を入れる（ChatGPTで文字入りまで作る）", ng:"タイトル以外の文字・ロゴ・記号は入れない" },
+  f_symptom: { ...RULE_NO_TEXT }, f_story: { ...RULE_NO_TEXT }, f_rhythm: { ...RULE_NO_TEXT }, f_menu: { ...RULE_NO_TEXT },
 };
-var GLOBAL_DEFAULT = { imageNamePattern:"ONE T RAST様_定期コラム_{MM}-{DD}.jpg", photoNamePattern:"", emojiExcludeStructural:true, structuralChars:STRUCT_CHARS_DEFAULT, imagePromptSuffix:IMAGE_PROMPT_SUFFIX, imageRules:IMAGE_RULES_SEED };
+var GLOBAL_DEFAULT = { imageNamePattern:"ONE T RAST様_定期コラム_{MM}-{DD}.jpg", photoNamePattern:"", emojiExcludeStructural:true, structuralChars:STRUCT_CHARS_DEFAULT, promptSuffixTitle:PROMPT_SUFFIX_TITLE, promptSuffixNone:PROMPT_SUFFIX_NONE, imageRules:IMAGE_RULES_SEED };
 function G(){
   const r = window.__global || {};
   const g = { ...GLOBAL_DEFAULT, ...r };
@@ -7075,18 +7076,26 @@ function G(){
 }
 window.addEventListener("global-ready", ()=>{ try{ if(typeof renderSchedule==="function") renderSchedule(); }catch(e){} });
 function imageSourceOf(s){ return (s && s.imageSource) || (/【実写真】/.test((s&&s.imageMemo)||"") ? "photo" : "ai"); }
-function withPromptSuffixC(text){
-  const sfx = G().imagePromptSuffix || IMAGE_PROMPT_SUFFIX;
-  const t = String(text||"").trim();
-  if(!t || t.includes(sfx)) return t;
-  return t + (/[。．.]$/.test(t) ? "" : "。") + sfx;
+function textModeOfC(sc){ const r=G().imageRules[(sc||{}).formatId]; return (r && r.textMode==="title") || (!(r&&r.textMode) && (sc||{}).formatId==="f_season") ? "title" : "none"; }
+function promptSuffixForC(sc){ const g=G(); return textModeOfC(sc)==="title" ? String(g.promptSuffixTitle||PROMPT_SUFFIX_TITLE).replace(/\{title\}/g, (sc&&(sc.catchTitle||sc.title))||"") : (g.promptSuffixNone||PROMPT_SUFFIX_NONE); }
+// 末尾の固定文を、いまの型・タイトルに合わせて付け直す（lib/meo.js の withPromptSuffix と同じ）
+function withPromptSuffixC(text, sc){
+  let t = String(text||"").trim(); if(!t) return t;
+  const g = G(), e = (x)=> String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pats = [IMAGE_PROMPT_SUFFIX, g.imagePromptSuffix||"", g.promptSuffixNone||PROMPT_SUFFIX_NONE, PROMPT_SUFFIX_NONE].filter(Boolean).map(e);
+  pats.push(e(g.promptSuffixTitle||PROMPT_SUFFIX_TITLE).replace(e("{title}"), "[\\s\\S]*?"), e(PROMPT_SUFFIX_TITLE).replace(e("{title}"), "[\\s\\S]*?"));
+  pats.forEach(p=>{ t = t.replace(new RegExp("\\s*"+p+"\\s*","g"), ""); });
+  t = t.trim();
+  return t + (/[。．.]$/.test(t) ? "" : "。") + promptSuffixForC(sc);
 }
+function smSchedDraft(){ return { formatId: document.getElementById("sm_formatId").value, catchTitle: document.getElementById("sm_catch").value.trim(), title: document.getElementById("sm_title").value.trim() }; }
 function formatName(id){ const f=(FORMATS||[]).find(x=>x.id===id); return f ? f.name : ""; }
 function imageRuleText(formatId){
   const r = G().imageRules[formatId];
   if(!formatId) return "投稿の型を選ぶと、その型の画像デザインルールが出ます";
   if(!r) return "この型の画像デザインルールは未設定です（☰メニュー →「グローバル設定」で入力）";
-  return `【${formatName(formatId)||formatId}】\n` + IMAGE_RULE_FIELDS.map(([k,l])=> r[k] ? `・${l}：${r[k]}` : null).filter(Boolean).join("\n") + `\n・末尾の固定文：${G().imagePromptSuffix}`;
+  const mode = textModeOfC({formatId});
+  return `【${formatName(formatId)||formatId}】${mode==="title"?"タイトル文字入り（ChatGPTで文字まで作る）":"文字なし（風景・人物）"}\n` + IMAGE_RULE_FIELDS.map(([k,l])=> r[k] ? `・${l}：${r[k]}` : null).filter(Boolean).join("\n") + `\n・末尾の固定文（自動）：${promptSuffixForC(smSchedDraft())}`;
 }
 // 命名規則：{YYYY}{MM}{DD}{M}{D}{AB} を予定日などで置換し、GMOで通る安全名に
 function applyNamePatternC(pattern, s){
@@ -7158,9 +7167,9 @@ window.openPromptList = ()=>{
   const rows = list.map(s=>{
     const d = s.date ? `${Number(s.date.slice(5,7))}/${Number(s.date.slice(8))}(${dowJp(s.date)})` : "日付未定";
     const photo = imageSourceOf(s)==="photo";
-    const pr = withPromptSuffixC(s.imagePrompt||"");
+    const pr = withPromptSuffixC(s.imagePrompt||"", s);
     return `<div class="card" style="padding:10px 12px; margin:0 0 8px;">
-      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><b class="small">${d}</b>${abBadge(s)}${kataBadge(s)}${img3Chip(s)}</div>
+      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><b class="small">${d}</b>${abBadge(s)}${kataBadge(s)}${img3Chip(s)}${photo?"":(textModeOfC(s)==="title"?'<span class="pill">🔤タイトル文字入り</span>':'<span class="pill">🏞文字なし</span>')}</div>
       <div class="small" style="font-weight:700; margin-top:4px;">${esc(s.catchTitle||s.title||"（無題）")}</div>
       <div class="muted" style="font-size:11px; margin-top:2px;">🖼️ ${esc(s.imageTitle||"（画像名未設定）")}</div>
       ${photo ? `<div class="note" style="font-size:12px; margin-top:6px;">📷 実写真（AI生成なし・画像指示文は不要）</div>`
@@ -7169,9 +7178,9 @@ window.openPromptList = ()=>{
             : `<div style="display:flex; gap:6px; align-items:center; margin-top:6px;"><span class="muted small">指示文が未入力です</span><button class="pill" onclick="closeX(); openSchedEdit('${s.id}')">✏️ 入力する</button></div>`)}
     </div>`;
   }).join("");
-  const all = list.filter(s=> imageSourceOf(s)!=="photo" && s.imagePrompt).map(s=> `【${fmtJp(s.date)} ${s.abType||""} ${formatName(s.formatId)}】${s.catchTitle||s.title||""}\n${withPromptSuffixC(s.imagePrompt)}`).join("\n\n");
+  const all = list.filter(s=> imageSourceOf(s)!=="photo" && s.imagePrompt).map(s=> `【${fmtJp(s.date)} ${s.abType||""} ${formatName(s.formatId)}】${s.catchTitle||s.title||""}\n${withPromptSuffixC(s.imagePrompt, s)}`).join("\n\n");
   openX("🖼️ 画像指示文一覧", xMonthNav() +
-    `<p class="hint" style="margin-top:0;">ChatGPTに1本ずつ貼る運用です。各行の「📋」でコピーしてください（末尾の固定文は自動で付きます）</p>` +
+    `<p class="hint" style="margin-top:0;">ChatGPTに1本ずつ貼る運用です。各行の「📋」でコピーしてください。型1（季節訴求）はタイトル文字入り、それ以外は文字なしの指示が末尾に自動で付きます</p>` +
     (list.length ? rows : `<p class="hint">この月の予定はありません</p>`) +
     (all ? `<button class="btn btn-ghost mt" onclick='copyStr(${JSON.stringify(all)},event)'>📋 全件まとめてコピー（任意）</button>` : ""));
   bindXSwipe();
@@ -7423,6 +7432,7 @@ window.openGlobalSettings = ()=>{
   const ruleBox = fmts.map(f=>{
     const r = g.imageRules[f.id] || {};
     return `<details class="mt"><summary style="cursor:pointer; font-weight:700;">${esc(f.name)}</summary>
+      <label class="mt" style="font-size:12px;">文字入れ</label><select data-rule="${f.id}" data-k="textMode"><option value="title" ${textModeOfC({formatId:f.id})==="title"?"selected":""}>タイトル文字入り（ChatGPTで文字まで作る）</option><option value="none" ${textModeOfC({formatId:f.id})!=="title"?"selected":""}>文字なし（風景・人物）</option></select>
       ${IMAGE_RULE_FIELDS.map(([k,l])=>`<label class="mt" style="font-size:12px;">${l}</label><input data-rule="${f.id}" data-k="${k}" value="${esc(r[k]||"")}">`).join("")}
     </details>`;
   }).join("");
@@ -7440,7 +7450,9 @@ window.openGlobalSettings = ()=>{
     </div>
     <div class="card"><h2 style="margin-top:0;">🖼️ 型別の画像デザインルール</h2>
       <p class="hint" style="margin-top:0;">予定の画像指示文を作るとき（人もClaudeも get_image_guide で）参照します</p>
-      <label>画像指示文の末尾に必ず入れる一文</label><textarea id="gs_sfx" style="min-height:60px;">${esc(g.imagePromptSuffix||IMAGE_PROMPT_SUFFIX)}</textarea>
+      <label>末尾の固定文：タイトル文字入りの型（{title} がキャッチタイトルに置き換わります）</label><textarea id="gs_sfx" style="min-height:70px;">${esc(g.promptSuffixTitle||PROMPT_SUFFIX_TITLE)}</textarea>
+      <label class="mt">末尾の固定文：文字なしの型</label><textarea id="gs_sfx2" style="min-height:50px;">${esc(g.promptSuffixNone||PROMPT_SUFFIX_NONE)}</textarea>
+      <p class="hint">クーポン・期間表示の投稿は予定の「📷 実写真」にすると画像指示文は不要になります</p>
       ${ruleBox}
     </div>
     <button class="btn btn-primary" onclick="saveGlobalSettings()">💾 保存</button>`);
@@ -7458,7 +7470,8 @@ window.saveGlobalSettings = ()=>{
     photoNamePattern: document.getElementById("gs_pat2").value.trim(),
     emojiExcludeStructural: document.getElementById("gs_emo").checked,
     structuralChars: document.getElementById("gs_chars").value.split(/\s+/).filter(Boolean),
-    imagePromptSuffix: document.getElementById("gs_sfx").value.trim() || IMAGE_PROMPT_SUFFIX,
+    promptSuffixTitle: document.getElementById("gs_sfx").value.trim() || PROMPT_SUFFIX_TITLE,
+    promptSuffixNone: document.getElementById("gs_sfx2").value.trim() || PROMPT_SUFFIX_NONE,
     imageRules, updatedAt: Date.now(),
   };
   window.__global = { ...(window.__global||{}), ...rec };
@@ -7506,9 +7519,12 @@ function renderStoreUsage(){
 
 // ============ 使い方・お知らせ ============
 // バージョンを上げると、次回アクセス時に自動でお知らせがポップアップします
-const STUDIO_VERSION = "2026-10-03.1";
+const STUDIO_VERSION = "2026-10-03.2";
 // 更新履歴（新しい順）。起動時は「まだ見ていないブロック」だけをポップで出す
 const RELEASE_NOTES = [
+  { v:"2026-10-03.2", items:[
+      `<b>🖼️ サムネ画像のルールを変更</b>：型1（季節訴求）は <b>ChatGPTでキャッチタイトルの文字入りサムネ</b>まで作ります。それ以外の型は <b>文字を入れない風景・人物の画像</b>。クーポン・期間表示の投稿は実写真（画像作成なし）`,
+      `画像指示文の末尾の固定文は、型に合わせて自動で付け替わります（タイトルを変えても追従）。☰ → グローバル設定で型ごとに「タイトル文字入り／文字なし」を切り替えられます` ] },
   { v:"2026-10-03.1", items:[
       `<b>☰ メニューを右上に設置</b>：💬改善・問合せ（Notionの改善DBへ送信）／📣リリース情報／⚙️グローバル設定 をまとめました`,
       `<b>📊 月の集計</b>：予定画面の上に「予定数・本文登録済み・画像準備OK・出力済み・投稿済み」を表示。左右スワイプで月を切り替えられます（リスト表示でもOK）`,
