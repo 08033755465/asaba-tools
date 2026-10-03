@@ -300,7 +300,7 @@ async function handleMessage(msg, ctx) {
   switch (method) {
     case 'initialize':
       return rpcResult(id, { protocolVersion: (params && params.protocolVersion) || '2025-06-18', capabilities: { tools: { listChanged: false } }, serverInfo: SERVER_INFO,
-        instructions: 'あさばグループのMEO投稿ツールです。本文を書く前に get_writing_guide を必ず呼び、ルールと店舗プロフィールに従って書き、save_contents で保存してください。出力ファイルは export_file でURLを取得します。' });
+        instructions: 'あさばグループのMEO投稿ツールです。本文を書く前に get_writing_guide を必ず呼び、ルールと店舗プロフィールに従って書き、save_contents で保存してください（meta で使ったUSP・託児・読み手・締めも記録）。画像指示文を書く前は get_image_guide を呼び、update_schedule の imagePrompt に保存します。出力ファイルは export_file（1予定）または export_files（複数予定を1ファイル）でURLを取得します。' });
     case 'ping': return rpcResult(id, {});
     case 'tools/list': return rpcResult(id, { tools: TOOLS });
     case 'resources/list': return rpcResult(id, { resources: [] });
