@@ -96,7 +96,7 @@ body { background:linear-gradient(165deg,#DCEDE2 0%,#EAF3F4 45%,#D8E7F2 100%) fi
   };
   window.APP_ID = "asaba-thumbnail";
   window.APP_TOP_URL = "/studio";
-  window.APP_VERSION = "2026-09-28.1";
+  window.APP_VERSION = "2026-10-03.1";
   // 起動監視：CDN（React/Babel/Firebase）のどれかが読めず画面が真っ白のままなら、案内と再読込ボタンを出す
   window.__bootOk = false; window.__bootErr = "";
   window.addEventListener("error", function(e){ var t=e.target; if(t && (t.tagName==="SCRIPT"||t.tagName==="LINK")) window.__bootErr = t.src||t.href||""; }, true);
@@ -271,7 +271,13 @@ async function sendGalleryNotify({ accountId, accountName, categoryName, folderN
 }
 
 // ============ Constants ============
-const RELEASE_NOTES = `【v2.7 9月・10月のテーマ別プロンプト（2026-09-09）】
+const RELEASE_NOTES = `【v2.9 文字入力の整理・ガイド線・テーマ自動流し込み（2026-10-03）】
+・文字（タイトル・サブ・ラベル・縦書き）は上の「📝 文字」にまとまりました。大きさ・位置・色などのつまみは「🎛 文字の細かい調整」を開いたときだけ表示します
+・「🧲 テーマから入れる」：予定を選んでいれば、型に合わせてテーマのタイトルがワンタップで入ります（型2はチェック節だけを抜き出し）
+・マイテンプレの文字に {タイトル} {日付} {場面} {キーワード} と書いておくと、予定から開いたときに自動で置き換わります
+・「📐 ガイド線・位置あわせ」：プレビューに点線ガイドを表示（保存画像には写りません）。「💾 いまの位置をチーム共通として保存」→ 全員が「📌 合わせる」で毎回同じ配置にできます
+
+【v2.7 9月・10月のテーマ別プロンプト（2026-09-09）】
 ・「テーマ集」タブが、実際の配信予定（9月8本・10月8本）のプロンプトに入れ替わりました
 ・各テーマに型のバッジが付き、その型の決まり（型1＝人物・画像内に文字／型2＝風景のみ／型3・4＝人物と風景を選択）どおりのプロンプトが出ます
 ・予定に紐付けて開くと、その日のテーマが自動で選ばれます
@@ -376,6 +382,25 @@ function kataFillText(kata, title) {
   const parts = String(title || '').split(/[。！？\n]/).map(x => x.trim()).filter(Boolean);
   const hit = parts.find(x => x.includes('チェック'));
   return hit || title;
+}
+// 予定（テーマ）の情報を文字欄のプレースホルダーに流し込む
+// {タイトル}=キャッチ（型2はチェック節）／{キャッチ}=キャッチ全文／{テーマ}=テーマ名／{場面}=画像メモの場面／{日付}=M/D／{キーワード}=先頭KW
+function themeTokenMap(sched) {
+  const kata = FORMAT_KATA[(sched || {}).formatId] || '';
+  const catch_ = sched ? (sched.catchTitle || sched.title || '') : '';
+  const d = String((sched || {}).date || '');
+  return { '{タイトル}': kataFillText(kata, catch_), '{キャッチ}': catch_, '{テーマ}': (sched || {}).title || '',
+    '{場面}': sceneOf(sched), '{日付}': d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}` : '',
+    '{キーワード}': String((sched || {}).kw || '').split(/[\s　・,、／\/]+/).filter(Boolean)[0] || '' };
+}
+const THEME_TOKEN_RE = /\{(タイトル|キャッチ|テーマ|場面|日付|キーワード)\}/;
+function fillThemeTexts(design, sched) {
+  if (!sched) return design;
+  const map = themeTokenMap(sched);
+  const repT = (t) => Object.entries(map).reduce((x, [k, v]) => x.split(k).join(v), String(t || ''));
+  const o = { ...design };
+  ['title', 'sub', 'label', 'vtext'].forEach(k => { if (o[k] && THEME_TOKEN_RE.test(o[k].text || '')) o[k] = { ...o[k], text: repT(o[k].text) }; });
+  return o;
 }
 function kataTextOf(kd, variant, sched) {
   let t = ((kd && kd.prompts) || {})[variant] || '';
@@ -1251,7 +1276,7 @@ function Sel({ label, value, opts, onChange }) {
 function Acc({ title, open, children }) {
   return (<details open={open} className="border border-slate-200 rounded-lg bg-white"><summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-700">{title}</summary><div className="px-3 pb-3 space-y-2">{children}</div></details>);
 }
-function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign, onOpenPrompts, schedTitle }) {
+function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickFiles, photoSrcs, onRemovePhoto, templates = [], onSaveTemplate, onDeleteTemplate, showToast, lastDesign, onOpenPrompts, schedTitle, sched = null, onFillTheme = null, guidesCfg = null, onSaveGuides = null, showGuides = true, setShowGuides = null }) {
   const d = design;
   const up = (path, v) => setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); let cur = o; const ks = path.split('.'); for (let i = 0; i < ks.length - 1; i++) { if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; return o; });
   const n = TD.cellCount(d.template);
@@ -1273,7 +1298,8 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
     let o = TD.merge(prev, saved || {});
     const n2 = TD.cellCount(o.template); o.photos = (prev.photos || []).slice(0, n2); while (o.photos.length < n2) o.photos.push({ zoom: 1, dx: 0, dy: 0 });
     // 型付きテンプレ＋予定紐付け中なら、テーマタイトルを所定の欄（型2はサブ欄）に流し込む
-    if (tpl && tpl.kata && schedTitle) { const tgt = tpl.fillTarget || (tpl.kata === '2' ? 'sub' : 'title'); o = { ...o, [tgt]: { ...o[tgt], text: kataFillText(tpl.kata, schedTitle) } }; }
+    if (sched) o = fillThemeTexts(o, sched);   // {タイトル} などのプレースホルダーをテーマで置換
+    if (tpl && tpl.kata && schedTitle && !THEME_TOKEN_RE.test((((saved || {})[tpl.fillTarget || (tpl.kata === '2' ? 'sub' : 'title')] || {}).text) || '')) { const tgt = tpl.fillTarget || (tpl.kata === '2' ? 'sub' : 'title'); o = { ...o, [tgt]: { ...o[tgt], text: kataFillText(tpl.kata, schedTitle) } }; }
     return o;
   });
   // まとめて配置：ラベル・タイトル・サブを縦横9か所へ
@@ -1325,12 +1351,34 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
     {hasSel && <Sl label={`写真${n > 1 ? selectedCell + 1 : ''}のズーム`} value={p.zoom || 1} min={1} max={2.5} step={0.05} onChange={v => up(`photos.${selectedCell}.zoom`, v)} fmt={v => v.toFixed(2) + '×'} />}
     <p className="text-[11px] text-slate-500">プレビューの写真をドラッグすると位置を動かせます</p>
     {!isNone && (<>
-      <Acc title="✏️ タイトル・文字" open>
-        {onOpenPrompts && <button type="button" onClick={onOpenPrompts} className="btn-press w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#EAF3F4] text-[#24505E] border border-[#CBDFE4] text-xs font-bold">🎨 画像プロンプト集からタイトルを選ぶ</button>}
+      {/* 📝 文字はここでまとめて入力（細かい調整は下の「🎛」へ） */}
+      <div className="border border-[#CBDFE4] rounded-lg bg-white p-2.5 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-bold text-[#24505E]">📝 文字（ここでまとめて入力）</span>
+          {onFillTheme && <button type="button" onClick={onFillTheme} disabled={!sched} title={sched ? '' : '先に投稿予定（テーマ）を選んでください'} className={`text-[11px] rounded-full px-2.5 py-1 border ${sched ? 'bg-[#2F6D80] text-white border-[#2F6D80]' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>🧲 テーマから入れる</button>}
+        </div>
+        <div className="flex items-start gap-2"><span className="w-14 shrink-0 text-[11px] text-slate-500 pt-2">タイトル</span>
+          <textarea value={d.title.text} onChange={e => up('title.text', e.target.value)} rows={2} placeholder={"タイトル（改行OK）"} className="flex-1 min-w-0 p-2 border rounded text-sm" /></div>
+        <div className="flex items-center gap-2"><span className="w-14 shrink-0 text-[11px] text-slate-500">サブ</span>
+          <input value={d.sub.text} onChange={e => up('sub.text', e.target.value)} placeholder="サブタイトル" className="flex-1 min-w-0 p-2 border rounded text-sm" /></div>
+        <div className="flex items-center gap-2"><span className="w-14 shrink-0 text-[11px] text-slate-500">ラベル</span>
+          <input value={d.label.text} onChange={e => up('label.text', e.target.value)} placeholder="小さな見出し（空欄で非表示）" className="flex-1 min-w-0 p-2 border rounded text-sm" /></div>
+        <div className="flex items-center gap-2"><label className="w-14 shrink-0 text-[11px] text-slate-500 flex items-center gap-1"><input type="checkbox" checked={!!d.vtext.on} onChange={e => up('vtext.on', e.target.checked)} />縦書き</label>
+          <input value={d.vtext.text} onChange={e => up('vtext.text', e.target.value)} disabled={!d.vtext.on} placeholder="端に小さく入れる縦書きの文" className="flex-1 min-w-0 p-2 border rounded text-sm disabled:bg-slate-50" /></div>
+        {onOpenPrompts && <button type="button" onClick={onOpenPrompts} className="btn-press w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[#EAF3F4] text-[#24505E] border border-[#CBDFE4] text-[11px] font-bold">🎨 画像プロンプト集からタイトルを選ぶ</button>}
+        <p className="text-[10px] text-slate-400">マイテンプレの文字に {'{タイトル}'} {'{日付}'} {'{場面}'} と書いておくと、予定を選んだときにテーマの内容に置き換わります</p>
+      </div>
+      <Acc title="📐 ガイド線・位置あわせ（チーム共通）">
+        <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={!!showGuides} onChange={e => setShowGuides && setShowGuides(e.target.checked)} />プレビューにガイド線を表示（保存画像には写りません）</label>
         <div className="text-xs text-slate-600 flex items-center gap-2"><span className="w-14 shrink-0">まとめて配置</span>
           <div className="grid grid-cols-3 gap-0.5">{['top', 'center', 'bottom'].map(v => ['left', 'center', 'right'].map(h => <button key={v + h} type="button" onClick={() => placeAll(h, v)} title={`${v === 'top' ? '上' : v === 'bottom' ? '下' : '中'}・${h === 'left' ? '左' : h === 'right' ? '右' : '中'}`} className="w-7 h-6 border border-slate-300 bg-white rounded-sm hover:bg-[#EAF3F4] flex items-center justify-center"><span className={`block w-2.5 h-1.5 bg-slate-500 rounded-sm ${h === 'left' ? 'mr-auto ml-0.5' : h === 'right' ? 'ml-auto mr-0.5' : ''} ${v === 'top' ? 'mb-auto mt-0.5' : v === 'bottom' ? 'mt-auto mb-0.5' : ''}`} /></button>))}</div>
           <span className="text-[10px] text-slate-400">ラベル・タイトル・サブを一括で</span></div>
-        <textarea value={d.title.text} onChange={e => up('title.text', e.target.value)} rows={2} placeholder={"タイトル（改行OK）\n{To} のように囲んだ行は筆記体"} className="w-full p-2 border rounded text-sm" />
+        {guidesCfg && guidesCfg.anchors && <button type="button" onClick={() => { const an = guidesCfg.anchors; setDesign(prev => { const o = JSON.parse(JSON.stringify(prev)); ['label', 'title', 'sub'].forEach(k => { if (an[k]) { o[k].x = an[k].x; o[k].y = an[k].y; if (an[k].align) o[k].align = an[k].align; } }); return o; }); showToast && showToast('📌 チーム共通の位置に合わせました'); }} className="w-full text-xs py-2 rounded-lg bg-[#2F6D80] text-white font-bold">📌 チーム共通の位置に合わせる{guidesCfg.updatedAt ? `（${new Date(guidesCfg.updatedAt).toLocaleDateString('ja-JP')}保存）` : ''}</button>}
+        {onSaveGuides && <button type="button" onClick={() => onSaveGuides({ anchors: { label: { x: d.label.x != null ? d.label.x : 0.5, y: d.label.y, align: d.label.align || 'center' }, title: { x: d.title.x != null ? d.title.x : 0.5, y: d.title.y, align: d.title.align || 'center' }, sub: { x: d.sub.x != null ? d.sub.x : 0.5, y: d.sub.y, align: d.sub.align || 'center' } }, guides: { h: [d.label.y, d.title.y, d.sub.y], v: [d.title.x != null ? d.title.x : 0.5] } })} className="w-full text-xs py-2 rounded-lg bg-white border border-[#2F6D80] text-[#24505E] font-bold">💾 いまの文字の位置をチーム共通として保存</button>}
+        <p className="text-[10px] text-slate-400">保存すると、ガイド線がこの位置に引かれ、全員が「📌合わせる」で同じ配置にできます（毎回の投稿で位置がそろいます）</p>
+      </Acc>
+      <Acc title="🎛 文字の細かい調整（大きさ・位置・色）">
+        <div className="text-xs font-semibold text-slate-600">タイトル</div>
         <div className="grid grid-cols-2 gap-2">
           <Sel label="書体" value={d.title.font} opts={fontOpts} onChange={v => up('title.font', v)} />
           <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={d.title.shadow !== false} onChange={e => up('title.shadow', e.target.checked)} />影をつける</label>
@@ -1343,8 +1391,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
         <Sl label="横位置" value={d.title.x != null ? d.title.x : 0.5} min={0} max={1} step={0.01} onChange={v => up('title.x', v)} fmt={pct} />
         <Sl label="上下位置" value={d.title.y} min={0.05} max={0.95} step={0.01} onChange={v => up('title.y', v)} fmt={pct} />
         <ColorF label="色" value={d.title.color} onChange={v => up('title.color', v)} />
-        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">サブタイトル（日本語）</div>
-        <textarea value={d.sub.text} onChange={e => up('sub.text', e.target.value)} rows={1} placeholder="サブタイトル（改行OK）" className="w-full p-2 border rounded text-sm" />
+        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">サブタイトル</div>
         <div className="grid grid-cols-2 gap-2">
           <Sel label="書体" value={d.sub.font} opts={fontOpts} onChange={v => up('sub.font', v)} />
           <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={d.sub.shadow !== false} onChange={e => up('sub.shadow', e.target.checked)} />影をつける</label>
@@ -1356,8 +1403,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
         <Sl label="横位置" value={d.sub.x != null ? d.sub.x : 0.5} min={0} max={1} step={0.01} onChange={v => up('sub.x', v)} fmt={pct} />
         <Sl label="上下位置" value={d.sub.y} min={0.05} max={0.95} step={0.01} onChange={v => up('sub.y', v)} fmt={pct} />
         <ColorF label="色" value={d.sub.color} onChange={v => up('sub.color', v)} />
-        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">ラベル（小さな英字）</div>
-        <input value={d.label.text} onChange={e => up('label.text', e.target.value)} placeholder="ラベル（小さな見出し）" className="w-full p-2 border rounded text-sm" />
+        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">ラベル（小さな見出し）</div>
         <Sel label="形" value={d.label.style} opts={[['pill', '塗りつぶし（丸）'], ['outline', '枠線'], ['plain', '文字のみ']]} onChange={v => up('label.style', v)} />
         <Sl label="大きさ" value={d.label.size} min={12} max={60} step={1} onChange={v => up('label.size', v)} />
         <Sl label="文字間" value={d.label.letterSpacing || 0} min={0} max={0.6} step={0.01} onChange={v => up('label.letterSpacing', v)} fmt={v => v.toFixed(2)} />
@@ -1366,10 +1412,8 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
         <Sl label="上下位置" value={d.label.y} min={0.05} max={0.95} step={0.01} onChange={v => up('label.y', v)} fmt={pct} />
         <ColorF label="文字色" value={d.label.color} onChange={v => up('label.color', v)} />
         {d.label.style === 'pill' && <ColorF label="背景色" value={d.label.bg} onChange={v => up('label.bg', v)} />}
-        <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">縦書き（端に小さく）</div>
-        <label className="text-xs text-slate-600 flex items-center gap-2"><input type="checkbox" checked={!!d.vtext.on} onChange={e => up('vtext.on', e.target.checked)} />縦書きを入れる</label>
         {d.vtext.on && (<>
-          <input value={d.vtext.text} onChange={e => up('vtext.text', e.target.value)} placeholder="縦書きの文" className="w-full p-2 border rounded text-sm" />
+          <div className="border-t pt-2 mt-1 text-xs font-semibold text-slate-600">縦書き</div>
           <div className="grid grid-cols-2 gap-2"><Sel label="位置" value={d.vtext.side} opts={[['right', '右端'], ['left', '左端']]} onChange={v => up('vtext.side', v)} /><Sel label="書体" value={d.vtext.font || 'jp'} opts={fontOpts} onChange={v => up('vtext.font', v)} /></div>
           <Sl label="大きさ" value={d.vtext.size} min={14} max={60} step={1} onChange={v => up('vtext.size', v)} />
           <Sl label="上からの位置" value={d.vtext.y} min={0.02} max={0.8} step={0.01} onChange={v => up('vtext.y', v)} fmt={pct} />
@@ -1403,7 +1447,7 @@ function DesignPanel({ design, setDesign, selectedCell, setSelectedCell, onPickF
 }
 
 // ============ CreateTab ============
-function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply, onSchedChange, linkDefault = null }) {
+function CreateTab({ user, accounts, categories, projects, selectedProject, showToast, openGallery, schedules, editImg, mode = 'create', onSaved, designTemplates = [], onSaveTemplate, onDeleteTemplate, onOpenPrompts, titleToApply, onSchedChange, linkDefault = null, guidesCfg = null, onSaveGuides = null }) {
   const canvasRef = useRef(null);
   const isRegister = mode === 'register';
   const [saved, setSaved] = useState(null);      // 保存完了画面
@@ -1438,6 +1482,8 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
   });
   const [dlOnShare, setDlOnShare] = useState(false); // 保存と同時にPCへDL
   const [previewBig, setPreviewBig] = useState(false); // スマホでプレビューを大きく表示するか（通常は小さくして作業欄を広く）
+  const [showGuides, setShowGuides] = useState(() => { try { return localStorage.getItem('thumb_show_guides') !== '0'; } catch (e) { return true; } });
+  useEffect(() => { try { localStorage.setItem('thumb_show_guides', showGuides ? '1' : '0'); } catch (e) {} }, [showGuides]);
   const selSched = (schedules||[]).find(x => x.id === schedId) || null;
   // 予定を選んだら日付を自動セット
   useEffect(() => { if (selSched && selSched.date) setDateISO(selSched.date); }, [schedId]);
@@ -1542,11 +1588,23 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
       let o = TD.merge(prev, tpl.design || {});
       const n = TD.cellCount(o.template); o.photos = Array.from({ length: n }, (_, i) => (prev.photos || [])[i] || { zoom: 1, dx: 0, dy: 0 });
       const title = sc.catchTitle || sc.title || '';
-      if (title) { const tgt = tpl.fillTarget || (kata === '2' ? 'sub' : 'title'); o = { ...o, [tgt]: { ...o[tgt], text: kataFillText(kata, title) } }; }
+      o = fillThemeTexts(o, sc);   // {タイトル} などのプレースホルダーをテーマで置換
+      if (title && !THEME_TOKEN_RE.test(((tpl.design || {})[tpl.fillTarget || (kata === '2' ? 'sub' : 'title')] || {}).text || '')) {
+        const tgt = tpl.fillTarget || (kata === '2' ? 'sub' : 'title'); o = { ...o, [tgt]: { ...o[tgt], text: kataFillText(kata, title) } };
+      }
       return o;
     });
     showToast(`${(KATA_META[kata] || {}).emoji || ''}型${kata}のテンプレ「${tpl.name}」を適用し、テーマタイトルを入れました`);
   }, [schedId, designTemplates]);
+  // 「🧲 テーマから文字を入れる」：タイトル欄へキャッチタイトル、プレースホルダーも置換
+  const fillFromTheme = () => {
+    if (!selSched) { showToast('先に投稿予定（テーマ）を選んでください'); return; }
+    const kata = FORMAT_KATA[selSched.formatId] || '';
+    const t = kataFillText(kata, selSched.catchTitle || selSched.title || '');
+    const tgt = kata === '2' ? 'sub' : 'title';   // 型2はタイトル文字をサブ欄（帯の中）に入れる運用
+    setDesign(prev => { let o = fillThemeTexts(prev, selSched); if (t) o = { ...o, [tgt]: { ...o[tgt], text: t } }; return o; });
+    showToast('🧲 テーマの文字を入れました');
+  };
   // 紐付け中の予定を画面全体（プロンプト集）にも知らせる
   useEffect(() => { if (onSchedChange) onSchedChange(schedId); }, [schedId]);
   // 画像プロンプト集で選んだタイトルを文字入力欄へ流し込む
@@ -1716,7 +1774,7 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
               </div>
             ) : (
               <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={dragOver ? 'dnd-hi rounded-xl p-1' : ''}>
-                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} onOpenPrompts={onOpenPrompts} schedTitle={selSched ? (selSched.catchTitle || selSched.title || '') : ''} />
+                <DesignPanel design={design} setDesign={setDesign} selectedCell={selectedCell} setSelectedCell={setSelectedCell} onPickFiles={readFiles} photoSrcs={photoSrcs} onRemovePhoto={removePhoto} templates={designTemplates} onSaveTemplate={onSaveTemplate} onDeleteTemplate={onDeleteTemplate} showToast={showToast} lastDesign={prevDesign} onOpenPrompts={onOpenPrompts} schedTitle={selSched ? (selSched.catchTitle || selSched.title || '') : ''} sched={selSched} onFillTheme={fillFromTheme} guidesCfg={guidesCfg} onSaveGuides={onSaveGuides} showGuides={showGuides} setShowGuides={setShowGuides} />
               </div>
             )}
             </div>
@@ -1831,7 +1889,19 @@ function CreateTab({ user, accounts, categories, projects, selectedProject, show
         )}
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
           <div key={flashKey} className={`relative w-full flex-1 min-h-0 flex items-center justify-center rounded-md ${flashKey ? 'flash' : ''}`}>
-            <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} className="max-w-full max-h-full object-contain shadow-2xl bg-white rounded-md ring-1 ring-slate-900/5" style={{ touchAction: 'none', cursor: baseImage ? 'grab' : 'default' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
+            <div className="relative inline-flex max-w-full max-h-full">
+              <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} className="max-w-full max-h-full object-contain shadow-2xl bg-white rounded-md ring-1 ring-slate-900/5" style={{ touchAction: 'none', cursor: baseImage ? 'grab' : 'default' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
+              {showGuides && !isRegister && design.template !== 'none' && (() => {
+                const g = guidesCfg || {};
+                const hs = (g.guides && g.guides.h && g.guides.h.length) ? g.guides.h : [1/3, 2/3];
+                const vs = (g.guides && g.guides.v && g.guides.v.length) ? g.guides.v : [1/3, 2/3];
+                return (<div className="absolute inset-0 pointer-events-none rounded-md overflow-hidden">
+                  {hs.map((y, i) => <div key={'h'+i} className="absolute left-0 right-0" style={{ top: `${y*100}%`, borderTop: '1px dashed rgba(236,72,153,.75)' }} />)}
+                  {vs.map((x, i) => <div key={'v'+i} className="absolute top-0 bottom-0" style={{ left: `${x*100}%`, borderLeft: '1px dashed rgba(236,72,153,.75)' }} />)}
+                  <span className="absolute top-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-pink-500/80 text-white">ガイド（保存画像には写りません）</span>
+                </div>);
+              })()}
+            </div>
           </div>
           <p className="mt-1.5 md:mt-4 text-[11px] md:text-sm text-slate-500 font-medium">{baseImage ? `書き出しサイズ: ${canvasWidth} × ${canvasHeight} px${isRegister ? '' : '　※プレビューをドラッグで位置合わせ'}` : '👈 まず写真を選んでください'}</p>
         </div>
@@ -2298,6 +2368,8 @@ function App() {
   const [titleToApply, setTitleToApply] = useState(null);
   const [linkedSchedId, setLinkedSchedId] = useState(() => params.get('sched') || '');
   const [linkDefault, setLinkDefault] = useState(null); // 予定から作るときの既定の運用アカウント／カテゴリ（studio_settings/thumb_link_default）
+  const [guidesCfg, setGuidesCfg] = useState(null);     // ガイド線と文字の共通位置（studio_settings/thumb_guides・チーム共有）
+  const saveGuides = async (cfg) => { try { await setDoc(docRefFn('studio_settings', 'thumb_guides'), { ...cfg, updatedAt: Date.now() }, { merge: true }); showToast('📐 チーム共通の位置として保存しました'); } catch (e) { console.error(e); showToast('保存に失敗しました'); } };
   const [links, setLinks] = useState([]);             // リンク集（GMOアップロード画面のURL解決に使う）
   const [migr, setMigr] = useState(null);             // 既存画像の軽量化 進捗 {n,total}
   const [tplConfirm, setTplConfirm] = useState(null);
@@ -2335,6 +2407,7 @@ function App() {
       onSnapshot(colRef('shared_thumbnails'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); setImages(arr); setImagesLoaded(true); }),
       onSnapshot(colRef('studio_schedule'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999')); setSchedules(arr); }),
       onSnapshot(docRefFn('studio_settings', 'thumb_link_default'), s => { setLinkDefault(s.exists() ? s.data() : null); }, () => {}),
+      onSnapshot(docRefFn('studio_settings', 'thumb_guides'), s => { setGuidesCfg(s.exists() ? s.data() : null); }, () => {}),
       onSnapshot(colRef('links'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); setLinks(arr); }, () => {}),
       onSnapshot(colRef('thumb_design_templates'), s => { const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() })); arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); setDesignTemplates(arr); }),
     ];
@@ -2370,7 +2443,8 @@ function App() {
         <CreateTab key={view} mode={view} user={user} accounts={accounts} categories={categories} projects={projects}
           selectedProject={selectedProject} showToast={showToast} openGallery={() => goGallery()} schedules={schedules} editImg={editImg}
           onSaved={(id) => { setHighlightId(id); }} designTemplates={designTemplates} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate}
-          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} onSchedChange={setLinkedSchedId} linkDefault={linkDefault} />
+          onOpenPrompts={() => setPromptOpen(true)} titleToApply={titleToApply} onSchedChange={setLinkedSchedId} linkDefault={linkDefault}
+          guidesCfg={guidesCfg} onSaveGuides={saveGuides} />
       )}
       {tplConfirm && <ConfirmModal {...tplConfirm} />}
       {promptOpen && (
